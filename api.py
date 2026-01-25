@@ -289,8 +289,9 @@ async def startup_event():
     engine_thread.start()
 
 if __name__ == "__main__":
-    logger.info("API: Initializing server on port 8004...")
+    port = int(os.environ.get("PORT", 8004))
+    logger.info(f"API: Initializing server on port {port}...")
     try:
-        uvicorn.run(app, host="0.0.0.0", port=8004)
+        uvicorn.run(app, host="0.0.0.0", port=port)
     except Exception as e:
         logger.error(f"API CRITICAL ERROR: {e}")
