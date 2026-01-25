@@ -4,5 +4,4 @@ __pycache__/
 *.pyc
 logs/
 data/
-dashboard/
 oracle.db
