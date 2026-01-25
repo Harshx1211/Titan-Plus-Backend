@@ -315,7 +315,7 @@ def run_engine_loop():
             
             # 7. Rotation & Sleep
             live_state.last_update = datetime.now()
-            time.sleep(2)
+            time.sleep(1) # High-Speed Institutional Frequency
         except Exception as e:
             logger.error(f"ENGINE ERROR: {e}")
             time.sleep(5)
