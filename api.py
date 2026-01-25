@@ -228,6 +228,7 @@ def run_engine_loop():
                 if not chain_df.empty:
                     live_state.max_pain = option_engine.calculate_max_pain(chain_df)
                     live_state.option_battles = option_engine.detect_strike_battles(chain_df)
+                    live_state.option_chain = chain_df.to_dict('records')
                     
                     # Boost pattern score if price is near Max Pain (The Magnet)
                     if abs(market_data.spot_price - live_state.max_pain) < 20: # Close to magnet
