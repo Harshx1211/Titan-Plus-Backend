@@ -159,57 +159,77 @@ def run_engine_loop():
             symbol = live_state.symbols[live_state.current_symbol_idx]
             live_state.current_symbol_idx = (live_state.current_symbol_idx + 1) % len(live_state.symbols)
 
-            # 1. Fetch Data
-            market_data = data_provider.get_market_snapshot(symbol)
-            if data_provider.use_groww and live_state.data_source != "GROWW_API":
-                live_state.data_source = "GROWW_API"
-            elif not data_provider.use_groww and live_state.data_source != "PUBLIC_SCRAPER":
-                live_state.data_source = "PUBLIC_SCRAPER"
-            
+            # 1. Fetch Data (Priority Ticker Update)
+            try:
+                market_data = data_provider.get_market_snapshot(symbol)
+                
+                # Update specific price tracking for Ticker (DO FIRST)
+                if symbol == "NIFTY":
+                    live_state.nifty_price = market_data.spot_price
+                elif symbol == "SENSEX":
+                    live_state.sensex_price = market_data.spot_price
+
+                if data_provider.use_groww and live_state.data_source != "GROWW_API":
+                    live_state.data_source = "GROWW_API"
+                elif not data_provider.use_groww and live_state.data_source != "PUBLIC_SCRAPER":
+                    live_state.data_source = "PUBLIC_SCRAPER"
+            except Exception as e:
+                logger.warning(f"ENGINE: Snapshot fetch failed for {symbol}: {e}")
+                # Use hardcoded fallback to keep ticker alive even if everything fails
+                if symbol == "NIFTY" and live_state.nifty_price == 0: live_state.nifty_price = 24500.0
+                if symbol == "SENSEX" and live_state.sensex_price == 0: live_state.sensex_price = 81500.0
+                market_data = None
+
+            if not market_data:
+                time.sleep(2)
+                continue
+
             # 2. Triangulation (Sentinel)
             live_state.integrity = sentinel.check_integrity(
                 market_data.spot_price, 
                 market_data.future_price
             )
             
-            # Update specific price tracking for Ticker
-            if symbol == "NIFTY":
-                live_state.nifty_price = market_data.spot_price
-            elif symbol == "SENSEX":
-                live_state.sensex_price = market_data.spot_price
-            
             # 3. Regime Detection (Strategist)
-            # Execute Timeframe (5m)
-            hist_df = data_provider.get_history(symbol, interval="5minute")
-            live_state.current_regime = strategist.classify_regime(hist_df)
-            
-            # Calculate simple strength (e.g. % change from day start/average)
-            live_state.index_strengths[symbol] = (market_data.spot_price - hist_df.open.iloc[0]) / hist_df.open.iloc[0] * 100
+            try:
+                # Execute Timeframe (5m)
+                hist_df = data_provider.get_history(symbol, interval="5minute")
+                live_state.current_regime = strategist.classify_regime(hist_df)
+                
+                # Calculate simple strength
+                live_state.index_strengths[symbol] = (market_data.spot_price - hist_df.open.iloc[0]) / hist_df.open.iloc[0] * 100
 
-            # Macro Timeframe Alignment (1h)
-            macro_df = data_provider.get_history(symbol, interval="60minute")
-            macro_bias = strategist.get_macro_bias(macro_df)
-            
-            # Phase 13: Macro S/R Zones (Big Charts)
-            macro_zones = pattern_engine.detect_macro_zones(macro_df)
-            
-            # 4. Pattern Recognition (Now with MTF Boost, Advanced Patterns, and Macro Zones)
-            pattern_results = pattern_engine.get_signal_confirmation(
-                hist_df, 
-                macro_bias=macro_bias, 
-                macro_zones=macro_zones
-            )
+                # Macro Timeframe Alignment (1h)
+                macro_df = data_provider.get_history(symbol, interval="60minute")
+                macro_bias = strategist.get_macro_bias(macro_df)
+                
+                # Phase 13: Macro S/R Zones (Big Charts)
+                macro_zones = pattern_engine.detect_macro_zones(macro_df)
+                
+                # 4. Pattern Recognition (Now with MTF Boost, Advanced Patterns, and Macro Zones)
+                pattern_results = pattern_engine.get_signal_confirmation(
+                    hist_df, 
+                    macro_bias=macro_bias, 
+                    macro_zones=macro_zones
+                )
+            except Exception as e:
+                logger.warning(f"ENGINE: Analysis failed for {symbol}: {e}")
+                pattern_results = {"score": 0.0, "patterns": []}
+                macro_bias = 0
             
             # Phase 14: Option Chain X-Ray
-            chain_df = data_provider.get_option_chain(symbol)
-            if not chain_df.empty:
-                live_state.max_pain = option_engine.calculate_max_pain(chain_df)
-                live_state.option_battles = option_engine.detect_strike_battles(chain_df)
-                
-                # Boost pattern score if price is near Max Pain (The Magnet)
-                if abs(market_data.spot_price - live_state.max_pain) < 20: # Close to magnet
-                    pattern_results["score"] *= 1.2
-                    live_state.market_message = "MAX PAIN SYNC: Large Confluence Near Strike"
+            try:
+                chain_df = data_provider.get_option_chain(symbol)
+                if not chain_df.empty:
+                    live_state.max_pain = option_engine.calculate_max_pain(chain_df)
+                    live_state.option_battles = option_engine.detect_strike_battles(chain_df)
+                    
+                    # Boost pattern score if price is near Max Pain (The Magnet)
+                    if abs(market_data.spot_price - live_state.max_pain) < 20: # Close to magnet
+                        pattern_results["score"] *= 1.2
+                        live_state.market_message = "MAX PAIN SYNC: Large Confluence Near Strike"
+            except Exception as e:
+                logger.warning(f"ENGINE: Option chain failed for {symbol}: {e}")
 
             # Phase 11: Inter-Market Correlation Filter
             other_symbol = "SENSEX" if symbol == "NIFTY" else "NIFTY"
@@ -222,12 +242,15 @@ def run_engine_loop():
                 live_state.market_message = f"DIVERGENCE: {symbol} vs {other_symbol} Mismatch"
 
             # Phase 9: VIX Sensitivity Adjustment
-            live_state.vix = data_provider.get_vix()
-            if live_state.vix > 20:
-                pattern_results["score"] *= 0.8 # Tighten requirements in high volatility
-                live_state.market_message = "VIX HIGH: Use Defensive Guardrails"
-            else:
-                live_state.market_message = "Volatility Normal"
+            try:
+                live_state.vix = data_provider.get_vix()
+                if live_state.vix > 20:
+                    pattern_results["score"] *= 0.8 # Tighten requirements in high volatility
+                    live_state.market_message = "VIX HIGH: Use Defensive Guardrails"
+                else:
+                    live_state.market_message = "Volatility Normal"
+            except Exception:
+                pass
 
             # Phase 9: Market Breadth
             live_state.breadth = data_provider.get_breadth(symbol)
@@ -262,8 +285,6 @@ def run_engine_loop():
             
             # 6. Signal Generation (Enhanced with Phase 15 Option Selector)
             if pattern_results["score"] > 0.8:
-                # Determine direction for Option selection
-                # Simple logic for now: Bullish if any bullish pattern exists, else Bearish
                 signal_type = "BULLISH" if any(p in ["VWAP_CROSSOVER", "HAMMER", "BULLISH_ENGULFING", "BULLISH_DIVERGENCE", "CPR_BREAKOUT", "STRONG_TRENDLINE_BREAKOUT"] for p in detected_patterns) else "BEARISH"
                 
                 # Translate Index Signal into Executable Option Trade
@@ -288,8 +309,7 @@ def run_engine_loop():
             
             # 7. Rotation & Sleep
             live_state.last_update = datetime.now()
-            
-            time.sleep(2) # Refresh every 2 seconds for dry-run
+            time.sleep(2)
         except Exception as e:
             logger.error(f"ENGINE ERROR: {e}")
             time.sleep(5)

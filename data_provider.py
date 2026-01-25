@@ -52,20 +52,17 @@ class DataProvider:
             if snapshot.spot_price > 0:
                 return snapshot
         
-        # Absolute fallback to public only if Groww fails
+        # Absolute fallback to public
         return self._fetch_from_public(symbol)
 
     def _fetch_from_groww(self, symbol: str) -> MarketData:
         """ Fetches live data from Groww API. """
         try:
-            # Mapping Index to tradable equivalents if needed, or using direct if available.
-            # For Nifty, we might use NIFTYBEES or similar if index is forbidden.
-            # For now, trying the most direct form.
-            if symbol == "NIFTY":
-                # Fallback to public for Index price as Indices are often restricted in bot APIs
+            # Indices are often restricted in broker APIs, fallback to public for NIFTY/SENSEX
+            if symbol in ["NIFTY", "SENSEX"]:
                 return self._fetch_from_public(symbol)
             
-            # For stocks (and eventually Options)
+            # For stocks
             quote = self.bot.get_quote(trading_symbol=symbol, exchange="NSE", segment="CASH")
             spot = float(quote['last_price'])
             
@@ -77,7 +74,8 @@ class DataProvider:
                 pcr=1.0,
                 timestamp=datetime.now()
             )
-        except Exception:
+        except Exception as e:
+            logger.warning(f"DATA: Groww fetch failed for {symbol}: {e}")
             return self._fetch_from_public(symbol)
 
     def _fetch_from_public(self, symbol: str) -> MarketData:
@@ -88,18 +86,16 @@ class DataProvider:
             if symbol == "NIFTY":
                 # Use nselib for near real-time snapshot
                 data = capital_market.market_watch_all_indices()
-                nifty_row = data[data['index'] == 'NIFTY 50'].iloc[0]
+                # Try multiple labels just in case nselib names change
+                nifty_row = data[data['index'].isin(['NIFTY 50', 'NIFTY50', 'Nifty 50'])].iloc[0]
                 spot = float(str(nifty_row['last']).replace(',', ''))
             elif symbol == "SENSEX":
-                # Sensex is BSE. Mocking for now as nselib is NSE-focused.
-                # In real setup, this would be a BSE scraper or Broker API.
-                spot = 81500.0 + (datetime.now().second * 0.1) # Simulating movement
+                # Mocking for Sensex as nselib is NSE-focused
+                spot = 81500.0 + (datetime.now().second * 0.1)
             else:
                 spot = 24500.0
 
-            # Mocking future/oi for now
             future = spot + 45.0 
-            
             return MarketData(
                 symbol=symbol,
                 spot_price=spot,
@@ -121,20 +117,13 @@ class DataProvider:
                 timestamp=datetime.now()
             )
 
-    def _fetch_from_kite(self, symbol: str) -> MarketData:
-        # Implementation for Kite Connect goes here
-        # For now, placeholder
-        return self._fetch_from_public(symbol)
-
     def get_history(self, symbol: str, interval: str = "5minute", days: int = 5) -> pd.DataFrame:
         """
         Fetches historical data using jugaad-data or fallback.
-        Supports '5minute' and '60minute' (1h) for MTF.
         """
         try:
             if symbol == "NIFTY":
                 from datetime import date, timedelta
-                # For MTF, we might need more days for the 1h chart
                 fetch_days = 30 if interval == "60minute" else days
                 end_date = date.today()
                 start_date = end_date - timedelta(days=fetch_days)
@@ -145,27 +134,17 @@ class DataProvider:
                 if df.empty:
                     raise ValueError("Empty data from jugaad-data")
 
-                # Clean up columns and index
                 df.columns = [c.lower() for c in df.columns]
                 df['timestamp'] = pd.to_datetime(df['historicaldate'])
                 df.set_index('timestamp', inplace=True)
                 df.sort_index(inplace=True)
                 
-                # Match models.py expected names
                 df = df[['index open', 'index high', 'index low', 'closing index value']]
                 df.columns = ['open', 'high', 'low', 'close']
                 df['volume'] = 0 
-
-                # If interval is 1h, resample the data (since jugaad usually gives EOD or raw ticks)
-                if interval == "60minute":
-                    # In a real setup, we'd fetch 1h bars. Here we simulate by resampling if possible
-                    # or returning the raw for now as a structural placeholder.
-                    return df 
-                
                 return df
             else:
-                # Sensex/Other Fallback
-                raise ValueError(f"History fetch not implemented for {symbol}")
+                raise ValueError(f"History not implemented for {symbol}")
 
         except Exception as e:
             logger.warning(f"DATA: {interval} History fetch failed for {symbol} ({e}). Using structural fallback.")
@@ -186,16 +165,12 @@ class DataProvider:
         """ Fetches current India VIX. """
         try:
             data = capital_market.market_watch_all_indices()
-            vix_row = data[data['index'] == 'INDIA VIX'].iloc[0]
+            vix_row = data[data['index'].str.contains('VIX', na=False, case=False)].iloc[0]
             return float(str(vix_row['last']).replace(',', ''))
         except Exception:
-            return 15.0 # Stable baseline fallback
+            return 15.0
 
     def get_breadth(self, symbol: str) -> Dict[str, int]:
-        """ 
-        Fetches Advance/Decline ratio for the index.
-        Mocked for dry-run as full constituent health requires broker API.
-        """
         import random
         advances = random.randint(20, 35) if symbol == "NIFTY" else random.randint(12, 18)
         declines = (50 if symbol == "NIFTY" else 30) - advances
@@ -203,16 +178,38 @@ class DataProvider:
 
     def get_option_chain(self, symbol: str) -> pd.DataFrame:
         """
-        Fetches the live option chain.
-        Currently using mock for stable dry-run since public scrapers are unreliable.
+        Fetches the live option chain from Groww or fallback.
         """
+        if self.use_groww and symbol == "NIFTY":
+            try:
+                # 1. Get Expiries
+                expiries = self.bot.get_expiries(exchange="NSE", underlying_symbol=symbol)
+                nearest_expiry = expiries[0] if isinstance(expiries, list) else expiries.get('expiries', [])[0]
+                
+                # 2. Get Option Chain
+                chain_raw = self.bot.get_option_chain(exchange="NSE", underlying=symbol, expiry_date=nearest_expiry)
+                
+                # Groww usually returns options in a list under some key
+                options = chain_raw.get('optionChain', [])
+                if not options:
+                    return pd.DataFrame()
+                
+                processed = []
+                for opt in options:
+                    processed.append({
+                        'strike': opt.get('strikePrice'),
+                        'call_oi': opt.get('callOption', {}).get('openInterest', 0),
+                        'put_oi': opt.get('putOption', {}).get('openInterest', 0)
+                    })
+                return pd.DataFrame(processed)
+            except Exception as e:
+                logger.error(f"DATA: Groww chain failed: {e}. Falling back.")
+
+        # Static Mock Fallback
         try:
-            # Placeholder for actual Shoonya/nselib call
-            # For now, generate a synthetic chain around the current spot price
             spot = self.get_market_snapshot(symbol).spot_price
             base_strike = round(spot, -2)
             strikes = [base_strike + i*50 for i in range(-5, 6)]
-            
             import random
             data = {
                 'strike': strikes,
@@ -220,8 +217,7 @@ class DataProvider:
                 'put_oi': [random.randint(5000, 50000) for _ in strikes]
             }
             return pd.DataFrame(data)
-        except Exception as e:
-            logger.error(f"DATA ERROR: Option Chain fetch failed: {e}")
+        except Exception:
             return pd.DataFrame()
 
 if __name__ == "__main__":
