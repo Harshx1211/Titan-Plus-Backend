@@ -49,8 +49,10 @@ class LiveState:
         self.index_strengths: Dict[str, float] = {"NIFTY": 0.0, "SENSEX": 0.0}
         self.max_pain = 0.0
         self.option_battles = []
-        self.nifty_price = 0.0
-        self.sensex_price = 0.0
+        # Fallback to last known Friday close prices
+        self.nifty_price = 25048.65
+        self.sensex_price = 81537.70
+        self.option_chain = []
 
 live_state = LiveState()
 
@@ -163,12 +165,13 @@ def run_engine_loop():
 
             # 1. Fetch Data (Priority Ticker Update)
             try:
+                # Use a very short timeout for ticker updates
                 market_data = data_provider.get_market_snapshot(symbol)
                 
                 # Update specific price tracking for Ticker (DO FIRST)
-                if symbol == "NIFTY":
+                if symbol == "NIFTY" and market_data.spot_price > 0:
                     live_state.nifty_price = market_data.spot_price
-                elif symbol == "SENSEX":
+                elif symbol == "SENSEX" and market_data.spot_price > 0:
                     live_state.sensex_price = market_data.spot_price
 
                 if data_provider.use_groww and live_state.data_source != "GROWW_API":

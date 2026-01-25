@@ -90,8 +90,8 @@ class DataProvider:
                 nifty_row = data[data['index'].isin(['NIFTY 50', 'NIFTY50', 'Nifty 50'])].iloc[0]
                 spot = float(str(nifty_row['last']).replace(',', ''))
             elif symbol == "SENSEX":
-                # Mocking for Sensex as nselib is NSE-focused
-                spot = 81500.0 + (datetime.now().second * 0.1)
+                # Mocking for Sensex as nselib is NSE-focused. Using Friday Close.
+                spot = 81537.70 + (datetime.now().second * 0.01)
             else:
                 spot = 24500.0
 
