@@ -17,6 +17,13 @@ class RiskEngine:
         self.last_loss_time: float = 0
         self.win_streak = 0
         self.max_index_exposure = 2 # Max correlated signals
+
+    def reset(self):
+        """Clears loss history and win streaks (Emergency Reset)."""
+        self.last_loss_time = 0
+        self.win_streak = 0
+        self.active_positions = []
+        logger.info("RISK: Psychological and streak history cleared.")
         
     def check_meta_bucket(self, index_symbol: str) -> bool:
         """
