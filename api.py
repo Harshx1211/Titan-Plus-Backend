@@ -77,10 +77,11 @@ class SystemState(BaseModel):
     breadth: Dict[str, int]
     market_message: str
     data_source: str
-    max_pain: float
-    option_battles: List[Dict]
     nifty_price: float
     sensex_price: float
+    max_pain: float
+    option_battles: List[Dict]
+    option_chain: List[Dict]
 
 @app.get("/health")
 async def health_check():
@@ -108,7 +109,8 @@ async def get_state():
         max_pain=live_state.max_pain,
         option_battles=live_state.option_battles,
         nifty_price=live_state.nifty_price,
-        sensex_price=live_state.sensex_price
+        sensex_price=live_state.sensex_price,
+        option_chain=live_state.option_chain
     )
 
 @app.post("/signals/intent")
