@@ -61,6 +61,8 @@ brain = BrainEngine()
 option_engine = OptionEngine()
 db = DatabaseManager()
 data_provider = DataProvider()
+if data_provider.use_groww:
+    live_state.data_source = "GROWW_API"
 
 class SystemState(BaseModel):
     regime: Regime
@@ -129,6 +131,15 @@ async def post_feedback(signal_id: int, outcome: str, override: bool = False):
     # Logic to log feedback and retrain brain
     return {"status": "success"}
 
+@app.post("/reset")
+async def reset_system():
+    """Emergency Reset: Clears recovery mode and active signals."""
+    risk_engine.reset()
+    live_state.active_signals = []
+    live_state.market_message = "SYSTEM RESET: Lockout Cleared"
+    logger.info("API: Emergency System Reset Triggered")
+    return {"status": "system_reset_complete"}
+
 def run_engine_loop():
     """
     The background loop that fetches data and runs the Titan Plus logic.
@@ -144,6 +155,10 @@ def run_engine_loop():
 
             # 1. Fetch Data
             market_data = data_provider.get_market_snapshot(symbol)
+            if data_provider.use_groww and live_state.data_source != "GROWW_API":
+                live_state.data_source = "GROWW_API"
+            elif not data_provider.use_groww and live_state.data_source != "PUBLIC_SCRAPER":
+                live_state.data_source = "PUBLIC_SCRAPER"
             
             # 2. Triangulation (Sentinel)
             live_state.integrity = sentinel.check_integrity(

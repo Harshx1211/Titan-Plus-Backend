@@ -11,6 +11,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from growwapi import GrowwAPI
+
+load_dotenv()
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -18,30 +22,62 @@ logger = logging.getLogger(__name__)
 class DataProvider:
     """
     Modular data provider to fetch market data from various sources.
-    Defaults to NSElib/Jugaad-Data for dry-run, can be upgraded to Kite Connect.
+    Supports Groww API (Primary) and Public scrapers (Fallback).
     """
     def __init__(self):
-        self.kite_api_key = os.getenv("KITE_API_KEY")
-        self.kite_api_secret = os.getenv("KITE_API_SECRET")
-        self.use_kite = self.kite_api_key and self.kite_api_secret
-        
-        if self.use_kite:
-            logger.info("DATA: Initializing Kite Connect...")
-            # Placeholder for Kite initialization
-            # from kiteconnect import KiteConnect
-            # self.kite = KiteConnect(api_key=self.kite_api_key)
+        self.groww_key = os.getenv("GROWW_API_KEY")
+        self.groww_secret = os.getenv("GROWW_API_SECRET")
+        self.use_groww = False
+        self.bot = None
+
+        if self.groww_key and self.groww_secret:
+            try:
+                logger.info("DATA: Initializing Groww API...")
+                token = GrowwAPI.get_access_token(api_key=self.groww_key, secret=self.groww_secret)
+                self.bot = GrowwAPI(token=token)
+                self.use_groww = True
+                logger.info("DATA: Groww API Connected Successfully.")
+            except Exception as e:
+                logger.error(f"DATA: Groww Connection Failed: {e}. Falling back to scrapers.")
         else:
-            logger.warning("DATA: kite credentials missing. Falling back to public scrapers (Latency expected).")
+            logger.warning("DATA: Groww credentials missing. Using public scrapers.")
 
     def get_market_snapshot(self, symbol: str) -> MarketData:
         """
         Fetches current spot, future, and OI for a given symbol.
+        Always prioritizes Groww for Pure Live Data.
         """
-        if self.use_kite:
-            # High-speed WebSocket or Quote fetch
-            return self._fetch_from_kite(symbol)
-        else:
-            # Public scraper fallback
+        if self.use_groww:
+            snapshot = self._fetch_from_groww(symbol)
+            if snapshot.spot_price > 0:
+                return snapshot
+        
+        # Absolute fallback to public only if Groww fails
+        return self._fetch_from_public(symbol)
+
+    def _fetch_from_groww(self, symbol: str) -> MarketData:
+        """ Fetches live data from Groww API. """
+        try:
+            # Mapping Index to tradable equivalents if needed, or using direct if available.
+            # For Nifty, we might use NIFTYBEES or similar if index is forbidden.
+            # For now, trying the most direct form.
+            if symbol == "NIFTY":
+                # Fallback to public for Index price as Indices are often restricted in bot APIs
+                return self._fetch_from_public(symbol)
+            
+            # For stocks (and eventually Options)
+            quote = self.bot.get_quote(trading_symbol=symbol, exchange="NSE", segment="CASH")
+            spot = float(quote['last_price'])
+            
+            return MarketData(
+                symbol=symbol,
+                spot_price=spot,
+                future_price=spot + 45.0, # Approximate
+                oi=0, # Cash segment enrichment needed for FNO
+                pcr=1.0,
+                timestamp=datetime.now()
+            )
+        except Exception:
             return self._fetch_from_public(symbol)
 
     def _fetch_from_public(self, symbol: str) -> MarketData:
