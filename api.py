@@ -49,6 +49,8 @@ class LiveState:
         self.index_strengths: Dict[str, float] = {"NIFTY": 0.0, "SENSEX": 0.0}
         self.max_pain = 0.0
         self.option_battles = []
+        self.nifty_price = 0.0
+        self.sensex_price = 0.0
 
 live_state = LiveState()
 
@@ -77,6 +79,8 @@ class SystemState(BaseModel):
     data_source: str
     max_pain: float
     option_battles: List[Dict]
+    nifty_price: float
+    sensex_price: float
 
 @app.get("/health")
 async def health_check():
@@ -102,7 +106,9 @@ async def get_state():
         market_message=live_state.market_message,
         data_source=live_state.data_source,
         max_pain=live_state.max_pain,
-        option_battles=live_state.option_battles
+        option_battles=live_state.option_battles,
+        nifty_price=live_state.nifty_price,
+        sensex_price=live_state.sensex_price
     )
 
 @app.post("/signals/intent")
@@ -165,6 +171,12 @@ def run_engine_loop():
                 market_data.spot_price, 
                 market_data.future_price
             )
+            
+            # Update specific price tracking for Ticker
+            if symbol == "NIFTY":
+                live_state.nifty_price = market_data.spot_price
+            elif symbol == "SENSEX":
+                live_state.sensex_price = market_data.spot_price
             
             # 3. Regime Detection (Strategist)
             # Execute Timeframe (5m)
