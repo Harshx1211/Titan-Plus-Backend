@@ -12,6 +12,50 @@ class OptionEngine:
     """
     def __init__(self):
         self.last_max_pain: float = 0.0
+        self.risk_free_rate = 0.07 
+        
+    def calculate_gex(self, chain_df: pd.DataFrame, spot: float) -> Dict:
+        """
+        [v8.8] Estimates Net Gamma Exposure (GEX).
+        GEX = Gamma * Open Interest.
+        Helps identify the 'Gamma Flip' zone where market behavior changes.
+        """
+        if chain_df.empty: return {"net_gex": 0, "gex_bias": 0}
+        
+        # Simplified Black-Scholes Gamma approximation for ATM options
+        # Gamma = N'(d1) / (S * sigma * sqrt(T))
+        # Since we don't have exact IV/T here, we use a relative proxy:
+        # Distance from Spot weighting.
+        
+        net_gex = 0
+        gex_data = []
+        
+        for _, row in chain_df.iterrows():
+            strike = row['strike']
+            dist = abs(strike - spot)
+            if dist > 300: continue # Only ATM matter for Gamma
+            
+            # Distance weight (Inverse proportional to spot distance)
+            weight = 1 / (1 + (dist/50)**2) 
+            
+            call_oi = row.get('call_oi', 0)
+            put_oi = row.get('put_oi', 0)
+            
+            # Net GEX: Call Gamma is (+) and Put Gamma is (+) for the long side.
+            # However, Market Makers are typically SHORT the retail-heavy side.
+            # If Calls > Puts, MM are short gamma -> Volatility increase.
+            # Simplified GEX proxy: (Call_OI * weight) - (Put_OI * weight)
+            strike_gex = (call_oi - put_oi) * weight
+            net_gex += strike_gex
+            gex_data.append({"strike": strike, "gex": strike_gex})
+            
+        gex_bias = max(-1.0, min(1.0, net_gex / 500000)) # Normalized bias
+        
+        return {
+            "net_gex": net_gex,
+            "gex_bias": gex_bias,
+            "gamma_flip_zone": spot if abs(gex_bias) < 0.1 else None
+        }
 
     def calculate_max_pain(self, chain_df: pd.DataFrame) -> float:
         """

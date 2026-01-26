@@ -89,6 +89,11 @@ class DataProvider:
                 # Try multiple labels just in case nselib names change
                 nifty_row = data[data['index'].isin(['NIFTY 50', 'NIFTY50', 'Nifty 50'])].iloc[0]
                 spot = float(str(nifty_row['last']).replace(',', ''))
+            elif symbol == "BANKNIFTY":
+                # Use nselib for BankNifty snapshot
+                data = capital_market.market_watch_all_indices()
+                bank_row = data[data['index'].isin(['NIFTY BANK', 'Nifty Bank'])].iloc[0]
+                spot = float(str(bank_row['last']).replace(',', ''))
             elif symbol == "SENSEX":
                 # Mocking for Sensex as nselib is NSE-focused. Using Friday Close.
                 spot = 81537.70 + (datetime.now().second * 0.01)

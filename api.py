@@ -13,6 +13,7 @@ from sentinel import DataSentinel
 from strategist import MarketStrategist
 from risk_engine import RiskEngine
 from brain_engine import BrainEngine
+from evolution_engine import EvolutionEngine
 from pattern_engine import PatternEngine
 from option_engine import OptionEngine
 from database import DatabaseManager
@@ -62,7 +63,9 @@ class LiveState:
         self.resets_today = 0
         self.last_reset_time = datetime.now()
         self.beta_history = {"OI": [], "BASIS": []}
-        self.iv_skew = {"NIFTY": 1.0, "SENSEX": 1.0}
+        self.iv_skew = {"NIFTY": 1.0, "SENSEX": 1.0, "BANKNIFTY": 1.0}
+        self.gex_bias = {"NIFTY": 0.0, "SENSEX": 0.0}
+        self.sector_synergy = 1.0 
         self.prev_oi = {"NIFTY": 0, "SENSEX": 0}
         self.prev_spot = 0.0
 
@@ -75,6 +78,7 @@ strategist = MarketStrategist()
 pattern_engine = PatternEngine()
 risk_engine = RiskEngine()
 brain = BrainEngine()
+evolution_engine = EvolutionEngine(brain)
 option_engine = OptionEngine()
 db = DatabaseManager()
 data_provider = DataProvider()
@@ -161,6 +165,12 @@ async def get_session_audit(date: Optional[str] = None):
 async def post_feedback(signal_id: int, outcome: str, override: bool = False):
     # Logic to log feedback and retrain brain
     return {"status": "success"}
+
+@app.post("/evolve")
+async def trigger_evolution(date: Optional[str] = None):
+    """Triggers the Overnight Learning (Evolution) process."""
+    result = evolution_engine.evolve_session(date)
+    return {"status": "evolution_complete", "details": result}
 
 @app.post("/reset")
 async def reset_system():
@@ -270,23 +280,39 @@ def run_engine_loop():
                     live_state.option_battles[symbol] = option_engine.detect_strike_battles(chain_df)
                     live_state.option_chains[symbol] = chain_df.to_dict('records')
                     
-                    # Boost pattern score if price is near Max Pain (The Magnet)
-                    if abs(market_data.spot_price - sym_max_pain) < 20: # Close to magnet
+                    # Phase 30: Gamma Exposure (GEX) Tracking
+                    gex_data = option_engine.calculate_gex(chain_df, market_data.spot_price)
+                    live_state.gex_bias[symbol] = gex_data["gex_bias"]
+                    
+                    # Confluence: Max Pain + GEX Bias
+                    sym_max_pain = live_state.max_pain[symbol]
+                    if abs(market_data.spot_price - sym_max_pain) < 20:
                         pattern_results["score"] *= 1.2
-                        live_state.market_message = f"MAX PAIN SYNC [{symbol}]: Large Confluence Near Strike"
+                        live_state.market_message = f"GEX/PAIN CONFLUENCE [{symbol}]: Institutional Gravity"
             except Exception as e:
                 logger.warning(f"ENGINE: Option chain failed for {symbol}: {e}")
                 chain_df, is_synthetic = pd.DataFrame(), True
 
-            # Phase 11: Inter-Market Correlation Filter
-            other_symbol = "SENSEX" if symbol == "NIFTY" else "NIFTY"
-            other_strength = live_state.index_strengths.get(other_symbol, 0.0)
-            curr_strength = live_state.index_strengths[symbol]
-            
-            # If they are moving in opposite directions, it's a weak signal
-            if (curr_strength > 0 and other_strength < -0.1) or (curr_strength < 0 and other_strength > 0.1):
-                pattern_results["score"] *= 0.6
-                live_state.market_message = f"DIVERGENCE: {symbol} vs {other_symbol} Mismatch"
+            # Phase 11/30: Inter-Market Synergy (BankNifty vs Nifty)
+            try:
+                if symbol in ["NIFTY", "BANKNIFTY"]:
+                    other_sym = "BANKNIFTY" if symbol == "NIFTY" else "NIFTY"
+                    other_data = data_provider.get_market_snapshot(other_sym)
+                    
+                    # Simplified Sector Synergy Score
+                    # If both are up/down together, synergy = High
+                    # If diverging, synergy = Veto
+                    my_delta = (market_data.spot_price - market_data.future_price + 45) # Proxy to daily delta
+                    other_delta = (other_data.spot_price - other_data.future_price + 45)
+                    
+                    is_aligned = (my_delta > 0 and other_delta > 0) or (my_delta < 0 and other_delta < 0)
+                    live_state.sector_synergy = 1.3 if is_aligned else 0.4
+                    
+                    if not is_aligned:
+                        pattern_results["score"] *= 0.6
+                        live_state.market_message = f"SECTOR DIVERGENCE: {symbol} vs {other_sym} Conflict"
+            except Exception:
+                pass
 
             # Phase 9/27/28: VIX & IV Skew Tracking (Unified)
             try:
@@ -431,9 +457,10 @@ def run_engine_loop():
             # THE v8 DOUBLE-HANDSHAKE
             if not is_passive:
                 if pattern_results["score"] > 0.8 and applied_boost > 0.8:
-                    # Both agree -> High conviction
-                    pattern_results["score"] *= 1.2 # Synergy boost
-                    live_state.market_message = "ORTHOGONAL CONFIRMATION: Dual Edge Active"
+                    # Phase 30: Synergy Boost
+                    if live_state.sector_synergy > 1.0:
+                        pattern_results["score"] *= 1.1 # Synergy boost
+                    live_state.market_message = "SYNERGY CONFIRMATION: Dual Edge Active"
                 elif pattern_results["score"] < 0.6 and applied_boost > 0.8:
                     # Brain sees it but chart is ugly -> Mute
                     applied_boost *= 0.5

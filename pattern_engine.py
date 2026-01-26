@@ -125,6 +125,30 @@ class PatternEngine:
 
         return patterns
 
+    def detect_liquidity_sweeps(self, df: pd.DataFrame) -> List[str]:
+        """
+        [v8.8] Detects Swing Failure Patterns (SFP).
+        A high-conviction institutional 'stop-run' pattern.
+        """
+        if len(df) < 30: return []
+        
+        patterns = []
+        last = df.iloc[-1]
+        
+        # 1. Bullish SFP (Sweep of a recent low)
+        recent_low = df.low.iloc[-25:-1].min()
+        if last.low < recent_low and last.close > recent_low:
+            # Price spiked below low but closed back above
+            patterns.append("LIQUIDITY_SWEEP_BULLISH")
+            
+        # 2. Bearish SFP (Sweep of a recent high)
+        recent_high = df.high.iloc[-25:-1].max()
+        if last.high > recent_high and last.close < recent_high:
+            # Price spiked above high but closed back below
+            patterns.append("LIQUIDITY_SWEEP_BEARISH")
+            
+        return patterns
+
     def detect_macro_zones(self, df_macro: pd.DataFrame) -> List[float]:
         """
         Scans a large timeframe (e.g. 1h for 30 days) to find 
@@ -164,9 +188,16 @@ class PatternEngine:
         current_vol = df.volume.iloc[-1] if 'volume' in df.columns else 0
         vol_boost = 1.2 if current_vol > vol_ma else 1.0
         
+        # Phase 30: Institutional Liquidity Sweep (SFP)
+        sweeps = self.detect_liquidity_sweeps(df)
+        all_patterns += sweeps
+        sweep_boost = 1.0
+        if sweeps:
+            sweep_boost = 1.5
+            
         # MTF Alignment Boost
         mtf_boost = 1.0
-        if "BULLISH_ENGULFING" in all_patterns or "HAMMER" in all_patterns or "VWAP_CROSSOVER" in all_patterns:
+        if "BULLISH_ENGULFING" in all_patterns or "HAMMER" in all_patterns or "VWAP_CROSSOVER" in all_patterns or "LIQUIDITY_SWEEP_BULLISH" in all_patterns:
             if macro_bias == "BULLISH": mtf_boost = 1.3
             elif macro_bias == "BEARISH": mtf_boost = 0.5 
 
@@ -179,7 +210,7 @@ class PatternEngine:
                 all_patterns.append("HISTORIC_ZONE_ALIGNMENT")
                 break
 
-        score = (len(csticks) * 0.2 + len(structs) * 0.4) * vol_boost * mtf_boost * zone_boost
+        score = (len(csticks) * 0.2 + len(structs) * 0.4 + len(sweeps) * 0.5) * vol_boost * mtf_boost * zone_boost * sweep_boost
         
         return {
             "score": min(score, 1.0),

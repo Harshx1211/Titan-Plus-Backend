@@ -21,22 +21,56 @@ class BrainEngine:
     def __init__(self, stage: int = 1):
         self.stage = stage # 1: Passive, 2: Shadow, 3: Filter
         self.cloud_db = SupabaseManager()
+        self.state_file = "brain_state.json"
+        
+        # Default Weights
         self.feature_weights: Dict[str, float] = {
             "ADX": 1.0, "BASIS_RES": 1.2, "PCR": 1.0, "OI_RES": 1.5
         }
-        self.feature_history: Dict[str, List[float]] = {f: [] for f in self.feature_weights}
-        self.raw_history: Dict[str, List[float]] = {
-            "OI_RAW": [], "BASIS_RAW": [], "PCR_RAW": [], "ADX_RAW": []
-        }
-        self.window_size = 500
         
-        # 5. Regime-Scoped Authority
+        # Default Authority
         self.authority: Dict[str, float] = {
             "TRENDING": 1.0,
             "SIDEWAYS": 1.0,
             "UNCERTAIN": 1.0
         }
+        
+        # Load saved state if exists (Overnight learning persistence)
+        self.load_state()
+        self.feature_history: Dict[str, List[float]] = {f: [] for f in self.feature_weights}
+        self.raw_history: Dict[str, List[float]] = {
+            "OI_RAW": [], "BASIS_RAW": [], "PCR_RAW": [], "ADX_RAW": []
+        }
+        self.window_size = 500
         self.decisions: Dict[str, DecisionObject] = {}
+
+    def save_state(self):
+        """Saves current weights and authority to disk."""
+        try:
+            state = {
+                "feature_weights": self.feature_weights,
+                "authority": self.authority,
+                "logic_version": self.LOGIC_VERSION,
+                "updated_at": datetime.now().isoformat()
+            }
+            with open(self.state_file, "w") as f:
+                json.dump(state, f, indent=4)
+            logger.info("BRAIN: State saved successfully.")
+        except Exception as e:
+            logger.error(f"BRAIN: Failed to save state: {e}")
+
+    def load_state(self):
+        """Loads weights and authority from disk."""
+        import os
+        if os.path.exists(self.state_file):
+            try:
+                with open(self.state_file, "r") as f:
+                    state = json.load(f)
+                    self.feature_weights = state.get("feature_weights", self.feature_weights)
+                    self.authority = state.get("authority", self.authority)
+                logger.info("BRAIN: State loaded from disk.")
+            except Exception as e:
+                logger.error(f"BRAIN: Failed to load state: {e}")
 
     def update_raw_history(self, features: Dict[str, float]):
         """
@@ -226,6 +260,10 @@ class BrainEngine:
             })
             
             self.cloud_db.log_snapshot(features_to_log, 1 if outcome is True else 0, self.stage)
+            
+            # Phase 29: Save state after authority update
+            self.save_state()
+            
             logger.info(f"BRAIN: {decision_id} Finalized. Auth[{decision_obj.regime.value}]: {self.authority.get(decision_obj.regime.value, 0):.2f}")
             
         except Exception as e:
