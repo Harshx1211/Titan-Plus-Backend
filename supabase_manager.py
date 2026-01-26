@@ -19,21 +19,27 @@ class SupabaseManager:
     Handles persistent logging of Signal Intents and Brain Snapshots.
     """
     def __init__(self):
+        self.supabase: Optional[Client] = None
         url: str = os.getenv("SUPABASE_URL")
         key: str = os.getenv("SUPABASE_KEY")
+        
         if not url or not key:
             logger.error("SUPABASE: URL or KEY missing in environment variables.")
-        
-        self.supabase: Client = create_client(url, key)
-        
+        else:
+            try:
+                self.supabase = create_client(url, key)
+                logger.info("SUPABASE: Connection Established.")
+            except Exception as e:
+                logger.error(f"SUPABASE: Client Initialization Failed: {e}")
+
         # Async Logging Infrastructure (Hardened)
-        self.queue = queue.Queue(maxsize=10000) # Prevents memory time-bomb
+        self.queue = queue.Queue(maxsize=10000)
         self.seq_id = 0
         self.seq_lock = threading.Lock()
         
         self.worker_thread = threading.Thread(target=self._worker, daemon=True)
         self.worker_thread.start()
-        logger.info("SUPABASE: Hardened async worker initialized (Maxsize: 10000).")
+        logger.info("SUPABASE: Hardened async worker initialized.")
 
     def _get_next_seq(self) -> int:
         with self.seq_lock:
@@ -45,6 +51,11 @@ class SupabaseManager:
         while True:
             try:
                 task_type, data = self.queue.get()
+                if not self.supabase:
+                    logger.warning("SUPABASE WORKER: No active client. Dropping task.")
+                    self.queue.task_done()
+                    continue
+
                 if task_type == "intent":
                     self.supabase.table("signal_ledger").insert(data).execute()
                 elif task_type == "outcome":
@@ -55,20 +66,7 @@ class SupabaseManager:
                 self.queue.task_done()
             except Exception as e:
                 logger.error(f"SUPABASE WORKER ERROR: {e}")
-                time.sleep(5) # Delay before retry on critical failure
-
-    def _ensure_tables(self):
-        """
-        Note: Supabase tables should be created via SQL Editor in the Dashboard.
-        This provides the schema reference for the user.
-        """
-        # TABLE: signal_ledger
-        # Columns: signal_id (text), symbol (text), regime (text), confidence (text), 
-        #          state (text), value (text), patterns (text), timestamp (timestamptz)
-        
-        # TABLE: brain_snapshots
-        # Columns: features (jsonb), outcome (int4), stage (int4), timestamp (timestamptz)
-        pass
+                time.sleep(5)
 
     def log_intent(self, signal_data: Dict):
         """Logs initial signal intent to Supabase."""
@@ -86,20 +84,13 @@ class SupabaseManager:
                 "patterns": signal_data.get('patterns', ""),
                 "decision_id": signal_data.get('decision_id', "")
             }
-            try:
-                if self.queue.full():
-                    try:
-                        self.queue.get_nowait() # Drop oldest
-                        logger.warning("SUPABASE: Queue FULL. Dropped OLDEST log to make room for NEWEST.")
-                    except queue.Empty: pass
-                self.queue.put(("intent", data), block=False)
-            except Exception as e:
-                logger.error(f"SUPABASE ASYNC ERROR: Failed to queue intent: {e}")
+            if self.queue.full():
+                self.queue.get_nowait()
+            self.queue.put(("intent", data), block=False)
         except Exception as e:
             logger.error(f"SUPABASE CRITICAL: {e}")
 
     def log_outcome(self, signal_id: str, outcome: str, persistence: bool = False):
-        """Logs outcome to Supabase."""
         try:
             data = {
                 "signal_id": signal_id,
@@ -110,44 +101,18 @@ class SupabaseManager:
                 "value": outcome,
                 "persistence": persistence
             }
-            try:
-                if self.queue.full():
-                    try:
-                        self.queue.get_nowait() # Drop oldest
-                        logger.warning("SUPABASE: Queue FULL. Dropped OLDEST outcome log.")
-                    except queue.Empty: pass
-                self.queue.put(("outcome", data), block=False)
-            except Exception as e:
-                logger.error(f"SUPABASE ASYNC ERROR: Failed to queue outcome: {e}")
-        except Exception as e:
-            logger.error(f"SUPABASE CRITICAL: {e}")
-
-    def log_snapshot(self, features: Dict, outcome: Optional[int] = None, stage: int = 1):
-        """Logs brain snapshots for training."""
-        try:
-            data = {
-                "features": features,
-                "outcome": outcome,
-                "stage": stage,
-                "timestamp": datetime.now().isoformat(),
-                "timestamp_ns": time.time_ns(),
-                "seq_id": self._get_next_seq(),
-            }
-            try:
-                if self.queue.full():
-                    try:
-                        self.queue.get_nowait() # Drop oldest
-                        logger.warning("SUPABASE: Queue FULL. Dropped OLDEST snapshot.")
-                    except queue.Empty: pass
-                self.queue.put(("snapshot", data), block=False)
-            except Exception as e:
-                logger.error(f"SUPABASE ASYNC ERROR: Failed to queue brain snapshot: {e}")
+            if self.queue.full():
+                self.queue.get_nowait()
+            self.queue.put(("outcome", data), block=False)
         except Exception as e:
             logger.error(f"SUPABASE CRITICAL: {e}")
 
     def get_accuracy_report(self) -> Dict:
         """Calculates accuracy from cloud ledger."""
         try:
+            if not self.supabase:
+                return {"win_rate": 0.0, "total_trades": 0, "status": "OFFLINE"}
+            
             response = self.supabase.table("signal_ledger").select("value").eq("state", "OUTCOME").execute()
             df = pd.DataFrame(response.data)
             
@@ -168,6 +133,8 @@ class SupabaseManager:
     def get_history(self, limit: int = 50) -> List[Dict]:
         """Fetches latest signals from cloud."""
         try:
+            if not self.supabase:
+                return []
             response = self.supabase.table("signal_ledger").select("*").order("timestamp", desc=True).limit(limit).execute()
             return response.data
         except Exception as e:
@@ -175,6 +142,5 @@ class SupabaseManager:
             return []
 
 if __name__ == "__main__":
-    # Test connection
     sm = SupabaseManager()
-    print("Supabase Connection Established")
+    print("Supabase Initialization Triggered")

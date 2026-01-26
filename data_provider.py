@@ -176,6 +176,31 @@ class DataProvider:
         declines = (50 if symbol == "NIFTY" else 30) - advances
         return {"advances": advances, "declines": declines}
 
+    def get_iv_skew(self, symbol: str) -> float:
+        """
+        Calculates the IV Skew (Sentiment Bias).
+        Formula: Put OI / Call OI at 1-strike OTM.
+        """
+        try:
+            chain_df = self.get_option_chain(symbol)
+            if chain_df.empty: return 1.0
+            
+            spot = self.get_market_snapshot(symbol).spot_price
+            step = 50 if symbol == "NIFTY" else 100
+            
+            otm_call_strike = round((spot + step) / step) * step
+            otm_put_strike = round((spot - step) / step) * step
+            
+            call_oi = chain_df[chain_df['strike'] == otm_call_strike]['call_oi'].sum()
+            put_oi = chain_df[chain_df['strike'] == otm_put_strike]['put_oi'].sum()
+            
+            if call_oi > 0:
+                skew = put_oi / call_oi
+                return round(max(0.5, min(2.5, skew)), 2)
+            return 1.0
+        except Exception:
+            return 1.0
+
     def get_option_chain(self, symbol: str) -> pd.DataFrame:
         """
         Fetches the live option chain from Groww or fallback.

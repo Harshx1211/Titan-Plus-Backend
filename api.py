@@ -63,6 +63,8 @@ class LiveState:
         self.last_reset_time = datetime.now()
         self.beta_history = {"OI": [], "BASIS": []}
         self.iv_skew = {"NIFTY": 1.0, "SENSEX": 1.0}
+        self.prev_oi = {"NIFTY": 0, "SENSEX": 0}
+        self.prev_spot = 0.0
 
 live_state = LiveState()
 session_auditor = SessionAuditor()
@@ -199,8 +201,8 @@ def run_engine_loop():
             except Exception as e:
                 logger.warning(f"ENGINE: Snapshot fetch failed for {symbol}: {e}")
                 # Use hardcoded fallback to keep ticker alive even if everything fails
-                if symbol == "NIFTY" and live_state.nifty_price == 0: live_state.nifty_price = 24500.0
-                if symbol == "SENSEX" and live_state.sensex_price == 0: live_state.sensex_price = 81500.0
+                if symbol == "NIFTY" and live_state.prices["NIFTY"] == 0: live_state.prices["NIFTY"] = 24500.0
+                if symbol == "SENSEX" and live_state.prices["SENSEX"] == 0: live_state.prices["SENSEX"] = 81500.0
                 market_data = None
 
             if not market_data:
@@ -451,6 +453,7 @@ def run_engine_loop():
 
             # 6. Signal Generation
             if pattern_results["score"] > 0.8:
+                detected_patterns = pattern_results.get("patterns", [])
                 signal_type = "BULLISH" if any(p in ["VWAP_CROSSOVER", "HAMMER", "BULLISH_ENGULFING", "CPR_BREAKOUT"] for p in detected_patterns) else "BEARISH"
                 
                 # Guardrail: Avoid duplicate active signals
