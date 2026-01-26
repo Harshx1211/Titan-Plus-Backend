@@ -4,7 +4,7 @@ import sqlite3
 import json
 from supabase_manager import SupabaseManager
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from models import TradeSignal, SignalConfidence, DecisionObject, Regime
 
 # Configure logging

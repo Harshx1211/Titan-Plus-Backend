@@ -1,7 +1,7 @@
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import uvicorn
 import pandas as pd
 import logging
@@ -278,7 +278,8 @@ def run_engine_loop():
                 live_state.current_regime = strategist.classify_regime(hist_df)
                 
                 # Calculate simple strength
-                live_state.index_strengths[symbol] = (market_data.spot_price - hist_df.open.iloc[0]) / hist_df.open.iloc[0] * 100
+                curr_strength = (market_data.spot_price - hist_df.open.iloc[0]) / hist_df.open.iloc[0] * 100
+                live_state.index_strengths[symbol] = curr_strength
 
                 # Macro Timeframe Alignment (1h)
                 macro_df = data_provider.get_history(symbol, interval="60minute")
