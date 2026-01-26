@@ -215,6 +215,16 @@ def run_engine_loop():
                 market_data.future_price,
                 vix=live_state.vix
             )
+
+            # Phase 25: Spot-Futures Basis Stability Validation
+            basis = abs(market_data.future_price - market_data.spot_price) / market_data.spot_price * 100
+            basis_ma = pd.Series(live_state.beta_history.get("BASIS", [])[-20:]).mean() if live_state.beta_history.get("BASIS", []) else basis
+            basis_volatility = abs(basis - basis_ma)
+            
+            # If basis is unstable (> 0.05% deviation from mean), skip signal generation to avoid strike mis-selection
+            is_basis_unstable = basis_volatility > 0.05
+            if is_basis_unstable:
+                live_state.market_message = f"SPOT-FUTURES DISLOCATION: Basis Unstable ({basis_volatility:.3f}%)"
             
             # 3. Regime Detection (Strategist)
             try:
@@ -458,12 +468,18 @@ def run_engine_loop():
                 
                 # Guardrail: Avoid duplicate active signals
                 if not any(s.symbol == symbol and s.is_live for s in live_state.active_signals):
+                    # Phase 25: Basis Stability Check for Strike Selection
+                    if is_basis_unstable:
+                        logger.warning(f"SIGNAL VETO: Basis Unstable for {symbol}. Selection Suspended.")
+                        continue
+
                     opt_trade = option_engine.find_executable_option(
                         symbol, 
                         market_data.spot_price, 
                         signal_type,
                         macro_zones=macro_zones,
-                        is_momentum_dominant=is_momentum_dominant
+                        is_momentum_dominant=is_momentum_dominant,
+                        days_to_expiry=5 # Placeholder for Phase 26 automated expiry fetch
                     )
                     
                     new_signal = TradeSignal(
