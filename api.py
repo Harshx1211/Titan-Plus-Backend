@@ -70,6 +70,10 @@ class LiveState:
         self.sector_synergy = 1.0 
         self.prev_oi = {"NIFTY": 0, "SENSEX": 0}
         self.prev_spot = 0.0
+        
+        # [v9.4] Epistemic Transparency: Digital Stream of Consciousness
+        self.thought_logs = [] # List of { "timestamp": iso, "type": "VETO|LEARN|SIGNAL", "msg": "..." }
+        self.is_learning = False
 
 live_state = LiveState()
 session_auditor = SessionAuditor()
@@ -107,6 +111,10 @@ class SystemState(BaseModel):
     option_chains: Dict[str, List[Dict]]
     iv_skew: Dict[str, float]
     resets_today: int
+    gex_bias: Dict[str, float]
+    sector_synergy: float
+    thought_logs: List[Dict]
+    is_learning: bool
 
 @app.get("/health")
 async def health_check():
@@ -136,7 +144,11 @@ async def get_state():
         option_battles=live_state.option_battles,
         option_chains=live_state.option_chains,
         iv_skew=live_state.iv_skew,
-        resets_today=live_state.resets_today
+        resets_today=live_state.resets_today,
+        gex_bias=live_state.gex_bias,
+        sector_synergy=live_state.sector_synergy,
+        thought_logs=live_state.thought_logs[-10:], # Last 10 thoughts
+        is_learning=live_state.is_learning
     )
 
 @app.post("/signals/intent")
@@ -173,8 +185,20 @@ async def post_feedback(signal_id: int, outcome: str, override: bool = False):
 @app.post("/evolve")
 async def trigger_evolution(date: Optional[str] = None):
     """Triggers the Overnight Learning (Evolution) process."""
-    result = evolution_engine.evolve_session(date)
-    return {"status": "evolution_complete", "details": result}
+    live_state.is_learning = True
+    live_state.thought_logs.append({"timestamp": datetime.now().isoformat(), "type": "LEARN", "msg": f"Starting Overnight Evolutionary Audit for {date or 'today'}..."})
+    try:
+        result = evolution_engine.evolve_session(date)
+        
+        # Add specific learning results to thoughts
+        for feat, rep in result.get("reputation_updates", {}).items():
+            if rep != 1.0: # Only if it changed or is non-neutral
+                live_state.thought_logs.append({"timestamp": datetime.now().isoformat(), "type": "LEARN", "msg": f"DNA Calibration: {feat} reputation adjusted to {rep:.2f}"})
+        
+        live_state.thought_logs.append({"timestamp": datetime.now().isoformat(), "type": "LEARN", "msg": f"Session Audit Complete. Governor Status: {result.get('governor_status', 'ACTIVE')}"})
+        return {"status": "evolution_complete", "details": result}
+    finally:
+        live_state.is_learning = False
 
 @app.post("/reset")
 async def reset_system():
@@ -412,12 +436,16 @@ def run_engine_loop():
                 brain_features = {"OI_RES": 0, "PCR": 1.0, "BASIS_RES": 0, "ADX": 25.0}
             
             # v8.1: Stateless Inference (Compute-only unless pattern detects)
-            decision_id = brain.generate_decision(
+            decision_id, thoughts = brain.generate_decision(
                 brain_features, 
                 regime=live_state.current_regime, 
                 is_commit=False,
-                pattern_score=pattern_results["score"]
+                pattern_score=pattern_results["score"],
+                iv_skew=live_state.iv_skew.get(symbol, 1.0)
             )
+            
+            for t in thoughts:
+                live_state.thought_logs.append({"timestamp": datetime.now().isoformat(), "type": "INFERENCE", "msg": t})
 
             # v8.1: Shape-Shifting Sentinel (Fix Audit v8.1 #2)
             # Monitor Mean, Std, and Kurtosis. Rate-limited to 1 reset/session.
@@ -436,12 +464,17 @@ def run_engine_loop():
 
             # Calculate Brain Boost (Phase 28: Now Signal-Aware if intent is likely)
             likely_intent = "BULLISH" if pattern_results["score"] > 0.6 and curr_strength > 0 else ("BEARISH" if pattern_results["score"] > 0.6 else None)
-            confidence_boost = brain.get_confidence_boost(
+            confidence_boost, boost_thoughts = brain.get_confidence_boost(
                 brain_features, 
                 regime=live_state.current_regime.value,
                 signal_intent=likely_intent,
                 iv_skew=live_state.iv_skew.get(symbol, 1.0)
             )
+            
+            for t in boost_thoughts:
+                # Avoid duplicates from generate_decision
+                if t not in thoughts:
+                    live_state.thought_logs.append({"timestamp": datetime.now().isoformat(), "type": "VETO" if "VETO" in t else "ANALYSIS", "msg": t})
             
             # v8.5/8.6 Epistemic Overhaul: Unified IV logic in BrainEngine.
             

@@ -118,7 +118,7 @@ class BrainEngine:
         }
 
     def get_confidence_boost(self, features: Dict[str, float], regime: str = "UNCERTAIN", 
-                               signal_intent: Optional[str] = None, iv_skew: float = 1.0) -> float:
+                               signal_intent: Optional[str] = None, iv_skew: float = 1.0) -> Tuple[float, List[str]]:
         """
         [v8.6] Stateless confidence score with Signal-Aware IV Intelligence.
         """
@@ -164,40 +164,51 @@ class BrainEngine:
         score = weighted_score
         boost = min(max(score / total_weight, 0.0), 1.0) if total_weight > 0 else 1.0
         
+        thoughts = []
+        if boost > 0.8:
+            thoughts.append(f"High conviction ({boost:.2f}) across features: {list(norm_features.keys())}")
+        elif boost < 0.5:
+            thoughts.append(f"Low feature synergy ({boost:.2f}). Market noise levels elevated.")
+
         # Phase 28: Signal-Aware IV Intelligence (Meta-Awareness)
         if signal_intent and iv_skew > 1.3:
             # High Put Skew = Fear.
             if signal_intent == "BULLISH":
                 # Fear in Bullish context is a veto (Fighting the wall)
                 boost *= 0.5
+                thoughts.append(f"VETO: High Put Skew ({iv_skew:.2f}) detected while attempting Bullish entry. Fighting fear wall.")
             elif signal_intent == "BEARISH":
                 # Fear in Bearish context is confirmation (Asymmetric momentm)
                 boost = min(1.0, boost * 1.2)
+                thoughts.append(f"BOOST: High Put Skew ({iv_skew:.2f}) confirms Bearish momentum.")
 
         # Authority Veto (Non-Boosting)
         regime_auth = self.authority.get(regime, 1.0)
         if regime_auth < 0.5:
             boost *= 0.5
+            thoughts.append(f"VETO: Regime Authority ({regime_auth:.2f}) too low for {regime}. System in caution mode.")
             
-        return boost
+        return boost, thoughts
 
-    def generate_decision(self, features: Dict[str, float], regime: Regime, is_commit: bool = False, pattern_score: float = 0.0) -> Optional[str]:
+    def generate_decision(self, features: Dict[str, float], regime: Regime, is_commit: bool = False, pattern_score: float = 0.0, iv_skew: float = 1.0) -> Tuple[Optional[str], List[str]]:
         """
-        [v8.1] Stateless Inference. Identity is only granted if Pattern Score is serious.
-        (Fix Audit v8.1 #4)
+        [v8.1] Stateless Inference. Returns (decision_id, thoughts).
         """
         # Identity Guard: Only generate identity for signals or high-conviction pattern detections
         if not is_commit and pattern_score < 0.7:
-            return None 
+            return None, ["Technical pattern score too low for high-conviction decision."]
 
         import uuid
         decision_id = str(uuid.uuid4())[:8]
         
-        boost = self.get_confidence_boost(features, regime.value)
+        boost, thoughts = self.get_confidence_boost(features, regime.value, iv_skew=iv_skew)
         threshold_map = {"TRENDING": 0.60, "SIDEWAYS": 0.80, "UNCERTAIN": 0.90}
         threshold = threshold_map.get(regime.value, 0.75)
         
         decision_str = "APPROVE" if boost > threshold else "BLOCK"
+        
+        if decision_str == "BLOCK":
+            thoughts.append(f"Blocked: Confidence {boost:.2f} below regime threshold {threshold:.2f}.")
         
         self.decisions[decision_id] = DecisionObject(
             decision_id=decision_id,
@@ -208,7 +219,7 @@ class BrainEngine:
             confidence_boost=boost,
             decision=decision_str
         )
-        return decision_id
+        return decision_id, thoughts
 
     def log_snapshot(self, decision_id: str, outcome: Optional[bool] = None, performance: Dict[str, float] = {}, freeze_authority: bool = False):
         """
