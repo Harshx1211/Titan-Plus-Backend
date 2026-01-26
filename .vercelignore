@@ -1,7 +1,17 @@
-# Institutional Grade Ignores
-dashboard/
-venv/
-node_modules/
+# Institutional Grade Ignores: PURGE ROOT FUNCTIONS
+main.py
+api.py
+requirements.txt
+Procfile
+runtime.txt
+*.py
+*.json
+!dashboard/
+!vercel.json
+
+# Standard Ignores
+dashboard/venv/
+dashboard/node_modules/
 .git/
 .vercel/
 .next/
@@ -14,7 +24,7 @@ brain_state.json
 skirmisher_state.json
 sidecar_state.json
 
-# Simulation & Test Scripts (Heavy)
+# Simulation & Test Scripts
 dry_run_*.py
 monthly_simulation.py
 weekly_simulation.py
