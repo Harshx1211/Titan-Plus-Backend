@@ -1,7 +1,7 @@
-from api import app
-from api import uvicorn
+import uvicorn
 import os
+from api import app
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8004))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)

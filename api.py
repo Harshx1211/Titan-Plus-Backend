@@ -20,6 +20,7 @@ from session_auditor import SessionAuditor
 from data_provider import DataProvider
 from trap_hunter import TrapHunter
 from skirmisher import Skirmisher
+from database import DatabaseManager
 import asyncio
 import threading
 import os
