@@ -19,6 +19,7 @@ from option_engine import OptionEngine
 from database import DatabaseManager
 from session_auditor import SessionAuditor
 from data_provider import DataProvider
+from trap_hunter import TrapHunter
 import asyncio
 import threading
 import os
@@ -78,6 +79,7 @@ strategist = MarketStrategist()
 pattern_engine = PatternEngine()
 risk_engine = RiskEngine()
 brain = BrainEngine()
+trap_hunter = TrapHunter() # [v9.1] Sidecar Module
 evolution_engine = EvolutionEngine(brain)
 option_engine = OptionEngine()
 db = DatabaseManager()
@@ -523,6 +525,44 @@ def run_engine_loop():
             if pattern_results["score"] > 0.8:
                 detected_patterns = pattern_results.get("patterns", [])
                 signal_type = "BULLISH" if any(p in ["VWAP_CROSSOVER", "HAMMER", "BULLISH_ENGULFING", "CPR_BREAKOUT"] for p in detected_patterns) else "BEARISH"
+                
+                # ... (Existing Logic) ...
+            
+            else:
+                # [v9.1] Sidecar Route for Vetoed Signals
+                # If score was blocked (e.g. Brain Veto), check for Trap Hunter
+                detected_patterns = pattern_results.get("patterns", [])
+                if detected_patterns: # Only if technicals existed but were approved
+                    signal_type = "BULLISH" if any(p in ["VWAP_CROSSOVER", "HAMMER", "BULLISH_ENGULFING", "CPR_BREAKOUT"] for p in detected_patterns) else "BEARISH"
+                    
+                    sidecar_decision = trap_hunter.check_trigger(
+                        veto_reason=live_state.market_message,
+                        signal_type=signal_type,
+                        df=market_df
+                    )
+                    
+                    if sidecar_decision["action"] == "EXECUTE":
+                         # Log Trap Hunter Execution
+                         trade_id = trap_hunter.log_execution(
+                             trade_type="BEARISH_REVERSAL" if signal_type == "BULLISH" else "BULLISH_REVERSAL",
+                             entry_price=market_data.spot_price,
+                             reason=sidecar_decision["reason"]
+                         )
+                         live_state.active_signals.append(TradeSignal(
+                             symbol=symbol,
+                             entry_price=market_data.spot_price,
+                             stop_loss=30, # Strict Sidecar SL
+                             target=100,
+                             confidence=SignalConfidence.MEDIUM,
+                             regime=Regime.SIDEWAYS, # Traps usually in sideways/confused interaction
+                             reasoning=f"SIDECAR: {sidecar_decision['reason']}",
+                             timestamp=datetime.now(),
+                             decision_id=trade_id,
+                             logic_version="v9.1_SIDECAR",
+                             spread_at_entry=0.0,
+                             option_symbol=f"SIDECAR_{symbol}" # Placeholder
+                         ))
+                         logger.warning(f"SIDECAR EXECUTE: {sidecar_decision['reason']}")
                 
                 # Guardrail: Avoid duplicate active signals
                 if not any(s.symbol == symbol and s.is_live for s in live_state.active_signals):
