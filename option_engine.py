@@ -77,39 +77,75 @@ class OptionEngine:
         if pcr < 0.7: return "BEARISH_STRENGTH"
         return "NEUTRAL"
 
-    def find_executable_option(self, symbol: str, spot: float, signal_type: str) -> Dict:
+    def find_executable_option(self, symbol: str, spot: float, signal_type: str, 
+                                macro_zones: List[float] = [], 
+                                is_momentum_dominant: bool = False) -> Dict:
         """
-        Translates an Index Signal into the "Optimal Balance" Option Strike.
-        Prioritizes ATM for precision but shifts if premiums are too high.
+        [v8.2] Translates an Index Signal into the "Optimal Balance" Option Strike.
+        Now with Adaptive Dynamic Target Engine.
         """
         strike_step = 50 if symbol == "NIFTY" else 100
         atm_strike = int(round(spot / strike_step) * strike_step)
         
         # Determine the "Optimal" Strike
-        # If bullish, we want CE. If bearish, we want PE.
-        # We prefer ATM because Delta is ~0.5 (perfect for prediction).
-        # However, we add a 'Cost Guardrail'.
         import random
         base_premium = random.randint(110, 190) # Simulated current premium
         
-        # Rule of Thumb: If ATM Premium > 250, shift one strike Out-of-The-Money (OTM)
-        # to preserve capital while keeping Delta > 0.35.
         target_strike = atm_strike
         if base_premium > 250:
             if signal_type == "BULLISH": target_strike += strike_step
             else: target_strike -= strike_step
-            base_premium *= 0.7 # OTM options are cheaper
+            base_premium *= 0.7 
         
         option_type = "CE" if signal_type == "BULLISH" else "PE"
+        
+        # --- DYNAMIC TARGET ENGINE ---
+        # 1. Baseline Target
+        target_pct = 0.30 
+        selection_logic = "ATM_OPTIMAL" if target_strike == atm_strike else "COST_BALANCED_OTM"
+
+        # 2. Zone-Aware Modification
+        # Find distance to next logical macro zone
+        if macro_zones:
+            if signal_type == "BULLISH":
+                next_zones = [z for z in macro_zones if z > spot]
+                if next_zones:
+                    dist_to_zone = (next_zones[0] - spot) / spot
+                    # If zone is close (< 0.5%), tighten target to ensures banking
+                    if dist_to_zone < 0.005: 
+                        target_pct = 0.15
+                        selection_logic += "_ZONE_CAPPED"
+                    # If zone is far (> 1.5%), expand target
+                    elif dist_to_zone > 0.015:
+                        target_pct = 0.45
+                        selection_logic += "_ZONE_EXPANDED"
+            else: # BEARISH
+                next_zones = [z for z in macro_zones if z < spot]
+                if next_zones:
+                    dist_to_zone = (spot - next_zones[-1]) / spot
+                    if dist_to_zone < 0.005:
+                        target_pct = 0.15
+                        selection_logic += "_ZONE_CAPPED"
+                    elif dist_to_zone > 0.015:
+                        target_pct = 0.45
+                        selection_logic += "_ZONE_EXPANDED"
+
+        # 3. Momentum Stretching
+        if is_momentum_dominant:
+            target_pct += 0.15 # Massive expansion for structural breakouts
+            selection_logic += "_MOMENTUM_BOOST"
+
+        # Final Cap (Risk Guardrail)
+        target_pct = max(0.10, min(0.65, target_pct))
         
         return {
             "option_symbol": f"{symbol} {target_strike} {option_type}",
             "strike": target_strike,
             "option_type": option_type,
             "premium_entry": float(base_premium),
-            "premium_sl": round(base_premium * 0.88, 1), # Tight 12% institutional SL
-            "premium_target": round(base_premium * 1.30, 1), # 30% Target for 1:2.5 RR
-            "selection_logic": "ATM_OPTIMAL" if target_strike == atm_strike else "COST_BALANCED_OTM"
+            "premium_sl": round(base_premium * 0.88, 1), # 12% SL is Fixed (Capital Protection)
+            "premium_target": round(base_premium * (1 + target_pct), 1),
+            "selection_logic": selection_logic
         }
 
 if __name__ == "__main__":

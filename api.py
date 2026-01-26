@@ -458,7 +458,13 @@ def run_engine_loop():
                 
                 # Guardrail: Avoid duplicate active signals
                 if not any(s.symbol == symbol and s.is_live for s in live_state.active_signals):
-                    opt_trade = option_engine.find_executable_option(symbol, market_data.spot_price, signal_type)
+                    opt_trade = option_engine.find_executable_option(
+                        symbol, 
+                        market_data.spot_price, 
+                        signal_type,
+                        macro_zones=macro_zones,
+                        is_momentum_dominant=is_momentum_dominant
+                    )
                     
                     new_signal = TradeSignal(
                         symbol=symbol,
