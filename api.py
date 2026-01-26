@@ -641,8 +641,6 @@ def run_engine_loop():
                          ))
                          logger.warning(f"SIDECAR EXECUTE: {sidecar_decision['reason']}")
                 
-                         logger.warning(f"SIDECAR EXECUTE: {sidecar_decision['reason']}")
-                
                 # [v9.2] The Skirmisher (Sandboxed Scalper)
                 # If everything else is silent (Brain Blocking, Sidecar Blocking, or just no signal)
                 # AND we are in SIDEWAYS regime, check for Activity Scalps.
