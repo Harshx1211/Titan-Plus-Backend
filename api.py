@@ -216,9 +216,15 @@ def run_engine_loop():
                 vix=live_state.vix
             )
 
-            # Phase 25: Spot-Futures Basis Stability Validation
+            # Phase 25/26: Spot-Futures Basis Stability Validation
             basis = abs(market_data.future_price - market_data.spot_price) / market_data.spot_price * 100
-            basis_ma = pd.Series(live_state.beta_history.get("BASIS", [])[-20:]).mean() if live_state.beta_history.get("BASIS", []) else basis
+            
+            # Phase 26 Fix: Correctly update basis history
+            live_state.beta_history["BASIS"].append(basis)
+            if len(live_state.beta_history["BASIS"]) > 200:
+                live_state.beta_history["BASIS"].pop(0)
+
+            basis_ma = pd.Series(live_state.beta_history["BASIS"]).mean()
             basis_volatility = abs(basis - basis_ma)
             
             # If basis is unstable (> 0.05% deviation from mean), skip signal generation to avoid strike mis-selection
@@ -230,6 +236,13 @@ def run_engine_loop():
             try:
                 # Execute Timeframe (5m)
                 hist_df = data_provider.get_history(symbol, interval="5minute")
+                
+                # Phase 26: Cache Indicators once per loop
+                adx_df = hist_df.ta.adx()
+                adx_val = adx_df['ADX_14'].iloc[-1] if adx_df is not None and not adx_df.empty else 25.0
+                atr_df = hist_df.ta.atr()
+                atr_val = atr_df.iloc[-1] if atr_df is not None and not atr_df.empty else 0.0
+
                 live_state.current_regime = strategist.classify_regime(hist_df)
                 
                 # Calculate simple strength
@@ -349,8 +362,13 @@ def run_engine_loop():
                     "OI_RES": oi_res,
                     "PCR": market_data.pcr,
                     "BASIS_RES": basis_res,
-                    "ADX": hist_df.ta.adx()['ADX_14'].iloc[-1] if 'ADX_14' in hist_df.ta.adx() else 25.0
+                    "ADX": adx_val
                 }
+                
+                # Phase 26 Fix: Sync history with Brain features
+                live_state.beta_history["OI"].append(oi_res)
+                if len(live_state.beta_history["OI"]) > 200:
+                    live_state.beta_history["OI"].pop(0)
             except Exception as e:
                 logger.error(f"FEATURE ERROR: {e}")
                 brain_features = {"OI_RES": 0, "PCR": 1.0, "BASIS_RES": 0, "ADX": 25.0}
@@ -478,9 +496,14 @@ def run_engine_loop():
                         market_data.spot_price, 
                         signal_type,
                         macro_zones=macro_zones,
-                        is_momentum_dominant=is_momentum_dominant,
-                        days_to_expiry=5 # Placeholder for Phase 26 automated expiry fetch
+                        is_momentum_dominant=is_dominant,
+                        days_to_expiry=5,
+                        chain_df=chain_df # Pass chain for real premiums
                     )
+                    
+                    if opt_trade.get("rejection_reasons"):
+                        logger.warning(f"SIGNAL REJECTED: {opt_trade['rejection_reasons']}")
+                        continue
                     
                     new_signal = TradeSignal(
                         symbol=symbol,

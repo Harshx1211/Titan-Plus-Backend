@@ -81,41 +81,86 @@ class OptionEngine:
                                 macro_zones: List[float] = [], 
                                 is_momentum_dominant: bool = False,
                                 days_to_expiry: int = 5,
-                                max_spread_pct: float = 0.05) -> Dict:
+                                max_spread_pct: float = 0.05,
+                                chain_df: pd.DataFrame = None) -> Dict:
         """
-        [v8.3] Institutional Strike Selection Engine.
-        Prioritizes ATM Liquidity Bias and Gamma Responsiveness.
+        [v8.4] Institutional Strike Selection Engine.
+        Prioritizes Liquidity Dominance, real-time premiums, and spread enforcement.
         """
+        rejection_reasons = []
+        if chain_df is None or chain_df.empty:
+            rejection_reasons.append("MISSING_CHAIN_DATA")
+            return {"rejection_reasons": rejection_reasons}
+
         strike_step = 50 if symbol == "NIFTY" else 100
         atm_strike = int(round(spot / strike_step) * strike_step)
         
-        # Determine the "Optimal" Strike (ATM Focus for Gamma/Liquidity)
-        import random
-        base_premium = random.randint(110, 190) 
-        
-        # Liquidity & Spread Constraint (Placeholder for live check)
-        # In live execution, we reject if (Ask-Bid)/Bid > max_spread_pct
-        
-        target_strike = atm_strike
-        # Premium Risk Band Constraint (₹250 Ceiling)
-        if base_premium > 250:
-            if signal_type == "BULLISH": target_strike += strike_step
-            else: target_strike -= strike_step
-            base_premium *= 0.7 
-        
+        # 1. Define Selection Pool (ATM, ATM-1, ATM+1)
+        pool_strikes = [atm_strike - strike_step, atm_strike, atm_strike + strike_step]
         option_type = "CE" if signal_type == "BULLISH" else "PE"
         
+        candidates = []
+        for strike in pool_strikes:
+            row = chain_df[chain_df['strike'] == strike]
+            if row.empty: continue
+            
+            row = row.iloc[0]
+            ltp = row.get(f'{option_type.lower()}_ltp', 0)
+            oi = row.get(f'{option_type.lower()}_oi', 0)
+            vol = row.get(f'{option_type.lower()}_vol', 0)
+            bid = row.get(f'{option_type.lower()}_bid', 0)
+            ask = row.get(f'{option_type.lower()}_ask', 0)
+            
+            # Spread Enforcement
+            spread = (ask - bid) / bid if bid > 0 else 0
+            if spread > max_spread_pct:
+                continue # Disqualified
+                
+            # Liquidity Score (Product of Depth and Activity)
+            liquidity_score = oi * max(1, vol)
+            candidates.append({
+                "strike": strike,
+                "ltp": ltp,
+                "score": liquidity_score,
+                "spread": spread
+            })
+            
+        if not candidates:
+            rejection_reasons.append("LIQUIDITY_VETO_SPREAD_TOO_HIGH")
+            return {"rejection_reasons": rejection_reasons}
+            
+        # 2. Strike Competition: Pick the Liquidity-Dominant candidate
+        best_candidate = sorted(candidates, key=lambda x: x['score'], reverse=True)[0]
+        selected_strike = best_candidate['strike']
+        base_premium = best_candidate['ltp']
+        
+        if base_premium <= 0:
+            rejection_reasons.append("ZERO_LTP_DETECTED")
+            return {"rejection_reasons": rejection_reasons}
+
+        # 3. Premium Risk Band Constraint (₹250 Ceiling)
+        # Note: In institutional setups, we don't just shift strike because of price,
+        # but for this prototype, we maintain the cap for capital preservation.
+        selection_logic = "LIQUIDITY_DOMINANT" if selected_strike == atm_strike else "LIQUIDITY_DOMINANT_ADJ"
+        if base_premium > 250:
+            # Shift one step further OTM if too expensive
+            otm_step = strike_step if signal_type == "BULLISH" else -strike_step
+            selected_strike += otm_step
+            # Re-fetch LTP for the new strike
+            new_row = chain_df[chain_df['strike'] == selected_strike]
+            if not new_row.empty:
+                base_premium = new_row.iloc[0].get(f'{option_type.lower()}_ltp', base_premium * 0.7)
+                selection_logic = "CAPITAL_PRESERVATION_SHIFT"
+
         # --- DYNAMIC TARGET ENGINE (Adaptive Alpha) ---
         target_pct = 0.30 
-        selection_logic = "ATM_LIQUIDITY" if target_strike == atm_strike else "PREMIUM_BAND_ADJUSTED"
 
-        # 1. Expiry Sensitivity Check (Gamma Protection)
+        # 4. Expiry Sensitivity Check (Gamma Protection)
         if days_to_expiry <= 1:
-            # Near expiry, Gamma is explosive. We tighten SL and Target for scalp-like precision.
             target_pct *= 0.7
             selection_logic += "_EXP_SENSITIVE"
 
-        # 2. Zone-Aware Modification
+        # 5. Zone-Aware Modification
         if macro_zones:
             if signal_type == "BULLISH":
                 next_zones = [z for z in macro_zones if z > spot]
@@ -138,7 +183,7 @@ class OptionEngine:
                         target_pct = 0.45
                         selection_logic += "_ZONE_EXPANDED"
 
-        # 3. Momentum Stretching
+        # 6. Momentum Stretching
         if is_momentum_dominant:
             target_pct += 0.15 
             selection_logic += "_MOM_BOOST"
@@ -147,14 +192,15 @@ class OptionEngine:
         target_pct = max(0.10, min(0.65, target_pct))
         
         return {
-            "option_symbol": f"{symbol} {target_strike} {option_type}",
-            "strike": target_strike,
+            "option_symbol": f"{symbol} {selected_strike} {option_type}",
+            "strike": selected_strike,
             "option_type": option_type,
             "premium_entry": float(base_premium),
             "premium_sl": round(base_premium * 0.88, 1), 
             "premium_target": round(base_premium * (1 + target_pct), 1),
             "selection_logic": selection_logic,
-            "days_to_expiry": days_to_expiry
+            "days_to_expiry": days_to_expiry,
+            "rejection_reasons": []
         }
 
 if __name__ == "__main__":

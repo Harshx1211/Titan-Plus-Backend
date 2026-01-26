@@ -221,10 +221,20 @@ class DataProvider:
                 
                 processed = []
                 for opt in options:
+                    call = opt.get('callOption', {})
+                    put = opt.get('putOption', {})
                     processed.append({
                         'strike': opt.get('strikePrice'),
-                        'call_oi': opt.get('callOption', {}).get('openInterest', 0),
-                        'put_oi': opt.get('putOption', {}).get('openInterest', 0)
+                        'call_oi': call.get('openInterest', 0),
+                        'put_oi': put.get('openInterest', 0),
+                        'call_ltp': call.get('lastPrice', 0),
+                        'put_ltp': put.get('lastPrice', 0),
+                        'call_vol': call.get('volume', 0),
+                        'put_vol': put.get('volume', 0),
+                        'call_bid': call.get('bidPrice', 0),
+                        'call_ask': call.get('askPrice', 0),
+                        'put_bid': put.get('bidPrice', 0),
+                        'put_ask': put.get('askPrice', 0)
                     })
                 return pd.DataFrame(processed)
             except Exception as e:
@@ -233,16 +243,25 @@ class DataProvider:
         # Static Mock Fallback
         try:
             spot = self.get_market_snapshot(symbol).spot_price
-            base_strike = round(spot, -2)
+            base_strike = round(spot / 50) * 50
             strikes = [base_strike + i*50 for i in range(-5, 6)]
             import random
             data = {
                 'strike': strikes,
                 'call_oi': [random.randint(5000, 50000) for _ in strikes],
-                'put_oi': [random.randint(5000, 50000) for _ in strikes]
+                'put_oi': [random.randint(5000, 50000) for _ in strikes],
+                'call_ltp': [random.randint(80, 250) for _ in strikes],
+                'put_ltp': [random.randint(80, 250) for _ in strikes],
+                'call_vol': [random.randint(10000, 100000) for _ in strikes],
+                'put_vol': [random.randint(10000, 100000) for _ in strikes],
+                'call_bid': [150.0] * len(strikes),
+                'call_ask': [152.0] * len(strikes),
+                'put_bid': [150.0] * len(strikes),
+                'put_ask': [152.0] * len(strikes)
             }
             return pd.DataFrame(data)
-        except Exception:
+        except Exception as e:
+            logger.error(f"DATA: Fallback chain failed: {e}")
             return pd.DataFrame()
 
 if __name__ == "__main__":
