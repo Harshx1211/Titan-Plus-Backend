@@ -6,7 +6,7 @@ import uvicorn
 import pandas as pd
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 import pandas_ta as ta
 from models import TradeSignal, Regime, SignalConfidence, DivergenceType
 from sentinel import DataSentinel
@@ -46,7 +46,7 @@ class LiveState:
         self.current_regime = Regime.UNCERTAIN
         self.integrity = DivergenceType.NONE
         self.active_signals = []
-        self.last_update = datetime.now()
+        self.last_update = datetime.now(timezone.utc)
         self.symbols = ["NIFTY", "SENSEX"]
         self.current_symbol_idx = 0
         self.vix = 15.0
@@ -122,7 +122,7 @@ async def health_check():
     return {
         "status": "active",
         "engine": "Titan Plus",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "cloud_memory": "Supabase Linked"
     }
 
@@ -186,16 +186,16 @@ async def post_feedback(signal_id: int, outcome: str, override: bool = False):
 async def trigger_evolution(date: Optional[str] = None):
     """Triggers the Overnight Learning (Evolution) process."""
     live_state.is_learning = True
-    live_state.thought_logs.append({"timestamp": datetime.now().isoformat(), "type": "LEARN", "msg": f"Starting Overnight Evolutionary Audit for {date or 'today'}..."})
+    live_state.thought_logs.append({"timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "type": "LEARN", "msg": f"Starting Overnight Evolutionary Audit for {date or 'today'}..."})
     try:
         result = evolution_engine.evolve_session(date)
         
         # Add specific learning results to thoughts
         for feat, rep in result.get("reputation_updates", {}).items():
             if rep != 1.0: # Only if it changed or is non-neutral
-                live_state.thought_logs.append({"timestamp": datetime.now().isoformat(), "type": "LEARN", "msg": f"DNA Calibration: {feat} reputation adjusted to {rep:.2f}"})
+                live_state.thought_logs.append({"timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "type": "LEARN", "msg": f"DNA Calibration: {feat} reputation adjusted to {rep:.2f}"})
         
-        live_state.thought_logs.append({"timestamp": datetime.now().isoformat(), "type": "LEARN", "msg": f"Session Audit Complete. Governor Status: {result.get('governor_status', 'ACTIVE')}"})
+        live_state.thought_logs.append({"timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "type": "LEARN", "msg": f"Session Audit Complete. Governor Status: {result.get('governor_status', 'ACTIVE')}"})
         return {"status": "evolution_complete", "details": result}
     finally:
         live_state.is_learning = False
@@ -449,7 +449,7 @@ def run_engine_loop():
             )
             
             for t in thoughts:
-                live_state.thought_logs.append({"timestamp": datetime.now().isoformat(), "type": "INFERENCE", "msg": t})
+                live_state.thought_logs.append({"timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "type": "INFERENCE", "msg": t})
 
             # v8.1: Shape-Shifting Sentinel (Fix Audit v8.1 #2)
             # Monitor Mean, Std, and Kurtosis. Rate-limited to 1 reset/session.
@@ -478,7 +478,7 @@ def run_engine_loop():
             for t in boost_thoughts:
                 # Avoid duplicates from generate_decision
                 if t not in thoughts:
-                    live_state.thought_logs.append({"timestamp": datetime.now().isoformat(), "type": "VETO" if "VETO" in t else "ANALYSIS", "msg": t})
+                    live_state.thought_logs.append({"timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "type": "VETO" if "VETO" in t else "ANALYSIS", "msg": t})
             
             # v8.5/8.6 Epistemic Overhaul: Unified IV logic in BrainEngine.
             
@@ -594,7 +594,7 @@ def run_engine_loop():
                                 confidence=SignalConfidence.HIGH if pattern_results["score"] > 0.9 else SignalConfidence.MEDIUM,
                                 regime=live_state.current_regime,
                                 reasoning=f"{signal_type} | {', '.join(detected_patterns)}",
-                                timestamp=datetime.now(),
+                                timestamp=datetime.now(timezone.utc),
                                 decision_id=decision_id,
                                 logic_version="v8.5.0",
                                 spread_at_entry=abs(market_data.future_price - market_data.spot_price),
@@ -633,7 +633,7 @@ def run_engine_loop():
                              confidence=SignalConfidence.MEDIUM,
                              regime=Regime.SIDEWAYS, # Traps usually in sideways/confused interaction
                              reasoning=f"SIDECAR: {sidecar_decision['reason']}",
-                             timestamp=datetime.now(),
+                             timestamp=datetime.now(timezone.utc),
                              decision_id=trade_id,
                              logic_version="v9.1_SIDECAR",
                              spread_at_entry=0.0,
@@ -666,7 +666,7 @@ def run_engine_loop():
                              confidence=SignalConfidence.LOW,
                              regime=Regime.SIDEWAYS,
                              reasoning=f"⚠️ TACTICAL SCALP: {scalp['reason']}",
-                             timestamp=datetime.now(),
+                             timestamp=datetime.now(timezone.utc),
                              decision_id=trade_id,
                              logic_version="v9.2_SKIRMISHER",
                              spread_at_entry=0.0,
@@ -677,7 +677,7 @@ def run_engine_loop():
 
             
             # 7. Rotation & Sleep
-            live_state.last_update = datetime.now()
+            live_state.last_update = datetime.now(timezone.utc)
             time.sleep(1)
         except Exception as e:
             logger.error(f"ENGINE ERROR: {e}")
