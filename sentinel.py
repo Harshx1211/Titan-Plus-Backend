@@ -13,34 +13,48 @@ class DataSentinel:
     The Sentinel is the foundation of truth. 
     It triangulates data and reconciles time-drifts.
     """
-    def __init__(self, tolerance_pct: float = 0.5, sync_window: int = 3):
-        self.tolerance_pct = tolerance_pct
+    def __init__(self, base_tolerance_pct: float = 0.5, sync_window: int = 5):
+        self.base_tolerance_pct = base_tolerance_pct
         self.sync_window = sync_window # allow divergence for N cycles
+        self.future_window: List[float] = []
         self.divergence_history: List[float] = []
         self.last_update_time = time.time()
         
-    def check_integrity(self, spot: float, future: float) -> DivergenceType:
+    def check_integrity(self, spot: float, future: float, vix: float = 15.0) -> DivergenceType:
         """
-        Calculates divergence with Time-Window Reconciliation.
+        Calculates divergence with Tick-Window Reconciliation and VIX-Adaptive Thresholds.
         """
-        basis = abs(future - spot) / spot * 100
-        self.divergence_history.append(basis)
+        # 1. Sliding Window for Future (Reconcile Latency)
+        # Instead of Spot[t] vs Future[t], we compare Spot[t] to the most favorable 
+        # Future price in the recent window [t-N...t].
+        self.future_window.append(future)
+        if len(self.future_window) > self.sync_window:
+            self.future_window.pop(0)
+            
+        # Find the minimum effective basis in the window
+        best_basis = min([abs(f - spot) / spot * 100 for f in self.future_window])
+        self.divergence_history.append(best_basis)
         
-        # Keep history within sync window
         if len(self.divergence_history) > self.sync_window:
             self.divergence_history.pop(0)
 
-        # Institutional logic: Only quarantine if divergence PERSISTS
+        # 2. VIX-Adaptive Thresholds
+        # Volatility expands 'normal' basis. We scale our tolerance by VIX.
+        vix_factor = max(vix / 15.0, 1.0)
+        dynamic_tolerance = self.base_tolerance_pct * vix_factor
+        hard_threshold = 2.5 * vix_factor
+        
         avg_basis = sum(self.divergence_history) / len(self.divergence_history)
         
-        if avg_basis > 2.5: 
-            logger.warning(f"HARD DIVERGENCE (PERSISTENT): {avg_basis:.2f}%")
+        # 3. Institutional logic: Only quarantine if divergence PERSISTS
+        if avg_basis > hard_threshold: 
+            logger.warning(f"SENTINEL: HARD DIVERGENCE (PERSISTENT): {avg_basis:.2f}% (Limit: {hard_threshold:.2f}%)")
             return DivergenceType.HARD
         
-        if avg_basis > self.tolerance_pct:
+        if avg_basis > dynamic_tolerance:
             # If it's a spike but not yet persistent, classify as SOFT
-            if basis > self.tolerance_pct * 2:
-                logger.info(f"TRANSIENT SPIKE DETECTED - RECONCILING...")
+            if best_basis > dynamic_tolerance * 2:
+                logger.info(f"SENTINEL: TRANSIENT BASIS SPIKE - RECONCILING FEED LAG...")
                 return DivergenceType.SOFT
             return DivergenceType.SOFT
             

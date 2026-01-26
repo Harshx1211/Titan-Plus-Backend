@@ -7,6 +7,7 @@ import pandas as pd
 import logging
 import time
 from datetime import datetime
+import pandas_ta as ta
 from models import TradeSignal, Regime, SignalConfidence, DivergenceType
 from sentinel import DataSentinel
 from strategist import MarketStrategist
@@ -18,6 +19,7 @@ from database import DatabaseManager
 from data_provider import DataProvider
 import asyncio
 import threading
+import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -53,6 +55,11 @@ class LiveState:
         self.nifty_price = 25048.65
         self.sensex_price = 81537.70
         self.option_chain = []
+        # v8.1: Statistical Discipline
+        self.resets_today = 0
+        self.last_reset_time = datetime.now()
+        self.beta_history = {"OI": [], "BASIS": []}
+        self.iv_skew = 1.0 # 1.0 is neutral
 
 live_state = LiveState()
 
@@ -156,6 +163,7 @@ def run_engine_loop():
     """
     logger = logging.getLogger("api_engine")
     logger.info("ENGINE: Starting background loop...")
+    start_time = time.time() # Guardrail #1: Initialized once
     
     while True:
         try:
@@ -189,10 +197,11 @@ def run_engine_loop():
                 time.sleep(2)
                 continue
 
-            # 2. Triangulation (Sentinel)
+            # 2. Triangulation (Sentinel v2 with VIX Adaptivity)
             live_state.integrity = sentinel.check_integrity(
                 market_data.spot_price, 
-                market_data.future_price
+                market_data.future_price,
+                vix=live_state.vix
             )
             
             # 3. Regime Detection (Strategist)
@@ -261,61 +270,190 @@ def run_engine_loop():
             # Phase 9: Market Breadth
             live_state.breadth = data_provider.get_breadth(symbol)
             adv, dec = live_state.breadth["advances"], live_state.breadth["declines"]
-            if symbol == "NIFTY" and adv < 20:
-                pattern_results["score"] *= 0.7
-                live_state.market_message = "BREADTH WEAK: Avoid Bull Traps"
+            
+            # v8: Regime Veto (Fix Audit v8 Failure #6)
+            live_state.current_regime = strategist.classify_regime(hist_df, breadth=live_state.breadth)
             
             # Phase 9: Time-Based Institutional Filter
             now = datetime.now().time()
             lull_start = datetime.strptime("12:00", "%H:%M").time()
             lull_end = datetime.strptime("13:30", "%H:%M").time()
-            if lull_start <= now <= lull_end:
+            is_lull = lull_start <= now <= lull_end
+            if is_lull:
                 pattern_results["score"] *= 0.5
                 live_state.market_message = "INSTITUTIONAL LULL: Low Confidence Zone"
 
-            detected_patterns = pattern_results["patterns"]
+            # v8.1: Orthogonal Feature Engineering (Fix Audit v8.1 #1)
+            try:
+                # 1. Price Velocity & Variance Gate
+                price_velocities = hist_df.close.pct_change(5).dropna() * 100
+                price_var = price_velocities.var()
+                price_vel_curr = price_velocities.iloc[-1] if not price_velocities.empty else 0.0
+                
+                # 2. Bounded Beta Calculation (No Heuristics)
+                # Formula: Beta = Cov(X,Y) / Var(Y)
+                if price_var > 1e-4:
+                    # OI Beta
+                    oi_chgs = pd.Series(brain.feature_history.get("OI_RES", [])[-20:])
+                    if len(oi_chgs) == len(price_velocities.iloc[-len(oi_chgs):]):
+                        oi_beta = oi_chgs.cov(price_velocities.iloc[-len(oi_chgs):]) / price_var
+                        # Clip Beta (Fix Audit v8.1 #1)
+                        oi_beta = max(-1.5, min(1.5, oi_beta))
+                    else: oi_beta = 0.2
+                    
+                    # Basis Beta
+                    basis_vals = pd.Series(brain.feature_history.get("BASIS_RES", [])[-20:])
+                    if len(basis_vals) == len(price_velocities.iloc[-len(basis_vals):]):
+                        basis_beta = basis_vals.cov(price_velocities.iloc[-len(basis_vals):]) / price_var
+                        basis_beta = max(-2.0, min(2.0, basis_beta))
+                    else: basis_beta = 0.5
+                else:
+                    oi_beta = 0.0
+                    basis_beta = 0.0
+                
+                # 3. Residual Generation
+                last_oi = live_state.prev_oi.get(symbol, market_data.oi)
+                oi_change = ((market_data.oi - last_oi) / last_oi * 100) if last_oi > 0 else 0.0
+                raw_basis = abs(market_data.future_price - market_data.spot_price) / market_data.spot_price * 100
+                
+                oi_res = oi_change - (oi_beta * price_vel_curr)
+                basis_res = raw_basis - (basis_beta * price_vel_curr)
+                
+                live_state.prev_oi[symbol] = market_data.oi
+                live_state.prev_spot = market_data.spot_price
+
+                brain_features = {
+                    "OI_RES": oi_res,
+                    "PCR": market_data.pcr,
+                    "BASIS_RES": basis_res,
+                    "ADX": hist_df.ta.adx()['ADX_14'].iloc[-1] if 'ADX_14' in hist_df.ta.adx() else 25.0
+                }
+            except Exception as e:
+                logger.error(f"FEATURE ERROR: {e}")
+                brain_features = {"OI_RES": 0, "PCR": 1.0, "BASIS_RES": 0, "ADX": 25.0}
             
-            # 5. ML Brain logging
-            brain.log_snapshot({
-                "symbol": symbol,
-                "spot": market_data.spot_price,
-                "future": market_data.future_price,
-                "oi": market_data.oi,
-                "regime": 1 if live_state.current_regime == Regime.TRENDING else 0,
-                "macro_bias": macro_bias,
-                "patterns": len(detected_patterns),
-                "vix": live_state.vix,
-                "breadth_ratio": adv/dec if dec > 0 else 1,
-                "historic_confluence": 1 if pattern_results.get("historic_confluence") else 0
-            })
+            # v8.1: Stateless Inference (Compute-only unless pattern detects)
+            decision_id = brain.generate_decision(
+                brain_features, 
+                regime=live_state.current_regime, 
+                is_commit=False,
+                pattern_score=pattern_results["score"]
+            )
+
+            # v8.1: Shape-Shifting Sentinel (Fix Audit v8.1 #2)
+            # Monitor Mean, Std, and Kurtosis. Rate-limited to 1 reset/session.
+            if len(brain.feature_history.get("OI_RES", [])) > 100 and live_state.resets_today < 1:
+                hist = pd.Series(brain.feature_history["OI_RES"])
+                recent = hist.iloc[-20:]
+                
+                # Drift Check (Mean and Kurtosis)
+                mean_drift = abs(recent.mean() - hist.mean()) > 3.0
+                kurt_drift = abs(recent.kurt() - hist.kurt()) > 5.0
+                
+                if mean_drift or kurt_drift:
+                    brain.feature_history["OI_RES"] = [] 
+                    live_state.resets_today += 1
+                    logger.warning("BRAIN: SHAPE DRIFT DETECTED. Soft reset triggered.")
+
+            # Calculate Brain Boost
+            confidence_boost = brain.get_confidence_boost(brain_features, regime=live_state.current_regime.value)
             
-            # 6. Signal Generation (Enhanced with Phase 15 Option Selector)
+            # Non-Price Orthogonal Veto (Fix Audit v8.1 #3)
+            # IV Skew as Veto-Only.
+            live_state.iv_skew = data_provider.get_iv_skew(symbol)
+            if live_state.iv_skew > 1.3: # Extreme Put-buying skew
+                confidence_boost *= 0.5
+                live_state.market_message = "RISK VETO: Extreme IV Skew Detected"
+            
+            # Timing Guardrails
+            now_ts = time.time()
+            elapsed = now_ts - start_time
+            is_passive = elapsed < 800
+            
+            applied_boost = 1.0 if is_passive else confidence_boost
+            
+            # Timing Guardrails (Calibration/Stabilization)
+            now_ts = time.time()
+            elapsed = now_ts - start_time
+            is_passive = elapsed < 800
+            
+            applied_boost = 1.0 if is_passive else confidence_boost
+            
+            # v8: Momentum Dominance Check (Fix Audit v8 Failure #5)
+            # If momentum is dominant, we ignore Max Pain in patterns.
+            is_dominant = strategist.is_momentum_dominant(hist_df)
+            if is_dominant:
+                live_state.market_message = "MOMENTUM DOMINANT: Ignoring Mean Reversion"
+
+            # THE v8 DOUBLE-HANDSHAKE
+            if not is_passive:
+                if pattern_results["score"] > 0.8 and applied_boost > 0.8:
+                    # Both agree -> High conviction
+                    pattern_results["score"] *= 1.2 # Synergy boost
+                    live_state.market_message = "ORTHOGONAL CONFIRMATION: Dual Edge Active"
+                elif pattern_results["score"] < 0.6 and applied_boost > 0.8:
+                    # Brain sees it but chart is ugly -> Mute
+                    applied_boost *= 0.5
+                    live_state.market_message = "DIVERGENCE: Brain Disagrees with Price"
+                
+            pattern_results["score"] *= applied_boost
+
+            # 5. Update Active Signals (Performance Tracking)
+            for sig in live_state.active_signals:
+                if not sig.is_live: continue
+                
+                # Update Performance Context
+                price_delta = (market_data.spot_price - sig.entry_price) if "BULLISH" in sig.reasoning else (sig.entry_price - market_data.spot_price)
+                if price_delta > sig.mfe:
+                    sig.mfe = price_delta
+                    sig.time_to_mfe = (datetime.now() - sig.timestamp).total_seconds()
+                
+                price_adverse = (sig.entry_price - market_data.spot_price) if "BULLISH" in sig.reasoning else (market_data.spot_price - sig.entry_price)
+                if price_adverse > sig.mae: sig.mae = price_adverse
+                
+                # Check for Exit
+                if price_adverse > 50 or price_delta > 100:
+                    sig.is_live = False
+                    # Finalize with Accountability (Guardrail #1: Freeze authority during calibration)
+                    brain.log_snapshot(
+                        decision_id=sig.decision_id if hasattr(sig, 'decision_id') else decision_id,
+                        outcome=True if price_delta > 100 else False,
+                        performance={
+                            "mfe": sig.mfe,
+                            "mae": sig.mae,
+                            "spread": 0.5, # Placeholder
+                            "time_to_mfe": sig.time_to_mfe
+                        },
+                        freeze_authority=is_passive
+                    )
+
+            # 6. Signal Generation
             if pattern_results["score"] > 0.8:
-                signal_type = "BULLISH" if any(p in ["VWAP_CROSSOVER", "HAMMER", "BULLISH_ENGULFING", "BULLISH_DIVERGENCE", "CPR_BREAKOUT", "STRONG_TRENDLINE_BREAKOUT"] for p in detected_patterns) else "BEARISH"
+                signal_type = "BULLISH" if any(p in ["VWAP_CROSSOVER", "HAMMER", "BULLISH_ENGULFING", "CPR_BREAKOUT"] for p in detected_patterns) else "BEARISH"
                 
-                # Translate Index Signal into Executable Option Trade
-                opt_trade = option_engine.find_executable_option(symbol, market_data.spot_price, signal_type)
-                
-                new_signal = TradeSignal(
-                    symbol=symbol,
-                    entry_price=market_data.spot_price,
-                    stop_loss=market_data.spot_price - 50 if signal_type == "BULLISH" else market_data.spot_price + 50,
-                    target=market_data.spot_price + 100 if signal_type == "BULLISH" else market_data.spot_price - 100,
-                    confidence=SignalConfidence.HIGH if pattern_results["score"] > 0.9 else SignalConfidence.MEDIUM,
-                    regime=live_state.current_regime,
-                    reasoning=", ".join(detected_patterns),
-                    timestamp=datetime.now(),
-                    **opt_trade
-                )
-                
-                # Avoid duplicate signals within 5 minutes
-                if not any(s.symbol == symbol and (datetime.now() - s.timestamp).total_seconds() < 300 for s in live_state.active_signals):
+                # Guardrail: Avoid duplicate active signals
+                if not any(s.symbol == symbol and s.is_live for s in live_state.active_signals):
+                    opt_trade = option_engine.find_executable_option(symbol, market_data.spot_price, signal_type)
+                    
+                    new_signal = TradeSignal(
+                        symbol=symbol,
+                        entry_price=market_data.spot_price,
+                        stop_loss=50, 
+                        target=100,
+                        confidence=SignalConfidence.HIGH if pattern_results["score"] > 0.9 else SignalConfidence.MEDIUM,
+                        regime=live_state.current_regime,
+                        reasoning=f"{signal_type} | {', '.join(detected_patterns)}",
+                        timestamp=datetime.now(),
+                        decision_id=decision_id,
+                        spread_at_entry=abs(market_data.future_price - market_data.spot_price),
+                        **opt_trade
+                    )
                     live_state.active_signals.append(new_signal)
-                    logger.info(f"SIGNAL GENERATED: {new_signal.option_symbol} @ {new_signal.premium_entry}")
+                    logger.info(f"SIGNAL: {new_signal.option_symbol} bound to Decision {decision_id}")
             
             # 7. Rotation & Sleep
             live_state.last_update = datetime.now()
-            time.sleep(1) # High-Speed Institutional Frequency
+            time.sleep(1)
         except Exception as e:
             logger.error(f"ENGINE ERROR: {e}")
             time.sleep(5)
