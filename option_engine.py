@@ -82,12 +82,17 @@ class OptionEngine:
                                 is_momentum_dominant: bool = False,
                                 days_to_expiry: int = 5,
                                 max_spread_pct: float = 0.05,
-                                chain_df: pd.DataFrame = None) -> Dict:
+                                chain_df: pd.DataFrame = None,
+                                is_synthetic: bool = False) -> Dict:
         """
-        [v8.4] Institutional Strike Selection Engine.
-        Prioritizes Liquidity Dominance, real-time premiums, and spread enforcement.
+        [v8.5] Institutional Strike Selection Engine.
+        Prioritizes Epistemic Integrity and Mid-Price Spread Normalization.
         """
         rejection_reasons = []
+        if is_synthetic:
+            rejection_reasons.append("DATA_SYNTHETIC_VETO")
+            return {"rejection_reasons": rejection_reasons}
+
         if chain_df is None or chain_df.empty:
             rejection_reasons.append("MISSING_CHAIN_DATA")
             return {"rejection_reasons": rejection_reasons}
@@ -111,8 +116,11 @@ class OptionEngine:
             bid = row.get(f'{option_type.lower()}_bid', 0)
             ask = row.get(f'{option_type.lower()}_ask', 0)
             
-            # Spread Enforcement
-            spread = (ask - bid) / bid if bid > 0 else 0
+            # Mid-Price Spread Normalization (v8.5)
+            # Replaces (ask-bid)/bid to prevent collapse bias
+            mid_price = (ask + bid) / 2
+            spread = (ask - bid) / mid_price if mid_price > 0 else 1.0
+            
             if spread > max_spread_pct:
                 continue # Disqualified
                 

@@ -25,6 +25,9 @@ class BrainEngine:
             "ADX": 1.0, "BASIS_RES": 1.2, "PCR": 1.0, "OI_RES": 1.5
         }
         self.feature_history: Dict[str, List[float]] = {f: [] for f in self.feature_weights}
+        self.raw_history: Dict[str, List[float]] = {
+            "OI_RAW": [], "BASIS_RAW": [], "PCR_RAW": [], "ADX_RAW": []
+        }
         self.window_size = 500
         
         # 5. Regime-Scoped Authority
@@ -34,6 +37,18 @@ class BrainEngine:
             "UNCERTAIN": 1.0
         }
         self.decisions: Dict[str, DecisionObject] = {}
+
+    def update_raw_history(self, features: Dict[str, float]):
+        """
+        [v8.5] Maintains un-residualized raw feature history for correct Beta calculation.
+        """
+        for feat, val in features.items():
+            if feat not in self.raw_history:
+                self.raw_history[feat] = []
+            
+            self.raw_history[feat].append(val)
+            if len(self.raw_history[feat]) > self.window_size:
+                self.raw_history[feat].pop(0)
 
     def get_confidence_boost(self, features: Dict[str, float], regime: str = "UNCERTAIN") -> float:
         """

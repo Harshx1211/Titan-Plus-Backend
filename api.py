@@ -62,6 +62,7 @@ class LiveState:
         self.resets_today = 0
         self.last_reset_time = datetime.now()
         self.beta_history = {"OI": [], "BASIS": []}
+        self.raw_history = {"OI_RAW": [], "BASIS_RAW": []} # Phase 27: Raw for correct Beta
         self.iv_skew = {"NIFTY": 1.0, "SENSEX": 1.0}
         self.prev_oi = {"NIFTY": 0, "SENSEX": 0}
         self.prev_spot = 0.0
@@ -216,21 +217,23 @@ def run_engine_loop():
                 vix=live_state.vix
             )
 
-            # Phase 25/26: Spot-Futures Basis Stability Validation
+            # Phase 25/26/27: Spot-Futures Basis Stability Validation
             basis = abs(market_data.future_price - market_data.spot_price) / market_data.spot_price * 100
             
-            # Phase 26 Fix: Correctly update basis history
-            live_state.beta_history["BASIS"].append(basis)
-            if len(live_state.beta_history["BASIS"]) > 200:
-                live_state.beta_history["BASIS"].pop(0)
+            # Phase 27: Raw History for Beta & Dispersion Logic
+            live_state.raw_history["BASIS_RAW"].append(basis)
+            if len(live_state.raw_history["BASIS_RAW"]) > 200:
+                live_state.raw_history["BASIS_RAW"].pop(0)
 
-            basis_ma = pd.Series(live_state.beta_history["BASIS"]).mean()
-            basis_volatility = abs(basis - basis_ma)
+            basis_series = pd.Series(live_state.raw_history["BASIS_RAW"])
+            basis_ma = basis_series.mean()
+            basis_std = basis_series.std() if len(basis_series) > 10 else 0.0
             
-            # If basis is unstable (> 0.05% deviation from mean), skip signal generation to avoid strike mis-selection
-            is_basis_unstable = basis_volatility > 0.05
+            # Sigma-Based Gate: Veto if current basis differs from mean by > 2.5 Sigma
+            is_basis_unstable = abs(basis - basis_ma) > (2.5 * basis_std) if basis_std > 0.005 else False
+            
             if is_basis_unstable:
-                live_state.market_message = f"SPOT-FUTURES DISLOCATION: Basis Unstable ({basis_volatility:.3f}%)"
+                live_state.market_message = f"BASIS DISPERSION VETO: Sigma Jump ({abs(basis-basis_ma)/basis_std:.1f}σ)"
             
             # 3. Regime Detection (Strategist)
             try:
@@ -268,7 +271,8 @@ def run_engine_loop():
             
             # Phase 14: Option Chain X-Ray (Partitioned)
             try:
-                chain_df = data_provider.get_option_chain(symbol)
+                # Phase 27: Handling (df, synthetic) return
+                chain_df, is_synthetic = data_provider.get_option_chain(symbol)
                 if not chain_df.empty:
                     sym_max_pain = option_engine.calculate_max_pain(chain_df)
                     live_state.max_pain[symbol] = sym_max_pain
@@ -281,6 +285,7 @@ def run_engine_loop():
                         live_state.market_message = f"MAX PAIN SYNC [{symbol}]: Large Confluence Near Strike"
             except Exception as e:
                 logger.warning(f"ENGINE: Option chain failed for {symbol}: {e}")
+                chain_df, is_synthetic = pd.DataFrame(), True
 
             # Phase 11: Inter-Market Correlation Filter
             other_symbol = "SENSEX" if symbol == "NIFTY" else "NIFTY"
@@ -292,9 +297,21 @@ def run_engine_loop():
                 pattern_results["score"] *= 0.6
                 live_state.market_message = f"DIVERGENCE: {symbol} vs {other_symbol} Mismatch"
 
-            # Phase 9: VIX Sensitivity Adjustment
+            # Phase 9/27: VIX & IV Skew Directional Sensitivity
             try:
                 live_state.vix = data_provider.get_vix()
+                sym_iv_skew = live_state.iv_skew.get(symbol, 1.0)
+                
+                # Directional IV Veto (Phase 27)
+                # High Put Skew (> 1.3) means Fear.
+                # If Bullish + High Skew -> Block (Fighting the wall of worry)
+                # If Bearish + High Skew -> Confirm (Asymmetric momentum)
+                if sym_iv_skew > 1.3:
+                    if curr_strength > 0: # Bullish Attempt
+                        pattern_results["score"] *= 0.5
+                    else: # Bearish Flow
+                        pattern_results["score"] *= 1.1 # Asymmetric Confirmation
+                
                 if live_state.vix > 20:
                     pattern_results["score"] *= 0.8 # Tighten requirements in high volatility
                     live_state.market_message = "VIX HIGH: Use Defensive Guardrails"
@@ -326,31 +343,38 @@ def run_engine_loop():
                 price_var = price_velocities.var()
                 price_vel_curr = price_velocities.iloc[-1] if not price_velocities.empty else 0.0
                 
-                # 2. Bounded Beta Calculation (No Heuristics)
-                # Formula: Beta = Cov(X,Y) / Var(Y)
+                # 2. Institutional Beta Calculation (Phase 27: Raw-Feature Basis)
+                # Formula: Beta = Cov(Raw_X, Raw_Y) / Var(Y)
                 if price_var > 1e-4:
-                    # OI Beta
-                    oi_chgs = pd.Series(brain.feature_history.get("OI_RES", [])[-20:])
-                    if len(oi_chgs) == len(price_velocities.iloc[-len(oi_chgs):]):
-                        oi_beta = oi_chgs.cov(price_velocities.iloc[-len(oi_chgs):]) / price_var
-                        # Clip Beta (Fix Audit v8.1 #1)
+                    # OI Beta (Now using Raw OI history)
+                    oi_raw_pool = pd.Series(brain.raw_history.get("OI_RAW", [])[-20:])
+                    if len(oi_raw_pool) == len(price_velocities.iloc[-len(oi_raw_pool):]):
+                        oi_beta = oi_raw_pool.cov(price_velocities.iloc[-len(oi_raw_pool):]) / price_var
                         oi_beta = max(-1.5, min(1.5, oi_beta))
                     else: oi_beta = 0.2
                     
-                    # Basis Beta
-                    basis_vals = pd.Series(brain.feature_history.get("BASIS_RES", [])[-20:])
-                    if len(basis_vals) == len(price_velocities.iloc[-len(basis_vals):]):
-                        basis_beta = basis_vals.cov(price_velocities.iloc[-len(basis_vals):]) / price_var
+                    # Basis Beta (Now using Raw Basis history)
+                    basis_raw_pool = pd.Series(brain.raw_history.get("BASIS_RAW", [])[-20:])
+                    if len(basis_raw_pool) == len(price_velocities.iloc[-len(basis_raw_pool):]):
+                        basis_beta = basis_raw_pool.cov(price_velocities.iloc[-len(basis_raw_pool):]) / price_var
                         basis_beta = max(-2.0, min(2.0, basis_beta))
                     else: basis_beta = 0.5
                 else:
                     oi_beta = 0.0
                     basis_beta = 0.0
                 
-                # 3. Residual Generation
+                # 3. Residual Generation & Raw Sync
                 last_oi = live_state.prev_oi.get(symbol, market_data.oi)
                 oi_change = ((market_data.oi - last_oi) / last_oi * 100) if last_oi > 0 else 0.0
                 raw_basis = abs(market_data.future_price - market_data.spot_price) / market_data.spot_price * 100
+                
+                # Phase 27 Fix: Update Brain Raw History BEFORE residualizing
+                brain.update_raw_history({
+                    "OI_RAW": oi_change,
+                    "BASIS_RAW": raw_basis,
+                    "PCR_RAW": market_data.pcr,
+                    "ADX_RAW": adx_val
+                })
                 
                 oi_res = oi_change - (oi_beta * price_vel_curr)
                 basis_res = raw_basis - (basis_beta * price_vel_curr)
@@ -399,20 +423,8 @@ def run_engine_loop():
             # Calculate Brain Boost
             confidence_boost = brain.get_confidence_boost(brain_features, regime=live_state.current_regime.value)
             
-            # Non-Price Orthogonal Veto (Fix Audit v8.1 #3)
-            # IV Skew as Veto-Only.
-            sym_iv_skew = data_provider.get_iv_skew(symbol)
-            live_state.iv_skew[symbol] = sym_iv_skew
-            if sym_iv_skew > 1.3: # Extreme Put-buying skew
-                confidence_boost *= 0.5
-                live_state.market_message = f"RISK VETO [{symbol}]: Extreme IV Skew Detected"
-            
-            # Timing Guardrails
-            now_ts = time.time()
-            elapsed = now_ts - start_time
-            is_passive = elapsed < 800
-            
-            applied_boost = 1.0 if is_passive else confidence_boost
+            # v8.5 Epistemic Overhaul: Removed redundant direction-blind IV veto.
+            # Confidence boost is now managed solely by BrainEngine + Directional IV Intelligence.
             
             # Timing Guardrails (Calibration/Stabilization)
             now_ts = time.time()
@@ -453,9 +465,20 @@ def run_engine_loop():
                 price_adverse = (sig.entry_price - market_data.spot_price) if "BULLISH" in sig.reasoning else (market_data.spot_price - sig.entry_price)
                 if price_adverse > sig.mae: sig.mae = price_adverse
                 
+                # Phase 27: Live Persistence Decay (Integrity Guard)
+                # If MAE (drawdown) exceeds 1.5x of MFE (best profit) after initial expansion, 
+                # it means structural integrity of the move has decayed.
+                integrity_decay = (sig.mae > 1.5 * sig.mfe) if sig.mfe > 10 else False
+                
                 # Check for Exit
-                if price_adverse > 50 or price_delta > 100:
+                is_target = price_delta >= 100
+                is_sl = price_adverse >= 50
+                is_decay = integrity_decay and price_adverse > 20
+                
+                if is_target or is_sl or is_decay:
                     sig.is_live = False
+                    reason = "TARGET" if is_target else ("SL" if is_sl else "DECAY")
+                    logger.info(f"SIGNAL EXIT: {sig.option_symbol} closed due to {reason}")
                     
                     # Persistence Calculation (v8.1 Mirror)
                     is_structural = (sig.mfe > 2 * sig.mae) if sig.mae > 1 else (sig.mfe > 10)
@@ -486,9 +509,14 @@ def run_engine_loop():
                 
                 # Guardrail: Avoid duplicate active signals
                 if not any(s.symbol == symbol and s.is_live for s in live_state.active_signals):
-                    # Phase 25: Basis Stability Check for Strike Selection
+                    # Phase 25/27: Hard Veto Gates
                     if is_basis_unstable:
-                        logger.warning(f"SIGNAL VETO: Basis Unstable for {symbol}. Selection Suspended.")
+                        logger.warning(f"SIGNAL VETO: Basis Dispersion unstable for {symbol}.")
+                        continue
+                    
+                    if is_synthetic:
+                        logger.warning(f"SIGNAL VETO: DATA_SYNTHETIC for {symbol}. Blocking execution.")
+                        live_state.market_message = f"DATA_OUTAGE: Synthetic Veto Active for {symbol}"
                         continue
 
                     opt_trade = option_engine.find_executable_option(
@@ -498,7 +526,8 @@ def run_engine_loop():
                         macro_zones=macro_zones,
                         is_momentum_dominant=is_dominant,
                         days_to_expiry=5,
-                        chain_df=chain_df # Pass chain for real premiums
+                        chain_df=chain_df,
+                        is_synthetic=is_synthetic
                     )
                     
                     if opt_trade.get("rejection_reasons"):
@@ -515,6 +544,7 @@ def run_engine_loop():
                         reasoning=f"{signal_type} | {', '.join(detected_patterns)}",
                         timestamp=datetime.now(),
                         decision_id=decision_id,
+                        logic_version="v8.5.0",
                         spread_at_entry=abs(market_data.future_price - market_data.spot_price),
                         **opt_trade
                     )

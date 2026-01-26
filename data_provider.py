@@ -182,7 +182,7 @@ class DataProvider:
         Formula: Put OI / Call OI at 1-strike OTM.
         """
         try:
-            chain_df = self.get_option_chain(symbol)
+            chain_df, _ = self.get_option_chain(symbol)
             if chain_df.empty: return 1.0
             
             spot = self.get_market_snapshot(symbol).spot_price
@@ -236,7 +236,7 @@ class DataProvider:
                         'put_bid': put.get('bidPrice', 0),
                         'put_ask': put.get('askPrice', 0)
                     })
-                return pd.DataFrame(processed)
+                return pd.DataFrame(processed), False # Real Data
             except Exception as e:
                 logger.error(f"DATA: Groww chain failed: {e}. Falling back.")
 
@@ -259,10 +259,10 @@ class DataProvider:
                 'put_bid': [150.0] * len(strikes),
                 'put_ask': [152.0] * len(strikes)
             }
-            return pd.DataFrame(data)
+            return pd.DataFrame(data), True # Synthetic Data
         except Exception as e:
             logger.error(f"DATA: Fallback chain failed: {e}")
-            return pd.DataFrame()
+            return pd.DataFrame(), True
 
 if __name__ == "__main__":
     provider = DataProvider()
