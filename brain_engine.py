@@ -210,6 +210,24 @@ class BrainEngine:
         )
         return decision_id
 
+    def get_counter_attack_signal(self, veto_reason: str, signal_type: str) -> bool:
+        """
+        [v9.1] Trap-Hunter Logic.
+        Authorizes an aggressive reversal trade if:
+        1. Veto was due to Institutional Context (Fear/Sector).
+        2. Signal is NOT weak (i.e. not brain_confidence veto).
+        """
+        valid_vetoes = ["IV_SKEW_VETO", "SECTOR_DIVERGENCE_VETO", "GEX_BIAS_VETO"]
+        
+        # Only counter-attack Institutional Vetoes, not technical failures
+        is_context_veto = any(v in veto_reason for v in valid_vetoes)
+        
+        if is_context_veto:
+            logger.info(f"BRAIN: Counter-Attack Authorized for {veto_reason}. Hunting the Trap.")
+            return True
+            
+        return False
+
     def log_snapshot(self, decision_id: str, outcome: Optional[bool] = None, performance: Dict[str, float] = {}, freeze_authority: bool = False):
         """
         [v8.1] Persistence-Aware Accountability.

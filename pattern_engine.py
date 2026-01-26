@@ -220,6 +220,43 @@ class PatternEngine:
             "historic_confluence": zone_boost > 1.0
         }
 
+    def confirm_reversal(self, df: pd.DataFrame, signal_type: str) -> bool:
+        """
+        [v9.1] Checks for Structural Reversal Logic.
+        Required for Counter-Attack signal authorization.
+        """
+        if len(df) < 20: return False
+        
+        last = df.iloc[-1]
+        
+        # 1. Liquidity Sweep (SFP) Check
+        sweeps = self.detect_liquidity_sweeps(df)
+        if signal_type == "BULLISH" and "LIQUIDITY_SWEEP_BULLISH" in sweeps:
+            return True
+        if signal_type == "BEARISH" and "LIQUIDITY_SWEEP_BEARISH" in sweeps:
+            return True
+            
+        # 2. RSI Divergence Check
+        # If trying to SHORT a reversal (BEARISH Signal), look for Bearish Divergence
+        rsi = df.ta.rsi(length=14)
+        if rsi is not None and len(rsi) > 20:
+             curr_rsi = rsi.iloc[-1]
+             prev_rsi_peak = rsi.iloc[-20:-1].max()
+             curr_price = df.close.iloc[-1]
+             prev_price_peak = df.close.iloc[-20:-1].max()
+             
+             if signal_type == "BEARISH":
+                 # Price Higher High, RSI Lower High
+                 if curr_price > prev_price_peak and curr_rsi < prev_rsi_peak:
+                     return True
+             
+             elif signal_type == "BULLISH":
+                 # Price Lower Low, RSI Higher Low
+                 if curr_price < df.close.iloc[-20:-1].min() and curr_rsi > rsi.iloc[-20:-1].min():
+                     return True
+                     
+        return False
+
 if __name__ == "__main__":
     # Mock data test
     data = {
