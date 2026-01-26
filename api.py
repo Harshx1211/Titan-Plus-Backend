@@ -16,6 +16,7 @@ from brain_engine import BrainEngine
 from pattern_engine import PatternEngine
 from option_engine import OptionEngine
 from database import DatabaseManager
+from session_auditor import SessionAuditor
 from data_provider import DataProvider
 import asyncio
 import threading
@@ -64,6 +65,7 @@ class LiveState:
         self.iv_skew = {"NIFTY": 1.0, "SENSEX": 1.0}
 
 live_state = LiveState()
+session_auditor = SessionAuditor()
 
 # Engines
 sentinel = DataSentinel()
@@ -147,6 +149,11 @@ async def get_history():
 @app.get("/accuracy")
 async def get_accuracy():
     return db.get_accuracy_report()
+
+@app.get("/audit")
+async def get_session_audit(date: Optional[str] = None):
+    """Returns the Institutional Session Audit report."""
+    return session_auditor.generate_daily_report(date)
 
 @app.post("/feedback")
 async def post_feedback(signal_id: int, outcome: str, override: bool = False):
