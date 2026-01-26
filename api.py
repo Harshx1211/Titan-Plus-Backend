@@ -62,7 +62,6 @@ class LiveState:
         self.resets_today = 0
         self.last_reset_time = datetime.now()
         self.beta_history = {"OI": [], "BASIS": []}
-        self.raw_history = {"OI_RAW": [], "BASIS_RAW": []} # Phase 27: Raw for correct Beta
         self.iv_skew = {"NIFTY": 1.0, "SENSEX": 1.0}
         self.prev_oi = {"NIFTY": 0, "SENSEX": 0}
         self.prev_spot = 0.0
@@ -217,23 +216,15 @@ def run_engine_loop():
                 vix=live_state.vix
             )
 
-            # Phase 25/26/27: Spot-Futures Basis Stability Validation
+            # Phase 25/26/27/28: Spot-Futures Basis Stability Validation (Unified)
             basis = abs(market_data.future_price - market_data.spot_price) / market_data.spot_price * 100
             
-            # Phase 27: Raw History for Beta & Dispersion Logic
-            live_state.raw_history["BASIS_RAW"].append(basis)
-            if len(live_state.raw_history["BASIS_RAW"]) > 200:
-                live_state.raw_history["BASIS_RAW"].pop(0)
-
-            basis_series = pd.Series(live_state.raw_history["BASIS_RAW"])
-            basis_ma = basis_series.mean()
-            basis_std = basis_series.std() if len(basis_series) > 10 else 0.0
-            
-            # Sigma-Based Gate: Veto if current basis differs from mean by > 2.5 Sigma
-            is_basis_unstable = abs(basis - basis_ma) > (2.5 * basis_std) if basis_std > 0.005 else False
+            # Brain now owns the Epistemic State
+            basis_gate = brain.check_basis_stability(basis)
+            is_basis_unstable = basis_gate["is_unstable"]
             
             if is_basis_unstable:
-                live_state.market_message = f"BASIS DISPERSION VETO: Sigma Jump ({abs(basis-basis_ma)/basis_std:.1f}σ)"
+                live_state.market_message = f"BASIS META-VETO: {basis_gate['reason']} ({basis_gate.get('sigma_jump', 0):.1f}σ)"
             
             # 3. Regime Detection (Strategist)
             try:
@@ -297,20 +288,13 @@ def run_engine_loop():
                 pattern_results["score"] *= 0.6
                 live_state.market_message = f"DIVERGENCE: {symbol} vs {other_symbol} Mismatch"
 
-            # Phase 9/27: VIX & IV Skew Directional Sensitivity
+            # Phase 9/27/28: VIX & IV Skew Tracking (Unified)
             try:
                 live_state.vix = data_provider.get_vix()
-                sym_iv_skew = live_state.iv_skew.get(symbol, 1.0)
+                live_state.iv_skew[symbol] = data_provider.get_iv_skew(symbol)
                 
-                # Directional IV Veto (Phase 27)
-                # High Put Skew (> 1.3) means Fear.
-                # If Bullish + High Skew -> Block (Fighting the wall of worry)
-                # If Bearish + High Skew -> Confirm (Asymmetric momentum)
-                if sym_iv_skew > 1.3:
-                    if curr_strength > 0: # Bullish Attempt
-                        pattern_results["score"] *= 0.5
-                    else: # Bearish Flow
-                        pattern_results["score"] *= 1.1 # Asymmetric Confirmation
+                # Note: Directional IV Veto relocated to post-pattern generation 
+                # to ensure signal_intent awareness (Meta-Awareness v8.6.0)
                 
                 if live_state.vix > 20:
                     pattern_results["score"] *= 0.8 # Tighten requirements in high volatility
@@ -420,11 +404,16 @@ def run_engine_loop():
                     live_state.resets_today += 1
                     logger.warning("BRAIN: SHAPE DRIFT DETECTED. Soft reset triggered.")
 
-            # Calculate Brain Boost
-            confidence_boost = brain.get_confidence_boost(brain_features, regime=live_state.current_regime.value)
+            # Calculate Brain Boost (Phase 28: Now Signal-Aware if intent is likely)
+            likely_intent = "BULLISH" if pattern_results["score"] > 0.6 and curr_strength > 0 else ("BEARISH" if pattern_results["score"] > 0.6 else None)
+            confidence_boost = brain.get_confidence_boost(
+                brain_features, 
+                regime=live_state.current_regime.value,
+                signal_intent=likely_intent,
+                iv_skew=live_state.iv_skew.get(symbol, 1.0)
+            )
             
-            # v8.5 Epistemic Overhaul: Removed redundant direction-blind IV veto.
-            # Confidence boost is now managed solely by BrainEngine + Directional IV Intelligence.
+            # v8.5/8.6 Epistemic Overhaul: Unified IV logic in BrainEngine.
             
             # Timing Guardrails (Calibration/Stabilization)
             now_ts = time.time()
@@ -465,15 +454,16 @@ def run_engine_loop():
                 price_adverse = (sig.entry_price - market_data.spot_price) if "BULLISH" in sig.reasoning else (market_data.spot_price - sig.entry_price)
                 if price_adverse > sig.mae: sig.mae = price_adverse
                 
-                # Phase 27: Live Persistence Decay (Integrity Guard)
-                # If MAE (drawdown) exceeds 1.5x of MFE (best profit) after initial expansion, 
-                # it means structural integrity of the move has decayed.
-                integrity_decay = (sig.mae > 1.5 * sig.mfe) if sig.mfe > 10 else False
+                # Phase 27/28: Volatility-Normalized Persistence Decay
+                # MAE must be bounded relative to ATR to allow for natural breakout rotations.
+                # Threshold: MAE > Max(20, 2 * ATR)
+                atr_threshold = max(20, 2.0 * atr_val)
+                integrity_decay = (sig.mae > atr_threshold) and (sig.mfe < 0.5 * atr_threshold)
                 
                 # Check for Exit
                 is_target = price_delta >= 100
                 is_sl = price_adverse >= 50
-                is_decay = integrity_decay and price_adverse > 20
+                is_decay = integrity_decay and price_adverse > 15
                 
                 if is_target or is_sl or is_decay:
                     sig.is_live = False

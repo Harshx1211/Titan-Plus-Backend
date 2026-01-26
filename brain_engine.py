@@ -50,9 +50,40 @@ class BrainEngine:
             if len(self.raw_history[feat]) > self.window_size:
                 self.raw_history[feat].pop(0)
 
-    def get_confidence_boost(self, features: Dict[str, float], regime: str = "UNCERTAIN") -> float:
+    def check_basis_stability(self, current_basis: float, hard_floor: float = 0.05) -> Dict:
         """
-        [v8.1] Calculates stateless confidence score with Bounded Z-Scores.
+        [v8.6] Two-Tier Sigma Gate.
+        Protects against low-variance traps using an absolute floor + relative dispersion.
+        """
+        history = self.raw_history.get("BASIS_RAW", [])
+        if len(history) < 10:
+            return {"is_unstable": False, "reason": "STABILIZING"}
+
+        series = pd.Series(history)
+        mean = series.mean()
+        std = series.std()
+        
+        # Absolute check (Hard Floor)
+        abs_diff = abs(current_basis - mean)
+        is_abs_unstable = abs_diff > hard_floor
+        
+        # Relative check (Sigma Dispersion)
+        # v8.6: Only use Sigma if std is significant
+        is_sigma_unstable = (abs_diff > 2.5 * std) if std > 0.005 else False
+        
+        is_unstable = is_abs_unstable or is_sigma_unstable
+        
+        return {
+            "is_unstable": is_unstable,
+            "sigma_jump": abs_diff / std if std > 0 else 0,
+            "abs_diff": abs_diff,
+            "reason": "SIGMA_JUMP" if is_sigma_unstable else ("ABS_FLOOR_JUMP" if is_abs_unstable else "STABLE")
+        }
+
+    def get_confidence_boost(self, features: Dict[str, float], regime: str = "UNCERTAIN", 
+                               signal_intent: Optional[str] = None, iv_skew: float = 1.0) -> float:
+        """
+        [v8.6] Stateless confidence score with Signal-Aware IV Intelligence.
         """
         norm_features = {}
         for feat, val in features.items():
@@ -72,7 +103,7 @@ class BrainEngine:
             variance = sum((x - mean)**2 for x in history) / len(history)
             std = variance**0.5
             
-            # Bounded Z-Score (Fix Audit v8.1 #1)
+            # Bounded Z-Score
             z_score = (val - mean) / std if std > 1e-4 else 0
             z_score = max(-2.5, min(2.5, z_score)) # Hard clip to prevent outliers from boosting
             
@@ -85,6 +116,16 @@ class BrainEngine:
         score = sum(self.feature_weights[f] * v for f, v in norm_features.items())
         boost = min(max(score / sum(self.feature_weights.values()), 0.0), 1.0)
         
+        # Phase 28: Signal-Aware IV Intelligence (Meta-Awareness)
+        if signal_intent and iv_skew > 1.3:
+            # High Put Skew = Fear.
+            if signal_intent == "BULLISH":
+                # Fear in Bullish context is a veto (Fighting the wall)
+                boost *= 0.5
+            elif signal_intent == "BEARISH":
+                # Fear in Bearish context is confirmation (Asymmetric momentm)
+                boost = min(1.0, boost * 1.2)
+
         # Authority Veto (Non-Boosting)
         regime_auth = self.authority.get(regime, 1.0)
         if regime_auth < 0.5:
