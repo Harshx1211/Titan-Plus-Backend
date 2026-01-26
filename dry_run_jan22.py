@@ -152,7 +152,7 @@ class Jan22Simulator:
                 # Features: Low ADX, Neutral Skew
                 features = {"ADX": 0.2, "OI_RES": 0.1, "PCR": 0.9} 
                 
-                boost = self.brain_engine.get_confidence_boost(features, "SIDEWAYS")
+                boost, thoughts = self.brain_engine.get_confidence_boost(features, "SIDEWAYS")
                 logger.info(f"[{curr_time}] 🧠 BRAIN CHECK: Confidence {boost:.2f} (Threshold 0.80 for Sideways)")
                 
                 if boost < 0.80:
@@ -163,7 +163,7 @@ class Jan22Simulator:
             elif i == 285:
                  logger.info(f"[{curr_time}] ⚠️  PATTERN DETECTED: MINOR BREAKDOWN (Price: {curr_price:.1f})")
                  features = {"ADX": 0.3, "OI_RES": -0.2, "PCR": 1.1}
-                 boost = self.brain_engine.get_confidence_boost(features, "SIDEWAYS")
+                 boost, thoughts = self.brain_engine.get_confidence_boost(features, "SIDEWAYS")
                  logger.info(f"[{curr_time}] 🧠 BRAIN CHECK: Confidence {boost:.2f}")
                  
                  if boost < 0.80:

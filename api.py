@@ -24,6 +24,7 @@ from database import DatabaseManager
 import asyncio
 import threading
 import os
+from pytz import timezone as pytz_timezone
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -116,6 +117,21 @@ class SystemState(BaseModel):
     thought_logs: List[Dict]
     is_learning: bool
 
+def is_market_open():
+    """Check if Indian stock market is currently open (IST timezone-aware)."""
+    # CRITICAL FIX: Use IST timezone for accurate market hours detection
+    ist = pytz_timezone('Asia/Kolkata')
+    now = datetime.now(ist)
+    
+    # Market hours: Monday-Friday, 9:15 AM - 3:30 PM IST
+    if now.weekday() >= 5:  # Saturday = 5, Sunday = 6
+        return False
+    
+    market_start = now.replace(hour=9, minute=15, second=0, microsecond=0)
+    market_end = now.replace(hour=15, minute=30, second=0, microsecond=0)
+    
+    return market_start <= now <= market_end
+
 @app.get("/health")
 async def health_check():
     """Heartbeat endpoint for the external pinger (cron-job.org)."""
@@ -128,6 +144,34 @@ async def health_check():
 
 @app.get("/state", response_model=SystemState)
 async def get_state():
+    market_open = is_market_open()
+    
+    # When market is closed, return "-" for all metrics except closing prices
+    if not market_open:
+        return SystemState(
+            regime=Regime.UNCERTAIN,
+            is_in_recovery=False,
+            data_latency=0.0,
+            integrity_status=DivergenceType.NONE,
+            active_signals=[],
+            last_update=live_state.last_update,
+            vix=0.0,  # Will display as "-" in frontend
+            breadth={"advances": 0, "declines": 0},
+            market_message="MARKET_CLOSED",
+            data_source=live_state.data_source,
+            prices=live_state.prices,  # Keep closing prices
+            max_pain={"NIFTY": 0.0, "SENSEX": 0.0},
+            option_battles={"NIFTY": [], "SENSEX": []},
+            option_chains={"NIFTY": [], "SENSEX": []},
+            iv_skew={"NIFTY": 0.0, "SENSEX": 0.0, "BANKNIFTY": 0.0},  # FIX: Added BANKNIFTY
+            resets_today=0,
+            gex_bias={"NIFTY": 0.0, "SENSEX": 0.0},
+            sector_synergy=0.0,
+            thought_logs=[],
+            is_learning=False
+        )
+    
+    # Market is open - return live data
     return SystemState(
         regime=live_state.current_regime,
         is_in_recovery=risk_engine.is_in_recovery(),
