@@ -1,10 +1,5 @@
 {
     "buildCommand": "cd dashboard && npm run build",
     "installCommand": "cd dashboard && npm install",
-    "outputDirectory": "dashboard/.next",
-    "functions": {
-        "**/*.py": false,
-        "main.py": false,
-        "api.py": false
-    }
+    "outputDirectory": "dashboard/.next"
 }
