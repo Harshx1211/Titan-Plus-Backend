@@ -2,9 +2,19 @@ import logging
 import pandas as pd
 from datetime import datetime
 from typing import Optional, Dict
-import nselib
-from nselib import capital_market
-from jugaad_data.nse import NSELive, index_raw
+try:
+    import nselib
+    from nselib import capital_market
+except ImportError:
+    nselib = None
+    capital_market = None
+
+try:
+    from jugaad_data.nse import NSELive, index_raw
+except ImportError:
+    NSELive = None
+    index_raw = None
+
 from models import MarketData
 import os
 from dotenv import load_dotenv

@@ -2,10 +2,7 @@ pandas
 pandas_ta
 python-dotenv
 requests
-nselib
-jugaad-data
 kiteconnect
-uvicorn
 fastapi
 NorenRestApiPy
 pyotp
