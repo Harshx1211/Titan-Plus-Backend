@@ -224,6 +224,8 @@ def run_engine_loop():
             live_state.current_symbol_idx = (live_state.current_symbol_idx + 1) % len(live_state.symbols)
 
             # 1. Fetch Data (Priority Ticker Update)
+            detected_patterns = []
+            signal_type = None
             try:
                 # Use a very short timeout for ticker updates
                 market_data = data_provider.get_market_snapshot(symbol)
@@ -562,7 +564,45 @@ def run_engine_loop():
                 detected_patterns = pattern_results.get("patterns", [])
                 signal_type = "BULLISH" if any(p in ["VWAP_CROSSOVER", "HAMMER", "BULLISH_ENGULFING", "CPR_BREAKOUT"] for p in detected_patterns) else "BEARISH"
                 
-                # ... (Existing Logic) ...
+                # Guardrail: Avoid duplicate active signals
+                if not any(s.symbol == symbol and s.is_live for s in live_state.active_signals):
+                    # Phase 25/27: Hard Veto Gates
+                    if is_basis_unstable:
+                        logger.warning(f"SIGNAL VETO: Basis Dispersion unstable for {symbol}.")
+                    elif is_synthetic:
+                        logger.warning(f"SIGNAL VETO: DATA_SYNTHETIC for {symbol}. Blocking execution.")
+                        live_state.market_message = f"DATA_OUTAGE: Synthetic Veto Active for {symbol}"
+                    else:
+                        opt_trade = option_engine.find_executable_option(
+                            symbol, 
+                            market_data.spot_price, 
+                            signal_type,
+                            macro_zones=macro_zones,
+                            is_momentum_dominant=is_dominant,
+                            days_to_expiry=5,
+                            chain_df=chain_df,
+                            is_synthetic=is_synthetic
+                        )
+                        
+                        if not opt_trade.get("rejection_reasons"):
+                            new_signal = TradeSignal(
+                                symbol=symbol,
+                                entry_price=market_data.spot_price,
+                                stop_loss=50, 
+                                target=100,
+                                confidence=SignalConfidence.HIGH if pattern_results["score"] > 0.9 else SignalConfidence.MEDIUM,
+                                regime=live_state.current_regime,
+                                reasoning=f"{signal_type} | {', '.join(detected_patterns)}",
+                                timestamp=datetime.now(),
+                                decision_id=decision_id,
+                                logic_version="v8.5.0",
+                                spread_at_entry=abs(market_data.future_price - market_data.spot_price),
+                                **opt_trade
+                            )
+                            live_state.active_signals.append(new_signal)
+                            logger.info(f"SIGNAL: {new_signal.option_symbol} bound to Decision {decision_id}")
+                        else:
+                            logger.warning(f"SIGNAL REJECTED: {opt_trade['rejection_reasons']}")
             
             else:
                 # [v9.1] Sidecar Route for Vetoed Signals
@@ -635,49 +675,7 @@ def run_engine_loop():
                         ))
                         logger.warning(f"SKIRMISHER EXECUTE: {scalp['reason']}")
 
-                # Guardrail: Avoid duplicate active signals
-                if not any(s.symbol == symbol and s.is_live for s in live_state.active_signals):
-                    # Phase 25/27: Hard Veto Gates
-                    if is_basis_unstable:
-                        logger.warning(f"SIGNAL VETO: Basis Dispersion unstable for {symbol}.")
-                        continue
-                    
-                    if is_synthetic:
-                        logger.warning(f"SIGNAL VETO: DATA_SYNTHETIC for {symbol}. Blocking execution.")
-                        live_state.market_message = f"DATA_OUTAGE: Synthetic Veto Active for {symbol}"
-                        continue
 
-                    opt_trade = option_engine.find_executable_option(
-                        symbol, 
-                        market_data.spot_price, 
-                        signal_type,
-                        macro_zones=macro_zones,
-                        is_momentum_dominant=is_dominant,
-                        days_to_expiry=5,
-                        chain_df=chain_df,
-                        is_synthetic=is_synthetic
-                    )
-                    
-                    if opt_trade.get("rejection_reasons"):
-                        logger.warning(f"SIGNAL REJECTED: {opt_trade['rejection_reasons']}")
-                        continue
-                    
-                    new_signal = TradeSignal(
-                        symbol=symbol,
-                        entry_price=market_data.spot_price,
-                        stop_loss=50, 
-                        target=100,
-                        confidence=SignalConfidence.HIGH if pattern_results["score"] > 0.9 else SignalConfidence.MEDIUM,
-                        regime=live_state.current_regime,
-                        reasoning=f"{signal_type} | {', '.join(detected_patterns)}",
-                        timestamp=datetime.now(),
-                        decision_id=decision_id,
-                        logic_version="v8.5.0",
-                        spread_at_entry=abs(market_data.future_price - market_data.spot_price),
-                        **opt_trade
-                    )
-                    live_state.active_signals.append(new_signal)
-                    logger.info(f"SIGNAL: {new_signal.option_symbol} bound to Decision {decision_id}")
             
             # 7. Rotation & Sleep
             live_state.last_update = datetime.now()

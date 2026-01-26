@@ -210,7 +210,7 @@ class FullSystemSimulator:
                  logger.info(f"[{curr_time}] ⚠️  PATTERN DETECTED: BEARISH FLOW (Price: {curr_price:.1f})")
                  features = {"ADX": 0.9, "OI_RES": 1.5, "PCR": 0.5} # Strong Trend features
                  
-                 boost = self.brain_engine.get_confidence_boost(features, "TRENDING")
+                 boost, thoughts = self.brain_engine.get_confidence_boost(features, "TRENDING")
                  if boost > 0.75:
                       logger.info(f"[{curr_time}] ✅ CORE BRAIN: APPROVE BEARISH (Conf: {boost:.2f})")
                       self.journal.execute_trade("BEARISH", curr_price, curr_time, boost, source="CORE_BRAIN")
