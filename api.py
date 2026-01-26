@@ -131,7 +131,7 @@ async def get_state():
     return SystemState(
         regime=live_state.current_regime,
         is_in_recovery=risk_engine.is_in_recovery(),
-        data_latency=(datetime.now() - live_state.last_update).total_seconds(),
+        data_latency=(datetime.now(timezone.utc) - live_state.last_update).total_seconds(),
         integrity_status=live_state.integrity,
         active_signals=live_state.active_signals,
         last_update=live_state.last_update,
