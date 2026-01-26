@@ -614,7 +614,7 @@ def run_engine_loop():
                     sidecar_decision = trap_hunter.check_trigger(
                         veto_reason=live_state.market_message,
                         signal_type=signal_type,
-                        df=market_df
+                        df=hist_df
                     )
                     
                     if sidecar_decision["action"] == "EXECUTE":
@@ -648,7 +648,7 @@ def run_engine_loop():
                 if live_state.current_regime == Regime.SIDEWAYS and not detected_patterns:
                     # Only run if no heavy pattern was found (Brain silence)
                     scalp = skirmisher.check_scalp_signal(
-                        df=market_df, 
+                        df=hist_df, 
                         current_regime="SIDEWAYS"
                     )
                     
