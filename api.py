@@ -16,10 +16,10 @@ from brain_engine import BrainEngine
 from evolution_engine import EvolutionEngine
 from pattern_engine import PatternEngine
 from option_engine import OptionEngine
-from database import DatabaseManager
 from session_auditor import SessionAuditor
 from data_provider import DataProvider
 from trap_hunter import TrapHunter
+from skirmisher import Skirmisher
 import asyncio
 import threading
 import os
@@ -80,6 +80,7 @@ pattern_engine = PatternEngine()
 risk_engine = RiskEngine()
 brain = BrainEngine()
 trap_hunter = TrapHunter() # [v9.1] Sidecar Module
+skirmisher = Skirmisher() # [v9.2] Sandboxed Scalper
 evolution_engine = EvolutionEngine(brain)
 option_engine = OptionEngine()
 db = DatabaseManager()
@@ -564,6 +565,41 @@ def run_engine_loop():
                          ))
                          logger.warning(f"SIDECAR EXECUTE: {sidecar_decision['reason']}")
                 
+                         logger.warning(f"SIDECAR EXECUTE: {sidecar_decision['reason']}")
+                
+                # [v9.2] The Skirmisher (Sandboxed Scalper)
+                # If everything else is silent (Brain Blocking, Sidecar Blocking, or just no signal)
+                # AND we are in SIDEWAYS regime, check for Activity Scalps.
+                if live_state.current_regime == Regime.SIDEWAYS and not detected_patterns:
+                    # Only run if no heavy pattern was found (Brain silence)
+                    scalp = skirmisher.check_scalp_signal(
+                        df=market_df, 
+                        current_regime="SIDEWAYS"
+                    )
+                    
+                    if scalp["action"] == "EXECUTE":
+                        # Log Scalp (Activity Only)
+                        trade_id = skirmisher.log_execution(
+                            trade_type=scalp["type"],
+                            entry_price=market_data.spot_price,
+                            reason=scalp["reason"]
+                        )
+                        live_state.active_signals.append(TradeSignal(
+                             symbol=symbol,
+                             entry_price=market_data.spot_price,
+                             stop_loss=15, # Tight Scalp SL
+                             target=30, # Scalp Target
+                             confidence=SignalConfidence.LOW,
+                             regime=Regime.SIDEWAYS,
+                             reasoning=f"⚠️ TACTICAL SCALP: {scalp['reason']}",
+                             timestamp=datetime.now(),
+                             decision_id=trade_id,
+                             logic_version="v9.2_SKIRMISHER",
+                             spread_at_entry=0.0,
+                             option_symbol=f"SCALP_{symbol}" 
+                        ))
+                        logger.warning(f"SKIRMISHER EXECUTE: {scalp['reason']}")
+
                 # Guardrail: Avoid duplicate active signals
                 if not any(s.symbol == symbol and s.is_live for s in live_state.active_signals):
                     # Phase 25/27: Hard Veto Gates
