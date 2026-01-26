@@ -300,6 +300,7 @@ def run_engine_loop():
                 logger.warning(f"ENGINE: Analysis failed for {symbol}: {e}")
                 pattern_results = {"score": 0.0, "patterns": []}
                 macro_bias = 0
+                macro_zones = []
             
             # Phase 14: Option Chain X-Ray (Partitioned)
             try:
