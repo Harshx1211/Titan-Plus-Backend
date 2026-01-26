@@ -77,7 +77,8 @@ class SupabaseManager:
                 "confidence": signal_data['confidence'],
                 "state": "INTENT",
                 "value": "PENDING",
-                "patterns": signal_data.get('patterns', "")
+                "patterns": signal_data.get('patterns', ""),
+                "decision_id": signal_data.get('decision_id', "")
             }
             try:
                 if self.queue.full():
@@ -91,7 +92,7 @@ class SupabaseManager:
         except Exception as e:
             logger.error(f"SUPABASE CRITICAL: {e}")
 
-    def log_outcome(self, signal_id: str, outcome: str):
+    def log_outcome(self, signal_id: str, outcome: str, persistence: bool = False):
         """Logs outcome to Supabase."""
         try:
             data = {
@@ -100,7 +101,8 @@ class SupabaseManager:
                 "timestamp_ns": time.time_ns(),
                 "seq_id": self._get_next_seq(),
                 "state": "OUTCOME",
-                "value": outcome
+                "value": outcome,
+                "persistence": persistence
             }
             try:
                 if self.queue.full():

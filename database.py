@@ -19,9 +19,9 @@ class DatabaseManager:
         signal_data['patterns'] = ",".join(patterns)
         self.cloud_db.log_intent(signal_data)
 
-    def log_outcome(self, signal_id: str, outcome: str):
+    def log_outcome(self, signal_id: str, outcome: str, persistence: bool = False):
         """Logs the outcome to Supabase."""
-        self.cloud_db.log_outcome(signal_id, outcome)
+        self.cloud_db.log_outcome(signal_id, outcome, persistence)
 
     def get_accuracy_report(self) -> Dict:
         """Calculates win rate from Supabase."""

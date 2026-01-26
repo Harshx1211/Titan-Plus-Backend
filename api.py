@@ -36,6 +36,7 @@ app.add_middleware(
 )
 
 # Persistent State Storage
+# Persistent State Storage
 class LiveState:
     def __init__(self):
         self.current_regime = Regime.UNCERTAIN
@@ -49,17 +50,18 @@ class LiveState:
         self.market_message = "System Stable"
         self.data_source = "PUBLIC_SCRAPER"
         self.index_strengths: Dict[str, float] = {"NIFTY": 0.0, "SENSEX": 0.0}
-        self.max_pain = 0.0
-        self.option_battles = []
-        # Fallback to last known Friday close prices
-        self.nifty_price = 25048.65
-        self.sensex_price = 81537.70
-        self.option_chain = []
+        
+        # Partitioned Symbol Data (v8.1 Multi-Asset)
+        self.prices = {"NIFTY": 25000.0, "SENSEX": 81500.0}
+        self.max_pain = {"NIFTY": 0.0, "SENSEX": 0.0}
+        self.option_battles = {"NIFTY": [], "SENSEX": []}
+        self.option_chains = {"NIFTY": [], "SENSEX": []}
+        
         # v8.1: Statistical Discipline
         self.resets_today = 0
         self.last_reset_time = datetime.now()
         self.beta_history = {"OI": [], "BASIS": []}
-        self.iv_skew = 1.0 # 1.0 is neutral
+        self.iv_skew = {"NIFTY": 1.0, "SENSEX": 1.0}
 
 live_state = LiveState()
 
@@ -86,11 +88,13 @@ class SystemState(BaseModel):
     breadth: Dict[str, int]
     market_message: str
     data_source: str
-    nifty_price: float
-    sensex_price: float
-    max_pain: float
-    option_battles: List[Dict]
-    option_chain: List[Dict]
+    # Multi-Asset Partitioned Data
+    prices: Dict[str, float]
+    max_pain: Dict[str, float]
+    option_battles: Dict[str, List[Dict]]
+    option_chains: Dict[str, List[Dict]]
+    iv_skew: Dict[str, float]
+    resets_today: int
 
 @app.get("/health")
 async def health_check():
@@ -115,11 +119,12 @@ async def get_state():
         breadth=live_state.breadth,
         market_message=live_state.market_message,
         data_source=live_state.data_source,
+        prices=live_state.prices,
         max_pain=live_state.max_pain,
         option_battles=live_state.option_battles,
-        nifty_price=live_state.nifty_price,
-        sensex_price=live_state.sensex_price,
-        option_chain=live_state.option_chain
+        option_chains=live_state.option_chains,
+        iv_skew=live_state.iv_skew,
+        resets_today=live_state.resets_today
     )
 
 @app.post("/signals/intent")
@@ -176,11 +181,9 @@ def run_engine_loop():
                 # Use a very short timeout for ticker updates
                 market_data = data_provider.get_market_snapshot(symbol)
                 
-                # Update specific price tracking for Ticker (DO FIRST)
-                if symbol == "NIFTY" and market_data.spot_price > 0:
-                    live_state.nifty_price = market_data.spot_price
-                elif symbol == "SENSEX" and market_data.spot_price > 0:
-                    live_state.sensex_price = market_data.spot_price
+                # Update specific price tracking
+                if market_data.spot_price > 0:
+                    live_state.prices[symbol] = market_data.spot_price
 
                 if data_provider.use_groww and live_state.data_source != "GROWW_API":
                     live_state.data_source = "GROWW_API"
@@ -231,18 +234,19 @@ def run_engine_loop():
                 pattern_results = {"score": 0.0, "patterns": []}
                 macro_bias = 0
             
-            # Phase 14: Option Chain X-Ray
+            # Phase 14: Option Chain X-Ray (Partitioned)
             try:
                 chain_df = data_provider.get_option_chain(symbol)
                 if not chain_df.empty:
-                    live_state.max_pain = option_engine.calculate_max_pain(chain_df)
-                    live_state.option_battles = option_engine.detect_strike_battles(chain_df)
-                    live_state.option_chain = chain_df.to_dict('records')
+                    sym_max_pain = option_engine.calculate_max_pain(chain_df)
+                    live_state.max_pain[symbol] = sym_max_pain
+                    live_state.option_battles[symbol] = option_engine.detect_strike_battles(chain_df)
+                    live_state.option_chains[symbol] = chain_df.to_dict('records')
                     
                     # Boost pattern score if price is near Max Pain (The Magnet)
-                    if abs(market_data.spot_price - live_state.max_pain) < 20: # Close to magnet
+                    if abs(market_data.spot_price - sym_max_pain) < 20: # Close to magnet
                         pattern_results["score"] *= 1.2
-                        live_state.market_message = "MAX PAIN SYNC: Large Confluence Near Strike"
+                        live_state.market_message = f"MAX PAIN SYNC [{symbol}]: Large Confluence Near Strike"
             except Exception as e:
                 logger.warning(f"ENGINE: Option chain failed for {symbol}: {e}")
 
@@ -360,10 +364,11 @@ def run_engine_loop():
             
             # Non-Price Orthogonal Veto (Fix Audit v8.1 #3)
             # IV Skew as Veto-Only.
-            live_state.iv_skew = data_provider.get_iv_skew(symbol)
-            if live_state.iv_skew > 1.3: # Extreme Put-buying skew
+            sym_iv_skew = data_provider.get_iv_skew(symbol)
+            live_state.iv_skew[symbol] = sym_iv_skew
+            if sym_iv_skew > 1.3: # Extreme Put-buying skew
                 confidence_boost *= 0.5
-                live_state.market_message = "RISK VETO: Extreme IV Skew Detected"
+                live_state.market_message = f"RISK VETO [{symbol}]: Extreme IV Skew Detected"
             
             # Timing Guardrails
             now_ts = time.time()
@@ -414,9 +419,16 @@ def run_engine_loop():
                 # Check for Exit
                 if price_adverse > 50 or price_delta > 100:
                     sig.is_live = False
-                    # Finalize with Accountability (Guardrail #1: Freeze authority during calibration)
+                    
+                    # Persistence Calculation (v8.1 Mirror)
+                    is_structural = (sig.mfe > 2 * sig.mae) if sig.mae > 1 else (sig.mfe > 10)
+                    if sig.time_to_mfe < 5.0 and sig.mfe > (2 * sig.mae) and sig.mfe > 15:
+                        is_structural = True
+
+                    # Finalize with Accountability
+                    brain_decision_id = sig.decision_id if hasattr(sig, 'decision_id') else decision_id
                     brain.log_snapshot(
-                        decision_id=sig.decision_id if hasattr(sig, 'decision_id') else decision_id,
+                        decision_id=brain_decision_id,
                         outcome=True if price_delta > 100 else False,
                         performance={
                             "mfe": sig.mfe,
@@ -426,6 +438,9 @@ def run_engine_loop():
                         },
                         freeze_authority=is_passive
                     )
+                    
+                    # Log to Truth Ledger (for Dashboard UI)
+                    db.log_outcome(brain_decision_id, "WIN" if price_delta > 100 else "LOSS", persistence=is_structural)
 
             # 6. Signal Generation
             if pattern_results["score"] > 0.8:
