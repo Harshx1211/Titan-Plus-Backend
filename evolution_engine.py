@@ -8,26 +8,59 @@ from brain_engine import BrainEngine
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("evolution_engine")
 
+class MetaGovernor:
+    """
+    [v9.0] The One-Way Safety Valve.
+    Audits all proposed changes. Can TIGHTEN thresholds automatically, 
+    but NEVER LOOSEN them without manual override.
+    """
+    def __init__(self):
+        self.min_win_rate = 40.0
+        self.max_missed_alpha = 50.0 # Percentage
+        self.lock_status = "ACTIVE" # ACTIVE, STRICT, OVERRIDE
+
+    def audit_threshold_proposal(self, current_threshold: float, performance_metrics: Dict) -> float:
+        """
+        Evaluating whether to tighten or keep the threshold.
+        Loosening is aggressively blocked.
+        """
+        win_rate = performance_metrics.get("win_rate", 50.0)
+        missed_alpha = performance_metrics.get("missed_alpha", 0.0)
+        
+        # Rule 1: Auto-Tighten on poor performance
+        if win_rate < self.min_win_rate:
+            logger.warning(f"GOVERNOR: Win Rate {win_rate}% Critical. TIGHTENING threshold.")
+            self.lock_status = "STRICT"
+            return min(0.95, current_threshold + 0.05)
+            
+        # Rule 2: Block Auto-Loosening based on missed moves alone
+        # Institutional Doctrine: Silence > False Confidence.
+        if missed_alpha > self.max_missed_alpha:
+            logger.info(f"GOVERNOR: High Missed Alpha ({missed_alpha}%). Loosening BLOCKED by Safety Valve.")
+            return current_threshold # Return existing, do not lower.
+
+        return current_threshold
+
 class EvolutionEngine:
     """
-    [v8.7.0] The Overnight Learning Module.
-    Performs Counterfactual Analysis: "What if we had traded the signals we blocked?"
-    Refines feature weights to reduce False Negatives (Missed Alphas) 
-    and False Positives (Bad Approvals).
+    [v9.0.0] The Evolutionary Organism (Advisory Mode).
+    Uses Feature Reputation (Bounded) instead of permanent mutation.
     """
     def __init__(self, brain: BrainEngine):
         self.db = SupabaseManager()
         self.brain = brain
-        self.learning_rate = 0.05 # Conservative weight adjustment
+        self.governor = MetaGovernor()
+        # Reputation decays towards 1.0 (Half-life logic)
+        self.reputation_decay = 0.95 
 
     def evolve_session(self, date_str: Optional[str] = None):
         """
-        Runs the post-session post-mortem and updates brain weights.
+        Runs the post-session post-mortem and updates Feature Reputation.
         """
         if not date_str:
-            date_str = (datetime.now() - timedelta(hours=5)).strftime("%Y-%m-%d") # Use current day's data
+            date_str = (datetime.now() - timedelta(hours=5)).strftime("%Y-%m-%d")
 
-        logger.info(f"EVOLUTION: Starting post-session overhaul for {date_str}...")
+        logger.info(f"EVOLUTION: Starting Advisory Audit for {date_str}...")
         
         # 1. Fetch History
         history = self.db.get_history(limit=500)
@@ -37,67 +70,89 @@ class EvolutionEngine:
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         session_df = df[df['timestamp'].dt.strftime('%Y-%m-%d') == date_str]
         
-        if session_df.empty:
-            logger.warning(f"EVOLUTION: No data found for {date_str}. Skipping.")
-            return
+        if session_df.empty: return
 
-        # 2. Extract Blocks (Missed Opportunities)
-        # In our log_snapshot, we log 'decision' which is APPROVE or BLOCK
+        # 2. Extract Blocks & Approvals
         blocks = session_df[session_df['decision'] == 'BLOCK']
         approvals = session_df[session_df['decision'] == 'APPROVE']
         
-        logger.info(f"EVOLUTION: Analyzing {len(blocks)} Blocks and {len(approvals)} Approvals.")
+        # 3. Calculate Reputation Adjustments (Bounded)
+        rep_adjustments = {f: 0.0 for f in self.brain.feature_reputation}
 
-        # 3. Analyze Misses (Blocked signals that would have been Structural Wins)
-        # Note: In a real institutional setup, we would re-run 1m data through the pattern engine.
-        # Here we check if any 'outcome' logged for a blocked ID shows persistence.
-        # Since we usually don't log outcomes for BLOCKS, we look for 'efficacy == 0' in BLOCKS
-        missed_alpha_count = 0
-        weight_adjustments = {f: 0.0 for f in self.brain.feature_weights}
-
+        # Analyze Missed Alphas (Blocks that persisted)
         for _, row in blocks.iterrows():
-            # If efficacy is 0 for a BLOCK, it means the outcome was TRUE and actionable.
-            if row.get('efficacy') == 0:
-                missed_alpha_count += 1
-                # Identify the 'punitive' feature (the one that pushed confidence below threshold)
-                # Typically the feature with the lowest Z-score in the snapshot.
+            if row.get('efficacy') == 0: # Missed Win
                 features = row.get('features', {})
                 if features:
                     min_feat = min(features, key=features.get)
-                    if min_feat in weight_adjustments:
-                        weight_adjustments[min_feat] -= self.learning_rate # Reduce weight of punitive feature
+                    # Penalize the feature that caused the block
+                    if min_feat in rep_adjustments:
+                        rep_adjustments[min_feat] -= 0.02
 
-        # 4. Analyze Bad Approvals (Approved signals that were Losses)
-        bad_approval_count = 0
+        # Analyze Bad Approvals (Losses)
         for _, row in approvals.iterrows():
-            if row.get('efficacy') == 0:
-                bad_approval_count += 1
-                # Identify the 'lying' feature (the one with high Z-score that was wrong)
+            if row.get('efficacy') == 0: # Bad Trade
                 features = row.get('features', {})
                 if features:
                     max_feat = max(features, key=features.get)
-                    if max_feat in weight_adjustments:
-                        weight_adjustments[max_feat] -= self.learning_rate # Reduce weight of deceptive feature
-
-        # 5. Apply Adjustments
-        logger.info(f"EVOLUTION: Findings - Missed Alphas: {missed_alpha_count}, Bad Approvals: {bad_approval_count}")
-        for feat, adj in weight_adjustments.items():
-            if adj != 0:
-                old_w = self.brain.feature_weights[feat]
-                # Keep weights between 0.5 and 2.5
-                self.brain.feature_weights[feat] = max(0.5, min(2.5, old_w + adj))
-                logger.info(f"EVOLUTION: Adjusted {feat} | {old_w:.2f} -> {self.brain.feature_weights[feat]:.2f}")
-
-        # 6. Global Normalization (Sum of weights should remain roughly constant to prevent drift)
-        total_weight = sum(self.brain.feature_weights.values())
-        logger.info(f"EVOLUTION: Session Evolution Complete. Total Weight: {total_weight:.2f}")
+                    # Penalize the feature that lied
+                    if max_feat in rep_adjustments:
+                        rep_adjustments[max_feat] -= 0.05
         
-        # Save the new brain state
+        # Analyze Good Approvals (Wins) - Conditional Credit
+        # Only credit if context matches (e.g. Gamma near expiry)
+        for _, row in approvals.iterrows():
+            if row.get('efficacy') == 1:
+                features = row.get('features', {})
+                # Simple credit for now, will refine context in v9.1
+                for f in features:
+                    if f in rep_adjustments:
+                         rep_adjustments[f] += 0.01
+
+        # 4. Apply Reputation Updates (Inertial & Bounded)
+        for feat, adj in rep_adjustments.items():
+            current_rep = self.brain.feature_reputation.get(feat, 1.0)
+            
+            # Apply Decay (Return to Mean)
+            current_rep = 1.0 + (current_rep - 1.0) * self.reputation_decay
+            
+            # Apply Adjustment
+            new_rep = current_rep + adj
+            
+            # Hard Bounds [0.5, 1.5]
+            new_rep = max(0.5, min(1.5, new_rep))
+            self.brain.feature_reputation[feat] = new_rep
+            
+            logger.info(f"EVOLUTION: {feat} Reputation -> {new_rep:.2f}")
+
+        # 5. Governor Audit for Thresholds
+        # Calculate metrics for the Governor
+        total_trades = len(approvals)
+        wins = len(approvals[approvals['efficacy'] == 1])
+        win_rate = (wins / total_trades * 100) if total_trades > 0 else 50.0
+        
+        # Simple missed alpha calc
+        missed = len(blocks[blocks['efficacy'] == 0]) 
+        total_opps = missed + wins
+        missed_alpha_pct = (missed / total_opps * 100) if total_opps > 0 else 0.0
+        
+        metrics = {"win_rate": win_rate, "missed_alpha": missed_alpha_pct}
+        
+        # Check if we need to TIGHTEN thresholds (One-Way)
+        # Note: In a real implementation, we'd update specific regime thresholds
+        # For this prototype, we just log the Governor's decree.
+        new_threshold = self.governor.audit_threshold_proposal(0.75, metrics)
+        if new_threshold > 0.75:
+             logger.warning(f"GOVERNOR DECREE: System needs tightening to {new_threshold}")
+             # self.brain.update_threshold(new_threshold) # Future implementation
+
+        # Save State
         self.brain.save_state()
+        
         return {
-            "missed_alphas": missed_alpha_count,
-            "bad_approvals": bad_approval_count,
-            "adjustments": weight_adjustments
+            "reputation_updates": self.brain.feature_reputation,
+            "governor_status": self.governor.lock_status,
+            "metrics": metrics
         }
 
 if __name__ == "__main__":

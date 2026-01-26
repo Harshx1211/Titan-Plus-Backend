@@ -27,6 +27,7 @@ class BrainEngine:
         self.feature_weights: Dict[str, float] = {
             "ADX": 1.0, "BASIS_RES": 1.2, "PCR": 1.0, "OI_RES": 1.5
         }
+        self.feature_reputation: Dict[str, float] = {f: 1.0 for f in self.feature_weights}
         
         # Default Authority
         self.authority: Dict[str, float] = {
@@ -45,10 +46,11 @@ class BrainEngine:
         self.decisions: Dict[str, DecisionObject] = {}
 
     def save_state(self):
-        """Saves current weights and authority to disk."""
+        """Saves current weights, authority, and reputation to disk."""
         try:
             state = {
                 "feature_weights": self.feature_weights,
+                "feature_reputation": self.feature_reputation,
                 "authority": self.authority,
                 "logic_version": self.LOGIC_VERSION,
                 "updated_at": datetime.now().isoformat()
@@ -60,13 +62,14 @@ class BrainEngine:
             logger.error(f"BRAIN: Failed to save state: {e}")
 
     def load_state(self):
-        """Loads weights and authority from disk."""
+        """Loads weights, authority, and reputation from disk."""
         import os
         if os.path.exists(self.state_file):
             try:
                 with open(self.state_file, "r") as f:
                     state = json.load(f)
                     self.feature_weights = state.get("feature_weights", self.feature_weights)
+                    self.feature_reputation = state.get("feature_reputation", self.feature_reputation)
                     self.authority = state.get("authority", self.authority)
                 logger.info("BRAIN: State loaded from disk.")
             except Exception as e:
@@ -147,8 +150,19 @@ class BrainEngine:
         
         if not norm_features: return 1.0
         
-        score = sum(self.feature_weights[f] * v for f, v in norm_features.items())
-        boost = min(max(score / sum(self.feature_weights.values()), 0.0), 1.0)
+        # Apply Feature Reputation Multiplier (v9.0.0 Advisory Mode)
+        weighted_score = 0.0
+        total_weight = 0.0
+        
+        for f, v in norm_features.items():
+             w = self.feature_weights[f]
+             rep = self.feature_reputation.get(f, 1.0) # [0.5, 1.5]
+             w_adj = w * rep
+             weighted_score += w_adj * v
+             total_weight += w_adj
+             
+        score = weighted_score
+        boost = min(max(score / total_weight, 0.0), 1.0) if total_weight > 0 else 1.0
         
         # Phase 28: Signal-Aware IV Intelligence (Meta-Awareness)
         if signal_intent and iv_skew > 1.3:
