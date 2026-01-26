@@ -20,6 +20,12 @@ class SupabaseManager:
     """
     def __init__(self):
         url: str = os.getenv("SUPABASE_URL")
+        key: str = os.getenv("SUPABASE_KEY")
+        if not url or not key:
+            logger.error("SUPABASE: URL or KEY missing in environment variables.")
+        
+        self.supabase: Client = create_client(url, key)
+        
         # Async Logging Infrastructure (Hardened)
         self.queue = queue.Queue(maxsize=10000) # Prevents memory time-bomb
         self.seq_id = 0
