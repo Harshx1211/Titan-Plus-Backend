@@ -54,7 +54,7 @@ class TradeSignal(BaseModel):
     mae: float = 0.0          
     time_to_mfe: float = 0.0  
     spread_at_entry: float = 0.0 
-    logic_version: str = "v1.2.7"
+    logic_version: str = "v9.4.0"
 
 class DecisionObject(BaseModel):
     """
