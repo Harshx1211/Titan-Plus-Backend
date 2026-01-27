@@ -95,29 +95,26 @@ class DataProvider:
         return self._fetch_from_public(symbol)
 
     def _fetch_from_groww(self, symbol: str) -> MarketData:
-        """ Fetches live data from Groww API. """
+        """ Fetches live data from Groww API with cooldown awareness. """
         if self.use_groww and time.time() > self._groww_forbidden_until:
             try:
-                # 1. Try Groww Primary
-                # For indices, Groww get_quote often lacks segment data; fallback to chain if needed
-                try:
-                    res = self.bot.get_quote(trading_symbol=symbol, exchange="NSE", segment="CASH")
-                    if res and res.get('lastPrice'):
-                        return MarketData(
-                            symbol=symbol,
-                            spot_price=float(res['lastPrice']),
-                            future_price=float(res.get('lastPrice', 0)) + 45.0,
-                            oi=int(res.get('oi', 0)),
-                            pcr=0.95,
-                            timestamp=datetime.now()
-                        )
-                except Exception as e:
-                    if "Access forbidden" in str(e):
-                        logger.warning(f"DATA: Groww Access Forbidden. Cooling down for 5 mins.")
-                        self._groww_forbidden_until = time.time() + 300
-                    raise e # Re-raise to be caught by outer try-except
+                # For indices, Groww get_quote often lacks segment data; return 0 to trigger fallback
+                res = self.bot.get_quote(trading_symbol=symbol, exchange="NSE", segment="CASH")
+                if res and res.get('lastPrice'):
+                    return MarketData(
+                        symbol=symbol,
+                        spot_price=float(res['lastPrice']),
+                        future_price=float(res.get('lastPrice', 0)) + 45.0,
+                        oi=int(res.get('oi', 0)),
+                        pcr=0.95,
+                        timestamp=datetime.now()
+                    )
             except Exception as e:
-                logger.warning(f"DATA: Groww fetch failed for {symbol}: {e}")
+                if "Access forbidden" in str(e):
+                    logger.warning(f"DATA: Groww Access Forbidden. Cooling down for 5 mins.")
+                    self._groww_forbidden_until = time.time() + 300
+                else:
+                    logger.debug(f"DATA: Groww fetch failed for {symbol}: {e}")
         return self._fetch_from_public(symbol)
 
     def _fetch_from_public(self, symbol: str) -> MarketData:
@@ -153,14 +150,15 @@ class DataProvider:
                     expiries = self.bot.get_expiries(exchange="NSE", underlying_symbol=symbol)
                     nearest = expiries[0] if isinstance(expiries, list) else expiries.get('expiries', [])[0]
                     chain = self.bot.get_option_chain(exchange="NSE", underlying=symbol, expiry_date=nearest)
-                    # Groww option chain response often has 'underlyingPrice'
                     spot = float(chain.get('underlyingPrice', 0))
                     if spot > 0:
                         logger.info(f"DATA: Recovered {symbol} spot from Groww Option Chain: {spot}")
                 except Exception as e:
                     if "Access forbidden" in str(e):
-                        logger.warning(f"DATA: Groww Access Forbidden (Chain). Cooling down for 5 mins.")
+                        logger.warning(f"DATA: Groww Access Forbidden (Chain Recovery). Cooling down for 5 mins.")
                         self._groww_forbidden_until = time.time() + 300
+                    else:
+                        logger.debug(f"DATA: Groww recovery failed: {e}")
 
             if spot <= 0:
                 raise ValueError(f"Could not fetch valid spot for {symbol}")
@@ -313,7 +311,7 @@ class DataProvider:
         """
         Fetches the live option chain from Groww or fallback.
         """
-        if self.use_groww and symbol == "NIFTY":
+        if self.use_groww and symbol == "NIFTY" and time.time() > self._groww_forbidden_until:
             try:
                 # 1. Get Expiries
                 expiries = self.bot.get_expiries(exchange="NSE", underlying_symbol=symbol)
@@ -322,7 +320,6 @@ class DataProvider:
                 # 2. Get Option Chain
                 chain_raw = self.bot.get_option_chain(exchange="NSE", underlying=symbol, expiry_date=nearest_expiry)
                 
-                # Groww usually returns options in a list under some key
                 options = chain_raw.get('optionChain', [])
                 if not options:
                     return pd.DataFrame()
@@ -346,7 +343,11 @@ class DataProvider:
                     })
                 return pd.DataFrame(processed), False # Real Data
             except Exception as e:
-                logger.error(f"DATA: Groww chain failed: {e}. Falling back.")
+                if "Access forbidden" in str(e):
+                    logger.warning(f"DATA: Groww Access Forbidden (Chain). Cooling down for 5 mins.")
+                    self._groww_forbidden_until = time.time() + 300
+                else:
+                    logger.debug(f"DATA: Groww chain failed: {e}")
 
         # Static Mock Fallback
         try:
