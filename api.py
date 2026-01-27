@@ -76,6 +76,24 @@ class LiveState:
         self.thought_logs = [] # List of { "timestamp": iso, "type": "VETO|LEARN|SIGNAL", "msg": "..." }
         self.is_learning = False
 
+    def add_thought(self, thought_type: str, msg: str):
+        """[v9.5.4] Standardized thought logger with de-duplication and capping."""
+        if self.thought_logs:
+            last = self.thought_logs[-1]
+            # De-duplicate identical messages if they occur within 30 seconds of each other
+            if last['msg'] == msg:
+                 return
+        
+        self.thought_logs.append({
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "type": thought_type,
+            "msg": msg
+        })
+        
+        # Keep logs lean for dashboard stability
+        if len(self.thought_logs) > 40:
+            self.thought_logs.pop(0)
+
 live_state = LiveState()
 session_auditor = SessionAuditor()
 
@@ -233,16 +251,16 @@ async def post_feedback(signal_id: int, outcome: str, override: bool = False):
 async def trigger_evolution(date: Optional[str] = None):
     """Triggers the Overnight Learning (Evolution) process."""
     live_state.is_learning = True
-    live_state.thought_logs.append({"timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "type": "LEARN", "msg": f"Starting Overnight Evolutionary Audit for {date or 'today'}..."})
+    live_state.add_thought("LEARN", f"Starting Overnight Evolutionary Audit for {date or 'today'}...")
     try:
         result = evolution_engine.evolve_session(date)
         
         # Add specific learning results to thoughts
         for feat, rep in result.get("reputation_updates", {}).items():
             if rep != 1.0: # Only if it changed or is non-neutral
-                live_state.thought_logs.append({"timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "type": "LEARN", "msg": f"DNA Calibration: {feat} reputation adjusted to {rep:.2f}"})
+                live_state.add_thought("LEARN", f"DNA Calibration: {feat} reputation adjusted to {rep:.2f}")
         
-        live_state.thought_logs.append({"timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "type": "LEARN", "msg": f"Session Audit Complete. Governor Status: {result.get('governor_status', 'ACTIVE')}"})
+        live_state.add_thought("LEARN", f"Session Audit Complete. Governor Status: {result.get('governor_status', 'ACTIVE')}")
         return {"status": "evolution_complete", "details": result}
     finally:
         live_state.is_learning = False
@@ -495,8 +513,9 @@ def run_engine_loop():
                 iv_skew=live_state.iv_skew.get(symbol, 1.0)
             )
             
+            # v9.5.4: Use standardized de-duped logger
             for t in thoughts:
-                live_state.thought_logs.append({"timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "type": "INFERENCE", "msg": t})
+                live_state.add_thought("INFERENCE", t)
 
             # v8.1: Shape-Shifting Sentinel (Fix Audit v8.1 #2)
             # Monitor Mean, Std, and Kurtosis. Rate-limited to 1 reset/session.
@@ -525,7 +544,7 @@ def run_engine_loop():
             for t in boost_thoughts:
                 # Avoid duplicates from generate_decision
                 if t not in thoughts:
-                    live_state.thought_logs.append({"timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "type": "VETO" if "VETO" in t else "ANALYSIS", "msg": t})
+                    live_state.add_thought("VETO" if "VETO" in t else "ANALYSIS", t)
             
             # v8.5/8.6 Epistemic Overhaul: Unified IV logic in BrainEngine.
             
