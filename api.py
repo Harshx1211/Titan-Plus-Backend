@@ -45,7 +45,6 @@ app.add_middleware(
 )
 
 # Persistent State Storage
-# Persistent State Storage
 class LiveState:
     def __init__(self):
         self.current_regime = Regime.UNCERTAIN
@@ -757,6 +756,11 @@ def run_engine_loop():
             
             # 7. Rotation & Sleep
             live_state.last_update = datetime.now(timezone.utc)
+            
+            # [v9.5] Memory Safety: Cap active signals to last 20 to prevent memory leak over 24/7 operation
+            if len(live_state.active_signals) > 20:
+                live_state.active_signals = live_state.active_signals[-20:]
+                
             time.sleep(2) # [v9.5.4] Synced with Dashboard 2s poll
         except Exception as e:
             logger.error(f"ENGINE ERROR: {e}")
