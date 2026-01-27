@@ -116,6 +116,7 @@ class SystemState(BaseModel):
     sector_synergy: float
     thought_logs: List[Dict]
     is_learning: bool
+    market_open: bool
 
 def is_market_open():
     """Check if Indian stock market is currently open (IST timezone-aware)."""
@@ -155,20 +156,21 @@ async def get_state():
             integrity_status=DivergenceType.NONE,
             active_signals=[],
             last_update=live_state.last_update,
-            vix=0.0,  # Will display as "-" in frontend
+            vix=0.0,  
             breadth={"advances": 0, "declines": 0},
             market_message="MARKET_CLOSED",
             data_source=live_state.data_source,
-            prices=live_state.prices,  # Keep closing prices
+            prices=live_state.prices, 
             max_pain={"NIFTY": 0.0, "SENSEX": 0.0},
             option_battles={"NIFTY": [], "SENSEX": []},
             option_chains={"NIFTY": [], "SENSEX": []},
-            iv_skew={"NIFTY": 0.0, "SENSEX": 0.0, "BANKNIFTY": 0.0},  # FIX: Added BANKNIFTY
+            iv_skew={"NIFTY": 0.0, "SENSEX": 0.0, "BANKNIFTY": 0.0},
             resets_today=0,
             gex_bias={"NIFTY": 0.0, "SENSEX": 0.0},
             sector_synergy=0.0,
             thought_logs=[],
-            is_learning=False
+            is_learning=False,
+            market_open=False
         )
     
     # Market is open - return live data
@@ -192,7 +194,8 @@ async def get_state():
         gex_bias=live_state.gex_bias,
         sector_synergy=live_state.sector_synergy,
         thought_logs=live_state.thought_logs[-10:], # Last 10 thoughts
-        is_learning=live_state.is_learning
+        is_learning=live_state.is_learning,
+        market_open=True
     )
 
 @app.post("/signals/intent")
