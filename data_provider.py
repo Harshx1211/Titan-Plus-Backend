@@ -42,6 +42,7 @@ class DataProvider:
         self.groww_secret = os.getenv("GROWW_API_SECRET")
         self.use_groww = False
         self.bot = None
+        self._groww_forbidden_until = 0 # Cooldown for "Access forbidden" errors
 
         if self.groww_key and self.groww_secret:
             try:
@@ -95,26 +96,29 @@ class DataProvider:
 
     def _fetch_from_groww(self, symbol: str) -> MarketData:
         """ Fetches live data from Groww API. """
-        try:
-            # Indices are often restricted in broker APIs, fallback to public for NIFTY/SENSEX
-            if symbol in ["NIFTY", "SENSEX"]:
-                return self._fetch_from_public(symbol)
-            
-            # For stocks
-            quote = self.bot.get_quote(trading_symbol=symbol, exchange="NSE", segment="CASH")
-            spot = float(quote['last_price'])
-            
-            return MarketData(
-                symbol=symbol,
-                spot_price=spot,
-                future_price=spot + 45.0, # Approximate
-                oi=0, # Cash segment enrichment needed for FNO
-                pcr=1.0,
-                timestamp=datetime.now()
-            )
-        except Exception as e:
-            logger.warning(f"DATA: Groww fetch failed for {symbol}: {e}")
-            return self._fetch_from_public(symbol)
+        if self.use_groww and time.time() > self._groww_forbidden_until:
+            try:
+                # 1. Try Groww Primary
+                # For indices, Groww get_quote often lacks segment data; fallback to chain if needed
+                try:
+                    res = self.bot.get_quote(trading_symbol=symbol, exchange="NSE", segment="CASH")
+                    if res and res.get('lastPrice'):
+                        return MarketData(
+                            symbol=symbol,
+                            spot_price=float(res['lastPrice']),
+                            future_price=float(res.get('lastPrice', 0)) + 45.0,
+                            oi=int(res.get('oi', 0)),
+                            pcr=0.95,
+                            timestamp=datetime.now()
+                        )
+                except Exception as e:
+                    if "Access forbidden" in str(e):
+                        logger.warning(f"DATA: Groww Access Forbidden. Cooling down for 5 mins.")
+                        self._groww_forbidden_until = time.time() + 300
+                    raise e # Re-raise to be caught by outer try-except
+            except Exception as e:
+                logger.warning(f"DATA: Groww fetch failed for {symbol}: {e}")
+        return self._fetch_from_public(symbol)
 
     def _fetch_from_public(self, symbol: str) -> MarketData:
         """
@@ -143,7 +147,7 @@ class DataProvider:
                 logger.warning(f"DATA: Scraper failed for {symbol}: {e}")
 
             # If scraper failed or returned 0, try to get from Groww Option Chain (Real Data)
-            if spot <= 0 and self.use_groww and symbol in ["NIFTY", "BANKNIFTY"]:
+            if spot <= 0 and self.use_groww and symbol in ["NIFTY", "BANKNIFTY"] and time.time() > self._groww_forbidden_until:
                 try:
                     # Fetch chain which contains underlying price
                     expiries = self.bot.get_expiries(exchange="NSE", underlying_symbol=symbol)
@@ -153,8 +157,10 @@ class DataProvider:
                     spot = float(chain.get('underlyingPrice', 0))
                     if spot > 0:
                         logger.info(f"DATA: Recovered {symbol} spot from Groww Option Chain: {spot}")
-                except Exception:
-                    pass
+                except Exception as e:
+                    if "Access forbidden" in str(e):
+                        logger.warning(f"DATA: Groww Access Forbidden (Chain). Cooling down for 5 mins.")
+                        self._groww_forbidden_until = time.time() + 300
 
             if spot <= 0:
                 raise ValueError(f"Could not fetch valid spot for {symbol}")
@@ -188,23 +194,40 @@ class DataProvider:
         """
         try:
             if symbol == "NIFTY":
-                from datetime import date, timedelta
-                fetch_days = 30 if interval == "60minute" else days
-                end_date = date.today()
-                start_date = end_date - timedelta(days=fetch_days)
-                
-                raw_data = index_raw(symbol="NIFTY 50", from_date=start_date, to_date=end_date)
-                df = pd.DataFrame(raw_data)
+                # [v9.5] Switch to nselib for stable history (fixes jugaad-data KeyError)
+                period = '1M' if interval == "60minute" else '1D'
+                df = capital_market.index_data(index="NIFTY 50", period=period)
                 
                 if df.empty:
-                    raise ValueError("Empty data from jugaad-data")
+                    raise ValueError("Empty data from nselib")
 
                 df.columns = [c.lower() for c in df.columns]
-                df['timestamp'] = pd.to_datetime(df['historicaldate'])
+                # Map nselib columns to standard format
+                # Typical nselib format: ['date', 'open', 'high', 'low', 'close', ...]
+                if 'date' in df.columns:
+                    df['timestamp'] = pd.to_datetime(df['date'])
+                elif 'historicaldate' in df.columns:
+                     df['timestamp'] = pd.to_datetime(df['historicaldate'])
+                
                 df.set_index('timestamp', inplace=True)
                 df.sort_index(inplace=True)
                 
-                df = df[['index open', 'index high', 'index low', 'closing index value']]
+                # Use fuzzy match for column names if exact match fails
+                def find_col(possible_names):
+                    for name in possible_names:
+                        if name in df.columns: return name
+                    return None
+
+                open_col = find_col(['open', 'index open', 'open '])
+                high_col = find_col(['high', 'index high', 'high '])
+                low_col = find_col(['low', 'index low', 'low '])
+                close_col = find_col(['close', 'closing index value', 'close '])
+
+                if not all([open_col, high_col, low_col, close_col]):
+                    logger.warning(f"DATA: Column mapping failed for nselib. Columns found: {df.columns}")
+                    raise ValueError("Missing essential price columns")
+
+                df = df[[open_col, high_col, low_col, close_col]]
                 df.columns = ['open', 'high', 'low', 'close']
                 df['volume'] = 0 
                 return df
