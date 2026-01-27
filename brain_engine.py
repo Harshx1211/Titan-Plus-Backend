@@ -168,10 +168,12 @@ class BrainEngine:
         boost = min(max(score / total_weight, 0.0), 1.0) if total_weight > 0 else 1.0
         
         thoughts = []
+        # Round boost for reasoning stability (v9.5.4)
+        display_boost = round(boost, 1)
         if boost > 0.8:
-            thoughts.append(f"High conviction ({boost:.2f}) across features: {list(norm_features.keys())}")
+            thoughts.append(f"High conviction ({display_boost}) across features: {list(norm_features.keys())}")
         elif boost < 0.5:
-            thoughts.append(f"Low feature synergy ({boost:.2f}). Market noise levels elevated.")
+            thoughts.append(f"Low feature synergy ({display_boost}). Market noise levels elevated.")
 
         # Phase 28: Signal-Aware IV Intelligence (Meta-Awareness)
         if signal_intent and iv_skew > 1.3:
@@ -211,7 +213,8 @@ class BrainEngine:
         decision_str = "APPROVE" if boost > threshold else "BLOCK"
         
         if decision_str == "BLOCK":
-            thoughts.append(f"Blocked: Confidence {boost:.2f} below regime threshold {threshold:.2f}.")
+            # Round for logging stability
+            thoughts.append(f"Blocked: Confidence {round(boost, 1)} below regime threshold {round(threshold, 1)}.")
         
         self.decisions[decision_id] = DecisionObject(
             decision_id=decision_id,
