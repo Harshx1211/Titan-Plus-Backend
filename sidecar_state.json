@@ -1,6 +1,6 @@
 {
-    "date": "2026-01-26",
+    "date": "2026-01-27",
     "daily_trades": 0,
-    "consecutive_losses": 2,
-    "kill_switch_active": true
+    "consecutive_losses": 0,
+    "kill_switch_active": false
 }

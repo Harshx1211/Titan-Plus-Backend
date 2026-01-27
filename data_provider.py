@@ -111,7 +111,7 @@ class DataProvider:
                     )
             except Exception as e:
                 if "Access forbidden" in str(e):
-                    logger.warning(f"DATA: Groww Access Forbidden. Cooling down for 5 mins.")
+                    logger.warning(f"DATA: Groww Access Forbidden (Quote). Cooling down for 5 mins.")
                     self._groww_forbidden_until = time.time() + 300
                 else:
                     logger.debug(f"DATA: Groww fetch failed for {symbol}: {e}")
@@ -211,7 +211,7 @@ class DataProvider:
                         break
                 
                 if time_col:
-                    df['timestamp'] = pd.to_datetime(df[time_col])
+                    df['timestamp'] = pd.to_datetime(df[time_col], format='mixed', dayfirst=True)
                 else:
                     # If no date column found, use index if it's already a datetime
                     if not isinstance(df.index, pd.DatetimeIndex):

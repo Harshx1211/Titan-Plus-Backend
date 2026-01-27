@@ -151,6 +151,15 @@ def is_market_open():
     
     return market_start <= now <= market_end
 
+@app.get("/")
+async def root():
+    """Root endpoint to confirm server is alive."""
+    return {
+        "message": "Titan Plus API is running. Visit /health for status.",
+        "version": "v9.4.0",
+        "market": "NSE/BSE"
+    }
+
 @app.get("/health")
 async def health_check():
     """Heartbeat endpoint for the external pinger (cron-job.org)."""

@@ -34,7 +34,7 @@ class SessionAuditor:
         df = pd.DataFrame(history)
         
         # 2. Filter for specific date
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df['timestamp'] = pd.to_datetime(df['timestamp'], format='mixed', dayfirst=True)
         session_df = df[df['timestamp'].dt.strftime('%Y-%m-%d') == date_str]
         
         if session_df.empty:

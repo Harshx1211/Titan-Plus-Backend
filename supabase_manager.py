@@ -18,7 +18,18 @@ class SupabaseManager:
     Cloud Memory for Titan Plus.
     Handles persistent logging of Signal Intents and Brain Snapshots.
     """
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(SupabaseManager, cls).__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+
     def __init__(self):
+        if self._initialized:
+            return
+        
         self.supabase: Optional[Client] = None
         url: str = os.getenv("SUPABASE_URL")
         key: str = os.getenv("SUPABASE_KEY")
@@ -40,6 +51,7 @@ class SupabaseManager:
         self.worker_thread = threading.Thread(target=self._worker, daemon=True)
         self.worker_thread.start()
         logger.info("SUPABASE: Hardened async worker initialized.")
+        self._initialized = True
 
     def _get_next_seq(self) -> int:
         with self.seq_lock:
