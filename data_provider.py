@@ -44,6 +44,7 @@ class DataProvider:
         self.bot = None
         self._groww_forbidden_until = 0 # Cooldown for "Access forbidden" errors
         self._groww_forbidden_count = 0 
+        self._last_log_time = 0 # Prevent spamming same warning too fast
 
         if self.groww_key and self.groww_secret:
             try:
@@ -61,6 +62,12 @@ class DataProvider:
         self._public_cache = None
         self._last_cache_time = 0
         self._cache_ttl = 10 # 10 seconds for breadth/vix/indices
+        
+        # [v9.5.7] Stealth & Optimization
+        self._expiry_cache = {} # {symbol: [expiries, timestamp]}
+        self._consecutive_public_failures = 0
+        import random
+        self._random = random.Random()
 
     def _get_cached_indices(self):
         """Unified method to fetch and cache all indices data with silence."""
@@ -82,6 +89,36 @@ class DataProvider:
             logger.debug(f"CACHE: Failed to refresh indices: {e}")
             return None
 
+    def get_status(self) -> Dict:
+        """ Returns the current status of the data sources. """
+        now = time.time()
+        if not self.use_groww:
+            return {"name": "PUBLIC_SCRAPER", "status": "ACTIVE", "remaining": 0}
+        
+        if now < self._groww_forbidden_until:
+            return {
+                "name": "GROWW_API",
+                "status": "COOLDOWN",
+                "remaining": int(self._groww_forbidden_until - now)
+            }
+        
+        return {"name": "GROWW_API", "status": "ACTIVE", "remaining": 0}
+
+    def get_status(self) -> Dict:
+        """ Returns the current status of the data sources. """
+        now = time.time()
+        if not self.use_groww:
+            return {"name": "PUBLIC_SCRAPER", "status": "ACTIVE", "remaining": 0}
+        
+        if now < self._groww_forbidden_until:
+            return {
+                "name": "GROWW_API",
+                "status": "COOLDOWN",
+                "remaining": int(self._groww_forbidden_until - now)
+            }
+        
+        return {"name": "GROWW_API", "status": "ACTIVE", "remaining": 0}
+
     def get_market_snapshot(self, symbol: str) -> MarketData:
         """
         Fetches current spot, future, and OI for a given symbol.
@@ -95,10 +132,31 @@ class DataProvider:
         # Absolute fallback to public
         return self._fetch_from_public(symbol)
 
+    def _handle_groww_error(self, e: Exception, context: str):
+        """Centralized handler for Groww errors with exponential-ish cooldown."""
+        if "Access forbidden" in str(e):
+            self._groww_forbidden_count += 1
+            # 15 mins init, then 24 hours if persistent
+            cooldown = 3600 * 24 if self._groww_forbidden_count >= 3 else 900
+            self._groww_forbidden_until = time.time() + cooldown
+            
+            # Rate limit the warning log itself
+            now = time.time()
+            if now - self._last_log_time > 60:
+                logger.warning(f"DATA: Groww Access Forbidden ({context}). Count: {self._groww_forbidden_count}. Cooling down for {cooldown//60} mins.")
+                self._last_log_time = now
+        else:
+            logger.debug(f"DATA: Groww fetch failed ({context}): {e}")
+
+    def _apply_jitter(self):
+        """Add randomized delay to break bot-detection patterns."""
+        time.sleep(self._random.uniform(0.1, 0.5))
+
     def _fetch_from_groww(self, symbol: str) -> MarketData:
-        """ Fetches live data from Groww API with cooldown awareness. """
+        """ Fetches live data from Groww API with cooldown awareness and stealth. """
         if self.use_groww and time.time() > self._groww_forbidden_until:
             try:
+                self._apply_jitter()
                 # For indices, Groww get_quote often lacks segment data; return 0 to trigger fallback
                 res = self.bot.get_quote(trading_symbol=symbol, exchange="NSE", segment="CASH")
                 if res and res.get('lastPrice'):
@@ -111,13 +169,7 @@ class DataProvider:
                         timestamp=datetime.now()
                     )
             except Exception as e:
-                if "Access forbidden" in str(e):
-                    self._groww_forbidden_count += 1
-                    cooldown = 3600 * 24 if self._groww_forbidden_count >= 3 else 300
-                    logger.warning(f"DATA: Groww Access Forbidden (Quote). Count: {self._groww_forbidden_count}. Cooling down for {cooldown//60} mins.")
-                    self._groww_forbidden_until = time.time() + cooldown
-                else:
-                    logger.debug(f"DATA: Groww fetch failed for {symbol}: {e}")
+                self._handle_groww_error(e, "Quote")
         return self._fetch_from_public(symbol)
 
     def _fetch_from_public(self, symbol: str) -> MarketData:
@@ -147,23 +199,32 @@ class DataProvider:
                 logger.warning(f"DATA: Scraper failed for {symbol}: {e}")
 
             # If scraper failed or returned 0, try to get from Groww Option Chain (Real Data)
-            if spot <= 0 and self.use_groww and symbol in ["NIFTY", "BANKNIFTY"] and time.time() > self._groww_forbidden_until:
+            # [v9.5.7] Selective Recovery: Only use heavy Chain if public fails repeatedly
+            if spot <= 0:
+                self._consecutive_public_failures += 1
+            else:
+                self._consecutive_public_failures = 0
+
+            if spot <= 0 and self.use_groww and symbol in ["NIFTY", "BANKNIFTY"] and \
+               time.time() > self._groww_forbidden_until and self._consecutive_public_failures >= 3:
                 try:
-                    # Fetch chain which contains underlying price
-                    expiries = self.bot.get_expiries(exchange="NSE", underlying_symbol=symbol)
-                    nearest = expiries[0] if isinstance(expiries, list) else expiries.get('expiries', [])[0]
+                    self._apply_jitter()
+                    # 1. Efficient Expiry Caching (1 hour)
+                    now = time.time()
+                    if symbol not in self._expiry_cache or (now - self._expiry_cache[symbol][1]) > 3600:
+                        expiries = self.bot.get_expiries(exchange="NSE", underlying_symbol=symbol)
+                        nearest = expiries[0] if isinstance(expiries, list) else expiries.get('expiries', [])[0]
+                        self._expiry_cache[symbol] = [nearest, now]
+                    
+                    nearest = self._expiry_cache[symbol][0]
+                    
+                    # 2. Get Option Chain
                     chain = self.bot.get_option_chain(exchange="NSE", underlying=symbol, expiry_date=nearest)
                     spot = float(chain.get('underlyingPrice', 0))
                     if spot > 0:
                         logger.info(f"DATA: Recovered {symbol} spot from Groww Option Chain: {spot}")
                 except Exception as e:
-                    if "Access forbidden" in str(e):
-                        self._groww_forbidden_count += 1
-                        cooldown = 3600 * 24 if self._groww_forbidden_count >= 3 else 300
-                        logger.warning(f"DATA: Groww Access Forbidden (Chain Recovery). Count: {self._groww_forbidden_count}. Cooling down for {cooldown//60} mins.")
-                        self._groww_forbidden_until = time.time() + cooldown
-                    else:
-                        logger.debug(f"DATA: Groww recovery failed: {e}")
+                    self._handle_groww_error(e, "Chain Recovery")
 
             if spot <= 0:
                 raise ValueError(f"Could not fetch valid spot for {symbol}")
@@ -329,9 +390,15 @@ class DataProvider:
         """
         if self.use_groww and symbol == "NIFTY" and time.time() > self._groww_forbidden_until:
             try:
-                # 1. Get Expiries
-                expiries = self.bot.get_expiries(exchange="NSE", underlying_symbol=symbol)
-                nearest_expiry = expiries[0] if isinstance(expiries, list) else expiries.get('expiries', [])[0]
+                self._apply_jitter()
+                # 1. Get Expiries from Cache
+                now = time.time()
+                if symbol not in self._expiry_cache or (now - self._expiry_cache[symbol][1]) > 300: # 5 mins for active chain fetch
+                    expiries = self.bot.get_expiries(exchange="NSE", underlying_symbol=symbol)
+                    nearest_expiry = expiries[0] if isinstance(expiries, list) else expiries.get('expiries', [])[0]
+                    self._expiry_cache[symbol] = [nearest_expiry, now]
+                
+                nearest_expiry = self._expiry_cache[symbol][0]
                 
                 # 2. Get Option Chain
                 chain_raw = self.bot.get_option_chain(exchange="NSE", underlying=symbol, expiry_date=nearest_expiry)
@@ -359,13 +426,7 @@ class DataProvider:
                     })
                 return pd.DataFrame(processed), False # Real Data
             except Exception as e:
-                if "Access forbidden" in str(e):
-                    self._groww_forbidden_count += 1
-                    cooldown = 3600 * 24 if self._groww_forbidden_count >= 3 else 300
-                    logger.warning(f"DATA: Groww Access Forbidden (Chain). Count: {self._groww_forbidden_count}. Cooling down for {cooldown//60} mins.")
-                    self._groww_forbidden_until = time.time() + cooldown
-                else:
-                    logger.debug(f"DATA: Groww chain failed: {e}")
+                self._handle_groww_error(e, "Chain")
 
         # Static Mock Fallback
         try:

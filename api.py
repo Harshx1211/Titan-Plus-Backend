@@ -311,10 +311,14 @@ def run_engine_loop():
                 if market_data.spot_price > 0:
                     live_state.prices[symbol] = market_data.spot_price
 
-                if data_provider.use_groww and live_state.data_source != "GROWW_API":
-                    live_state.data_source = "GROWW_API"
-                elif not data_provider.use_groww and live_state.data_source != "PUBLIC_SCRAPER":
-                    live_state.data_source = "PUBLIC_SCRAPER"
+                # [v9.5.6] Dynamic Data Source Status for Dashboard
+                src_status = data_provider.get_status()
+                if src_status["status"] == "COOLDOWN":
+                    live_state.data_source = f"GROWW (COOLDOWN: {src_status['remaining']}s)"
+                    if "COOLDOWN" not in live_state.market_message:
+                        live_state.add_thought("DATA", "Groww in Cooldown. Using Scraper Fallback.")
+                else:
+                    live_state.data_source = src_status["name"]
             except Exception as e:
                 logger.warning(f"ENGINE: Snapshot fetch failed for {symbol}: {e}")
                 # Use hardcoded fallback to keep ticker alive even if everything fails
@@ -757,11 +761,14 @@ def run_engine_loop():
             # 7. Rotation & Sleep
             live_state.last_update = datetime.now(timezone.utc)
             
-            # [v9.5] Memory Safety: Cap active signals to last 20 to prevent memory leak over 24/7 operation
+            # [v9.5] Memory Safety: Cap active signals to last 20 to prevent memory leak
             if len(live_state.active_signals) > 20:
                 live_state.active_signals = live_state.active_signals[-20:]
                 
-            time.sleep(2) # [v9.5.4] Synced with Dashboard 2s poll
+            # [v9.5.7] Stealth Polling: 3s Base + 0-2s Jitter
+            import random
+            sleep_time = 3 + random.uniform(0, 2)
+            time.sleep(sleep_time)
         except Exception as e:
             logger.error(f"ENGINE ERROR: {e}")
             time.sleep(5)
