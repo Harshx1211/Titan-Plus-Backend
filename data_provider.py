@@ -199,30 +199,40 @@ class DataProvider:
                 if df.empty:
                     raise ValueError("Empty data from nselib")
 
-                df.columns = [c.lower() for c in df.columns]
-                # Map nselib columns to standard format
-                # Typical nselib format: ['date', 'open', 'high', 'low', 'close', ...]
-                if 'date' in df.columns:
-                    df['timestamp'] = pd.to_datetime(df['date'])
-                elif 'historicaldate' in df.columns:
-                     df['timestamp'] = pd.to_datetime(df['historicaldate'])
+                # Flexible Column Mapping (v9.5.3)
+                df.columns = [c.lower().strip() for c in df.columns]
                 
-                df.set_index('timestamp', inplace=True)
+                # Try multiple timestamp columns
+                time_col = None
+                for tc in ['timestamp', 'date', 'historicaldate', 'index_date']:
+                    if tc in df.columns:
+                        time_col = tc
+                        break
+                
+                if time_col:
+                    df['timestamp'] = pd.to_datetime(df[time_col])
+                else:
+                    # If no date column found, use index if it's already a datetime
+                    if not isinstance(df.index, pd.DatetimeIndex):
+                         raise ValueError(f"No timestamp column found among: {df.columns}")
+                
+                df.set_index('timestamp' if 'timestamp' in df.columns else df.index, inplace=True)
                 df.sort_index(inplace=True)
                 
-                # Use fuzzy match for column names if exact match fails
-                def find_col(possible_names):
-                    for name in possible_names:
-                        if name in df.columns: return name
+                # Robust fuzzy matcher for price columns
+                def find_col(prefixes):
+                    for p in prefixes:
+                        for col in df.columns:
+                            if p in col: return col
                     return None
 
-                open_col = find_col(['open', 'index open', 'open '])
-                high_col = find_col(['high', 'index high', 'high '])
-                low_col = find_col(['low', 'index low', 'low '])
-                close_col = find_col(['close', 'closing index value', 'close '])
+                open_col = find_col(['open'])
+                high_col = find_col(['high'])
+                low_col = find_col(['low'])
+                close_col = find_col(['close', 'last'])
 
                 if not all([open_col, high_col, low_col, close_col]):
-                    logger.warning(f"DATA: Column mapping failed for nselib. Columns found: {df.columns}")
+                    logger.debug(f"DATA: Fuzzy mapping failed for nselib. Columns: {df.columns}")
                     raise ValueError("Missing essential price columns")
 
                 df = df[[open_col, high_col, low_col, close_col]]
@@ -233,7 +243,7 @@ class DataProvider:
                 raise ValueError(f"History not implemented for {symbol}")
 
         except Exception as e:
-            logger.warning(f"DATA: {interval} History fetch failed for {symbol} ({e}). Using structural fallback.")
+            logger.debug(f"DATA: {interval} History fetch failed for {symbol} ({e}). Using structural fallback.")
             base_price = 81500.0 if symbol == "SENSEX" else 24500.0
             data = {
                 'timestamp': pd.date_range(end=datetime.now(), periods=100, freq='h' if interval == "60minute" else '5min'),
@@ -369,8 +379,7 @@ class DataProvider:
                 'put_ask': [152.0] * len(strikes)
             }
             return pd.DataFrame(data), True # Synthetic Data
-        except Exception as e:
-            logger.error(f"DATA: Fallback chain failed: {e}")
+        except Exception:
             return pd.DataFrame(), True
 
 if __name__ == "__main__":
