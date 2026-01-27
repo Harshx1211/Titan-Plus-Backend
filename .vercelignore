@@ -1,18 +1,4 @@
-# Institutional Grade Ignores: PURGE ROOT FUNCTIONS
-!main.py
-!api.py
-!index.py
-!requirements.txt
-Procfile
-runtime.txt
-*.py
-*.json
-!dashboard/
-!vercel.json
-
 # Standard Ignores
-dashboard/venv/
-dashboard/node_modules/
 .git/
 .vercel/
 .next/
@@ -44,3 +30,17 @@ walkthrough.md
 *.gif
 *.mp4
 *.md
+
+# Broad File Type Ignores
+Procfile
+runtime.txt
+*.py
+*.json
+
+# UN-IGNORE EXCEPTIONS (Must be last for Vercel)
+!main.py
+!api.py
+!index.py
+!requirements.txt
+!vercel.json
+!dashboard/
