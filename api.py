@@ -30,6 +30,10 @@ from pytz import timezone as pytz_timezone
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# [v9.5] Silence verbose third-party logs to keep Render console clean
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("postgrest").setLevel(logging.WARNING)
+
 app = FastAPI(title="The Oracle - Titan Plus Institutional")
 
 app.add_middleware(
