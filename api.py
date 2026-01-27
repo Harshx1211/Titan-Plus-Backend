@@ -744,7 +744,7 @@ def run_engine_loop():
             
             # 7. Rotation & Sleep
             live_state.last_update = datetime.now(timezone.utc)
-            time.sleep(1)
+            time.sleep(2) # [v9.5.4] Synced with Dashboard 2s poll
         except Exception as e:
             logger.error(f"ENGINE ERROR: {e}")
             time.sleep(5)
