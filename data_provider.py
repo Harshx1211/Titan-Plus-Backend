@@ -193,7 +193,8 @@ class DataProvider:
         try:
             if symbol == "NIFTY":
                 # [v9.5] Switch to nselib for stable history (fixes jugaad-data KeyError)
-                period = '1M' if interval == "60minute" else '1D'
+                # [v9.5.5] Use 1 month for both to ensure enough bars for indicators (20+ bars)
+                period = '1M'
                 df = capital_market.index_data(index="NIFTY 50", period=period)
                 
                 if df.empty:

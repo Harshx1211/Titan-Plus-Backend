@@ -55,11 +55,11 @@ class MarketStrategist:
             self.regime_history.append(Regime.UNCERTAIN)
             return Regime.UNCERTAIN
 
-        # Calculate Indicators
+        # Calculate Indicators (v9.5.5: Added column guards)
         adx = df.ta.adx()
-        current_adx = adx['ADX_14'].iloc[-1] if adx is not None else 25.0
+        current_adx = adx['ADX_14'].iloc[-1] if adx is not None and 'ADX_14' in adx.columns else 25.0
         atr = df.ta.atr()
-        current_atr = atr.iloc[-1] if atr is not None else 0.0
+        current_atr = atr.iloc[-1] if atr is not None and not atr.empty else 0.0
         
         # 1. Raw Price Logic
         raw_regime = Regime.UNCERTAIN
@@ -105,8 +105,8 @@ class MarketStrategist:
         adx = df.ta.adx()
         if adx is None: return False
         
-        curr_adx = adx['ADX_14'].iloc[-1]
-        adx_slope = adx['ADX_14'].diff(5).iloc[-1]
+        curr_adx = adx['ADX_14'].iloc[-1] if 'ADX_14' in adx.columns else 25.0
+        adx_slope = adx['ADX_14'].diff(5).iloc[-1] if 'ADX_14' in adx.columns else 0.0
         
         # Momentum Dominance Threshold: ADX > 35 and rising
         return curr_adx > 35 and adx_slope > 0

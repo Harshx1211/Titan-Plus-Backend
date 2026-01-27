@@ -336,9 +336,9 @@ def run_engine_loop():
                 # Execute Timeframe (5m)
                 hist_df = data_provider.get_history(symbol, interval="5minute")
                 
-                # Phase 26: Cache Indicators once per loop
+                # Phase 26: Cache Indicators once per loop (v9.5.5: Added guards)
                 adx_df = hist_df.ta.adx()
-                adx_val = adx_df['ADX_14'].iloc[-1] if adx_df is not None and not adx_df.empty else 25.0
+                adx_val = adx_df['ADX_14'].iloc[-1] if adx_df is not None and 'ADX_14' in adx_df.columns else 25.0
                 atr_df = hist_df.ta.atr()
                 atr_val = atr_df.iloc[-1] if atr_df is not None and not atr_df.empty else 0.0
 
