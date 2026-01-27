@@ -151,7 +151,7 @@ def is_market_open():
     
     return market_start <= now <= market_end
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 async def root():
     """Root endpoint to confirm server is alive."""
     return {

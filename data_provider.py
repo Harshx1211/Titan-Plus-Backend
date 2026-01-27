@@ -43,6 +43,7 @@ class DataProvider:
         self.use_groww = False
         self.bot = None
         self._groww_forbidden_until = 0 # Cooldown for "Access forbidden" errors
+        self._groww_forbidden_count = 0 
 
         if self.groww_key and self.groww_secret:
             try:
@@ -111,8 +112,10 @@ class DataProvider:
                     )
             except Exception as e:
                 if "Access forbidden" in str(e):
-                    logger.warning(f"DATA: Groww Access Forbidden (Quote). Cooling down for 5 mins.")
-                    self._groww_forbidden_until = time.time() + 300
+                    self._groww_forbidden_count += 1
+                    cooldown = 3600 * 24 if self._groww_forbidden_count >= 3 else 300
+                    logger.warning(f"DATA: Groww Access Forbidden (Quote). Count: {self._groww_forbidden_count}. Cooling down for {cooldown//60} mins.")
+                    self._groww_forbidden_until = time.time() + cooldown
                 else:
                     logger.debug(f"DATA: Groww fetch failed for {symbol}: {e}")
         return self._fetch_from_public(symbol)
@@ -155,8 +158,10 @@ class DataProvider:
                         logger.info(f"DATA: Recovered {symbol} spot from Groww Option Chain: {spot}")
                 except Exception as e:
                     if "Access forbidden" in str(e):
-                        logger.warning(f"DATA: Groww Access Forbidden (Chain Recovery). Cooling down for 5 mins.")
-                        self._groww_forbidden_until = time.time() + 300
+                        self._groww_forbidden_count += 1
+                        cooldown = 3600 * 24 if self._groww_forbidden_count >= 3 else 300
+                        logger.warning(f"DATA: Groww Access Forbidden (Chain Recovery). Count: {self._groww_forbidden_count}. Cooling down for {cooldown//60} mins.")
+                        self._groww_forbidden_until = time.time() + cooldown
                     else:
                         logger.debug(f"DATA: Groww recovery failed: {e}")
 
@@ -355,8 +360,10 @@ class DataProvider:
                 return pd.DataFrame(processed), False # Real Data
             except Exception as e:
                 if "Access forbidden" in str(e):
-                    logger.warning(f"DATA: Groww Access Forbidden (Chain). Cooling down for 5 mins.")
-                    self._groww_forbidden_until = time.time() + 300
+                    self._groww_forbidden_count += 1
+                    cooldown = 3600 * 24 if self._groww_forbidden_count >= 3 else 300
+                    logger.warning(f"DATA: Groww Access Forbidden (Chain). Count: {self._groww_forbidden_count}. Cooling down for {cooldown//60} mins.")
+                    self._groww_forbidden_until = time.time() + cooldown
                 else:
                     logger.debug(f"DATA: Groww chain failed: {e}")
 
