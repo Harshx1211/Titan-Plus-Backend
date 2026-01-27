@@ -87,9 +87,9 @@ class BrainEngine:
             if len(self.raw_history[feat]) > self.window_size:
                 self.raw_history[feat].pop(0)
 
-    def check_basis_stability(self, current_basis: float, hard_floor: float = 0.05) -> Dict:
+    def check_basis_stability(self, current_basis: float, hard_floor: float = 0.12) -> Dict:
         """
-        [v8.6] Two-Tier Sigma Gate.
+        [v8.7] Two-Tier Sigma Gate.
         Protects against low-variance traps using an absolute floor + relative dispersion.
         """
         history = self.raw_history.get("BASIS_RAW", [])
@@ -105,11 +105,14 @@ class BrainEngine:
         is_abs_unstable = abs_diff > hard_floor
         
         # Relative check (Sigma Dispersion)
-        # v8.6: Only use Sigma if std is significant
-        is_sigma_unstable = (abs_diff > 2.5 * std) if std > 0.005 else False
+        # v8.7: Limit Sigma Jump sensitivity if std is extremely low
+        is_sigma_unstable = (abs_diff > 3.0 * std) if std > 0.01 else False
         
         is_unstable = is_abs_unstable or is_sigma_unstable
         
+        if is_unstable:
+            logger.warning(f"BRAIN: Basis Veto - Diff: {abs_diff:.3f}, Floor: {hard_floor}, Std: {std:.3f}, Mean: {mean:.3f}")
+
         return {
             "is_unstable": is_unstable,
             "sigma_jump": abs_diff / std if std > 0 else 0,
