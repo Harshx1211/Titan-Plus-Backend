@@ -1,7 +1,8 @@
 # Institutional Grade Ignores: PURGE ROOT FUNCTIONS
-main.py
-api.py
-requirements.txt
+!main.py
+!api.py
+!index.py
+!requirements.txt
 Procfile
 runtime.txt
 *.py

@@ -1,6 +1,7 @@
-import uvicorn
-import os
 from api import app
+
+# Export for Vercel Serverless
+app = app
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8004))
