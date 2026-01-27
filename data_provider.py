@@ -18,6 +18,9 @@ except ImportError:
 from models import MarketData
 import os
 from dotenv import load_dotenv
+import contextlib
+import io
+import time
 
 load_dotenv()
 
@@ -51,6 +54,31 @@ class DataProvider:
                 logger.error(f"DATA: Groww Connection Failed: {e}. Falling back to scrapers.")
         else:
             logger.warning("DATA: Groww credentials missing. Using public scrapers.")
+
+        # [v9.4] Caching layer for public scrapers to prevent log spam and rate limits
+        self._public_cache = None
+        self._last_cache_time = 0
+        self._cache_ttl = 10 # 10 seconds for breadth/vix/indices
+
+    def _get_cached_indices(self):
+        """Unified method to fetch and cache all indices data with silence."""
+        now = time.time()
+        if self._public_cache is not None and (now - self._last_cache_time) < self._cache_ttl:
+            return self._public_cache
+        
+        try:
+            if not capital_market: return None
+            # Silence the verbose nselib print spam
+            f = io.StringIO()
+            with contextlib.redirect_stdout(f):
+                data = capital_market.market_watch_all_indices()
+            
+            self._public_cache = data
+            self._last_cache_time = now
+            return data
+        except Exception as e:
+            logger.debug(f"CACHE: Failed to refresh indices: {e}")
+            return None
 
     def get_market_snapshot(self, symbol: str) -> MarketData:
         """
@@ -94,25 +122,23 @@ class DataProvider:
         """
         try:
             spot = 0.0
-            # Try nselib first
+            # Try nselib via cache first
             try:
-                if symbol == "NIFTY":
-                    data = capital_market.market_watch_all_indices()
-                    nifty_row = data[data['index'].isin(['NIFTY 50', 'NIFTY50', 'Nifty 50'])].iloc[0]
-                    spot = float(str(nifty_row['last']).replace(',', ''))
-                elif symbol == "BANKNIFTY":
-                    data = capital_market.market_watch_all_indices()
-                    bank_row = data[data['index'].isin(['NIFTY BANK', 'Nifty Bank'])].iloc[0]
-                    spot = float(str(bank_row['last']).replace(',', ''))
-                elif symbol == "SENSEX":
-                    # BSE often fails in nselib; use NIFTY multiplier fallback if direct fails
-                    try:
-                        data = capital_market.market_watch_all_indices()
-                        row = data[data['index'].str.contains('SENSEX', case=False, na=False)].iloc[0]
-                        spot = float(str(row['last']).replace(',', ''))
-                    except Exception:
-                        nifty_data = self._fetch_from_public("NIFTY")
-                        spot = nifty_data.spot_price * 3.255
+                data = self._get_cached_indices()
+                if data is not None:
+                    if symbol == "NIFTY":
+                        nifty_row = data[data['index'].isin(['NIFTY 50', 'NIFTY50', 'Nifty 50'])].iloc[0]
+                        spot = float(str(nifty_row['last']).replace(',', ''))
+                    elif symbol == "BANKNIFTY":
+                        bank_row = data[data['index'].isin(['NIFTY BANK', 'Nifty Bank'])].iloc[0]
+                        spot = float(str(bank_row['last']).replace(',', ''))
+                    elif symbol == "SENSEX":
+                        try:
+                            row = data[data['index'].str.contains('SENSEX', case=False, na=False)].iloc[0]
+                            spot = float(str(row['last']).replace(',', ''))
+                        except Exception:
+                            nifty_data = self._fetch_from_public("NIFTY")
+                            spot = nifty_data.spot_price * 3.255
             except Exception as e:
                 logger.warning(f"DATA: Scraper failed for {symbol}: {e}")
 
@@ -203,27 +229,29 @@ class DataProvider:
     def get_vix(self) -> float:
         """ Fetches current India VIX. """
         try:
-            data = capital_market.market_watch_all_indices()
-            vix_row = data[data['index'].str.contains('VIX', na=False, case=False)].iloc[0]
-            return float(str(vix_row['last']).replace(',', ''))
+            data = self._get_cached_indices()
+            if data is not None:
+                vix_row = data[data['index'].str.contains('VIX', na=False, case=False)].iloc[0]
+                return float(str(vix_row['last']).replace(',', ''))
         except Exception:
-            return 15.0
+            pass
+        return 15.0
 
     def get_breadth(self, symbol: str) -> Dict[str, int]:
         """ Fetches real market breadth using nselib. """
         try:
             if not capital_market: raise ImportError
-            data = capital_market.market_watch_all_indices()
-            
-            # Map symbol to nselib index names
-            idx_name = "NIFTY 50" if symbol == "NIFTY" else ("NIFTY BANK" if symbol == "BANKNIFTY" else None)
-            
-            if idx_name:
-                row = data[data['index'] == idx_name].iloc[0]
-                return {
-                    "advances": int(row.get('advances', 0)),
-                    "declines": int(row.get('declines', 0))
-                }
+            data = self._get_cached_indices()
+            if data is not None:
+                # Map symbol to nselib index names
+                idx_name = "NIFTY 50" if symbol == "NIFTY" else ("NIFTY BANK" if symbol == "BANKNIFTY" else None)
+                
+                if idx_name:
+                    row = data[data['index'] == idx_name].iloc[0]
+                    return {
+                        "advances": int(row.get('advances', 0)),
+                        "declines": int(row.get('declines', 0))
+                    }
         except Exception:
             pass
 
