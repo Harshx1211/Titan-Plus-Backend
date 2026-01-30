@@ -1,0 +1,16 @@
+pandas
+pandas_ta
+python-dotenv
+requests
+nselib
+jugaad-data
+kiteconnect
+uvicorn
+fastapi
+NorenRestApiPy
+pyotp
+websocket-client
+supabase
+growwapi
+gunicorn
+pytz
