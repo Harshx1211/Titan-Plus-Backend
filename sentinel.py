@@ -37,7 +37,10 @@ class DataSentinel:
             return DivergenceType.NONE
             
         best_basis = min(valid_basis)
-        self.divergence_history.append(best_basis)
+        
+        # [v9.0] Waiver: Never add non-physical basis (>90%) to history to prevent poisoning average
+        if best_basis < 90.0:
+            self.divergence_history.append(best_basis)
         
         if len(self.divergence_history) > self.sync_window:
             self.divergence_history.pop(0)

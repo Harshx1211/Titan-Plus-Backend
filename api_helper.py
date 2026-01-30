@@ -46,7 +46,15 @@ class ShoonyaApiPy(NorenApi):
         payload = 'jData=' + json.dumps(values) + f'&jKey={jkey}'
         
         res = requests.post(url, data=payload)
-        return json.loads(res.text)
+        
+        # [v9.6.2] Deep Diagnostic Logging
+        if res.status_code != 200:
+             return {"stat": "Fail", "emsg": f"HTTP_{res.status_code}: {res.text[:100]}"}
+             
+        try:
+            return json.loads(res.text)
+        except Exception as e:
+            return {"stat": "Fail", "emsg": f"JSON_ERR: {str(e)} | RAW: {res.text[:100]}"}
 
     def place_basket(self, orders):
         resp_err = 0

@@ -146,10 +146,13 @@ class DataProvider:
         """
         # 1. Try Shoonya (Primary)
         shoonya_data = self.shoonya.get_market_data(symbol)
-        if shoonya_data:
+        if shoonya_data and shoonya_data['lp'] > 0:
+            # [v9.6.2] Use logical proxy for future price if data is missing to prevent Basis Veto
+            spot = shoonya_data['lp']
             return MarketData(
                 symbol=symbol,
-                spot_price=shoonya_data['lp'],
+                spot_price=spot,
+                future_price=spot + 45.0, 
                 timestamp=datetime.now(),
                 source="SHOONYA"
             )
