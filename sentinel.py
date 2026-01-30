@@ -31,8 +31,12 @@ class DataSentinel:
         if len(self.future_window) > self.sync_window:
             self.future_window.pop(0)
             
-        # Find the minimum effective basis in the window
-        best_basis = min([abs(f - spot) / spot * 100 for f in self.future_window])
+        # Find the minimum effective basis in the window, ignoring zero prices
+        valid_basis = [abs(f - spot) / spot * 100 for f in self.future_window if f > 0]
+        if not valid_basis:
+            return DivergenceType.NONE
+            
+        best_basis = min(valid_basis)
         self.divergence_history.append(best_basis)
         
         if len(self.divergence_history) > self.sync_window:
