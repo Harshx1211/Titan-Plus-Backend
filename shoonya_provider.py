@@ -15,7 +15,8 @@ class ShoonyaProvider:
         self.user_id = os.getenv("SHOONYA_USER_ID")
         self.password = os.getenv("SHOONYA_PASSWORD")
         self.api_key = os.getenv("SHOONYA_API_KEY")
-        self.imei = os.getenv("SHOONYA_IMEI") or 'ab234'
+        # Handle the typo in the Render dashboard just in case
+        self.imei = os.getenv("SHOONYA_IMEI") or os.getenv("SHOONYA_INEI") or 'ab234'
         self.vendor_code = os.getenv("SHOONYA_VENDOR_CODE")
         self.totp_secret = os.getenv("SHOONYA_TOTP_SECRET")
         
@@ -47,7 +48,6 @@ class ShoonyaProvider:
         for offset in offsets:
             try:
                 code = totp.at(now + offset)
-                logger.debug(f"Attempting Shoonya login with TOTP {code} (offset {offset}s)...")
                 
                 res = self.api.login(
                     userid=self.user_id,
@@ -63,15 +63,18 @@ class ShoonyaProvider:
                     logger.info(f"Shoonya Login SUCCESSFUL! (Offset: {offset}s)")
                     return True
                 
-                error_msg = res.get('emsg') if res else 'Unknown error'
+                error_msg = res.get('emsg') if res else 'No response'
+                logger.info(f"Login attempt failed (Offset {offset}s): {error_msg}")
+                
                 if res and 'Invalid OTP' not in str(error_msg):
-                    logger.warning(f"Login failed with non-OTP error: {error_msg}")
+                    logger.warning(f"Aborting login retries due to non-OTP error: {error_msg}")
                     break
                     
             except Exception as e:
-                logger.error(f"Login attempt exception: {e}")
+                logger.error(f"Critical exception during login attempt: {e}")
                 break
                 
+        logger.error(f"Shoonya login failed for all offsets. Last error: {error_msg if 'error_msg' in locals() else 'None'}")
         return False
 
     def get_market_data(self, symbol: str) -> Optional[Dict]:
