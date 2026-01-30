@@ -103,7 +103,15 @@ class ShoonyaProvider:
                     'timestamp': res.get('request_time')
                 }
             else:
-                emsg = res.get('emsg') if res else 'No response'
+                emsg = res.get('emsg', '') if res else 'No response'
+                
+                # [v9.6.3] Session Management: Handle Session Expiry
+                if "Session Expired" in str(emsg):
+                    logger.warning(f"Shoonya Session Expired. Attempting auto-relogin...")
+                    self.authenticated = False 
+                    if self.login():
+                        return self.get_market_data(symbol) # Retry once
+                
                 # [v9.6.1] SDK Patch results in detailed error reporting
                 logger.error(f"Failed to fetch quotes for {symbol}: {emsg}")
                 
