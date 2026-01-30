@@ -110,6 +110,10 @@ class BrainEngine:
         
         is_unstable = is_abs_unstable or is_sigma_unstable
         
+        # [v9.0] Waiver: Ignore 'unstable' if Basis is 100% (indicates missing data, not real instability)
+        if current_basis >= 99.9 or abs(current_basis - 100.0) < 0.1:
+             is_unstable = False
+
         if is_unstable:
             logger.warning(f"BRAIN: Basis Veto - Diff: {abs_diff:.3f}, Floor: {hard_floor}, Std: {std:.3f}, Mean: {mean:.3f}")
 

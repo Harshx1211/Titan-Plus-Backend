@@ -89,6 +89,9 @@ class ShoonyaProvider:
                 return None
                 
             exchange, token = mapping
+            
+            # Deep Diagnostic for Render
+            logger.debug(f"Fetching quotes for {symbol} ({exchange}:{token})...")
             res = self.api.get_quotes(exchange=exchange, token=token)
             
             if res and res.get('stat') == 'Ok':
@@ -100,7 +103,17 @@ class ShoonyaProvider:
                     'timestamp': res.get('request_time')
                 }
             else:
-                logger.error(f"Failed to fetch quotes for {symbol}: {res.get('emsg') if res else 'No response'}")
+                emsg = res.get('emsg') if res else 'No response'
+                logger.error(f"Failed to fetch quotes for {symbol}: {emsg}")
+                
+                # If "No response", let's check connectivity
+                if not res:
+                    try:
+                        import requests
+                        test_res = requests.get("https://api.shoonya.com/NorenWClientTP/", timeout=5)
+                        logger.info(f"Shoonya Connectivity Test: Status {test_res.status_code}")
+                    except Exception as con_err:
+                        logger.error(f"Shoonya Connectivity Test FAILED: {con_err}")
                 return None
         except Exception as e:
             logger.error(f"Error fetching market data for {symbol}: {e}")
