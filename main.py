@@ -1,3 +1,5 @@
+import os
+import uvicorn
 from api import app
 
 # Export for Vercel Serverless

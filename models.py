@@ -17,10 +17,11 @@ class DivergenceType(Enum):
 class MarketData(BaseModel):
     symbol: str
     spot_price: float
-    future_price: float
-    oi: int
-    pcr: float
+    future_price: float = 0.0
+    oi: int = 0
+    pcr: float = 0.0
     timestamp: datetime
+    source: str = "UNKNOWN"
 
 class SignalConfidence(Enum):
     LOW = "LOW"

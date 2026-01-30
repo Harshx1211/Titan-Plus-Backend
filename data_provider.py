@@ -7,6 +7,7 @@ import uuid
 import time
 from dotenv import load_dotenv
 from growwapi import GrowwAPI
+from shoonya_provider import ShoonyaProvider
 
 load_dotenv()
 
@@ -89,6 +90,13 @@ class DataProvider:
         self._consecutive_public_failures = 0
         import random
         self._random = random.Random()
+        
+        # [v9.6.0] Shoonya Integration
+        self.shoonya = ShoonyaProvider()
+        if self.shoonya.login():
+            logger.info("DATA: Shoonya API Connected and Verified.")
+        else:
+            logger.warning("DATA: Shoonya Connection Failed. Will retry on demand.")
 
     def _get_cached_indices(self):
         """Unified method to fetch and cache all indices data with silence."""
@@ -113,44 +121,46 @@ class DataProvider:
     def get_status(self) -> Dict:
         """ Returns the current status of the data sources. """
         now = time.time()
-        if not self.use_groww:
-            return {"name": "PUBLIC_SCRAPER", "status": "ACTIVE", "remaining": 0}
         
-        if now < self._groww_forbidden_until:
-            return {
-                "name": "GROWW_API",
-                "status": "COOLDOWN",
-                "remaining": int(self._groww_forbidden_until - now)
-            }
+        # Priority 1: Shoonya
+        if self.shoonya.authenticated:
+            return {"name": "SHOONYA_API", "status": "ACTIVE", "remaining": 0}
+            
+        # Priority 2: Groww
+        if self.use_groww:
+            if now < self._groww_forbidden_until:
+                return {
+                    "name": "GROWW_API",
+                    "status": "COOLDOWN",
+                    "remaining": int(self._groww_forbidden_until - now)
+                }
+            return {"name": "GROWW_API", "status": "ACTIVE", "remaining": 0}
         
-        return {"name": "GROWW_API", "status": "ACTIVE", "remaining": 0}
-
-    def get_status(self) -> Dict:
-        """ Returns the current status of the data sources. """
-        now = time.time()
-        if not self.use_groww:
-            return {"name": "PUBLIC_SCRAPER", "status": "ACTIVE", "remaining": 0}
-        
-        if now < self._groww_forbidden_until:
-            return {
-                "name": "GROWW_API",
-                "status": "COOLDOWN",
-                "remaining": int(self._groww_forbidden_until - now)
-            }
-        
-        return {"name": "GROWW_API", "status": "ACTIVE", "remaining": 0}
+        # Priority 3: Fallback
+        return {"name": "PUBLIC_SCRAPER", "status": "ACTIVE", "remaining": 0}
 
     def get_market_snapshot(self, symbol: str) -> MarketData:
         """
         Fetches current spot, future, and OI for a given symbol.
-        Always prioritizes Groww for Pure Live Data.
+        Prioritizes Shoonya (Verified) -> Groww (Secondary) -> Public (Fallback).
         """
+        # 1. Try Shoonya (Primary)
+        shoonya_data = self.shoonya.get_market_data(symbol)
+        if shoonya_data:
+            return MarketData(
+                symbol=symbol,
+                spot_price=shoonya_data['lp'],
+                timestamp=datetime.now(),
+                source="SHOONYA"
+            )
+
+        # 2. Try Groww (Secondary)
         if self.use_groww:
             snapshot = self._fetch_from_groww(symbol)
             if snapshot.spot_price > 0:
                 return snapshot
         
-        # Absolute fallback to public
+        # 3. Absolute fallback to public
         return self._fetch_from_public(symbol)
 
     def _handle_groww_error(self, e: Exception, context: str):
