@@ -104,10 +104,10 @@ class ShoonyaProvider:
                 }
             else:
                 emsg = res.get('emsg') if res else 'No response'
+                # [v9.6.1] SDK Patch results in detailed error reporting
                 logger.error(f"Failed to fetch quotes for {symbol}: {emsg}")
                 
-                # If "No response", let's check connectivity
-                if not res:
+                if not res or emsg == 'No response':
                     try:
                         import requests
                         test_res = requests.get("https://api.shoonya.com/NorenWClientTP/", timeout=5)

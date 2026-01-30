@@ -2,6 +2,9 @@ from NorenRestApiPy.NorenApi import NorenApi
 import time
 import concurrent.futures
 
+import json
+import requests
+
 class Order:
      def __init__(self, buy_or_sell:str = None, product_type:str = None,
                  exchange: str = None, tradingsymbol:str =None, 
@@ -29,6 +32,21 @@ def get_time(time_string):
 class ShoonyaApiPy(NorenApi):
     def __init__(self):
         NorenApi.__init__(self, host='https://api.shoonya.com/NorenWClientTP/', websocket='wss://api.shoonya.com/NorenWSTP/')        
+
+    def get_quotes(self, exchange, token):
+        # Accessing private members of parent NorenApi using mangled names
+        url = f"https://api.shoonya.com/NorenWClientTP/GetQuotes"
+        
+        values              = {}
+        values["uid"]       = getattr(self, '_NorenApi__username', None)
+        values["exch"]      = exchange
+        values["token"]     = token       
+        
+        jkey = getattr(self, '_NorenApi__susertoken', None)
+        payload = 'jData=' + json.dumps(values) + f'&jKey={jkey}'
+        
+        res = requests.post(url, data=payload)
+        return json.loads(res.text)
 
     def place_basket(self, orders):
         resp_err = 0

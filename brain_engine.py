@@ -83,6 +83,11 @@ class BrainEngine:
             if feat not in self.raw_history:
                 self.raw_history[feat] = []
             
+            # [v9.0] Waiver: Filter out non-physical basis values (like 100% from missing data)
+            # to prevent poisoning the statistical Mean/Std.
+            if feat == "BASIS_RAW" and (val >= 99.9 or val <= 0.001):
+                continue
+                
             self.raw_history[feat].append(val)
             if len(self.raw_history[feat]) > self.window_size:
                 self.raw_history[feat].pop(0)
