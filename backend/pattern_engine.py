@@ -96,8 +96,9 @@ class PatternEngine:
         # 6. Geometric Analysis (S/R and Trendlines)
         if len(df) > 50:
             # Find recent High/Low Fractals
-            recent_peaks = df.high.rolling(5, center=True).apply(lambda x: x[2] == max(x), raw=True)
-            recent_valleys = df.low.rolling(5, center=True).apply(lambda x: x[2] == min(x), raw=True)
+            # Find recent High/Low Fractals (Causal - No Future Leak)
+            recent_peaks = df.high.rolling(5).apply(lambda x: x.iloc[2] == max(x), raw=False)
+            recent_valleys = df.low.rolling(5).apply(lambda x: x.iloc[2] == min(x), raw=False)
             
             peaks = df.high[recent_peaks == 1].tail(3)
             valleys = df.low[recent_valleys == 1].tail(3)
@@ -157,9 +158,9 @@ class PatternEngine:
         if len(df_macro) < 100:
             return []
             
-        # Use fractals on the macro timeframe
-        peaks = df_macro.high.rolling(21, center=True).apply(lambda x: x[10] == max(x), raw=True)
-        valleys = df_macro.low.rolling(21, center=True).apply(lambda x: x[10] == min(x), raw=True)
+        # Use fractals on the macro timeframe (Causal)
+        peaks = df_macro.high.rolling(21).apply(lambda x: x.iloc[10] == max(x), raw=False)
+        valleys = df_macro.low.rolling(21).apply(lambda x: x.iloc[10] == min(x), raw=False)
         
         reversal_points = list(df_macro.high[peaks == 1]) + list(df_macro.low[valleys == 1])
         
@@ -219,6 +220,75 @@ class PatternEngine:
             "mtf_aligned": mtf_boost >= 1.0,
             "historic_confluence": zone_boost > 1.0
         }
+
+    def find_structural_sl(self, df: pd.DataFrame, signal_type: str, buffer_pts: float = 5.0) -> float:
+        """
+        Finest discovery of 'Perfect SL' based on structural pivot fractals.
+        - signal_type: 'BULLISH' or 'BEARISH'
+        - buffer_pts: Safety buffer beyond the pivot.
+        """
+        if len(df) < 20:
+             return df.close.iloc[-1] - 40 if signal_type == "BULLISH" else df.close.iloc[-1] + 40
+             
+        curr_price = df.close.iloc[-1]
+        
+        if signal_type == "BULLISH":
+            # Find recent pivot low (Valley fractal)
+            recent_lows = df.low.rolling(5).apply(lambda x: x.iloc[2] == min(x), raw=False)
+            valleys = df.low[recent_lows == 1].tail(3)
+            if not valleys.empty:
+                sl = valleys.min() - buffer_pts
+                # Ensure SL is not too far (max 60 pts for scalper) or too close (min 15 pts)
+                distance = curr_price - sl
+                if distance > 60: sl = curr_price - 60
+                elif distance < 15: sl = curr_price - 20
+                return round(sl, 2)
+            return round(curr_price - 30, 2)
+            
+        else:
+            # Find recent pivot high (Peak fractal)
+            recent_highs = df.high.rolling(5).apply(lambda x: x.iloc[2] == max(x), raw=False)
+            peaks = df.high[recent_highs == 1].tail(3)
+            if not peaks.empty:
+                sl = peaks.max() + buffer_pts
+                distance = sl - curr_price
+                if distance > 60: sl = curr_price + 60
+                elif distance < 15: sl = curr_price + 20
+                return round(sl, 2)
+            return round(curr_price + 30, 2)
+
+    def find_structural_tp(self, df: pd.DataFrame, signal_type: str, min_pts: float = 20.0) -> float:
+        """
+        Structural Take-Profit Discovery.
+        Finds the next logical 'Pivot Trap' or Resistance/Support.
+        """
+        if len(df) < 20:
+             return df.close.iloc[-1] + 50 if signal_type == "BULLISH" else df.close.iloc[-1] - 50
+             
+        curr_price = df.close.iloc[-1]
+        
+        if signal_type == "BULLISH":
+            # Search for recent High Pivot (Resistance)
+            recent_highs = df.high.rolling(5).apply(lambda x: x.iloc[2] == max(x), raw=False)
+            peaks = df.high[recent_highs == 1].tail(3)
+            if not peaks.empty:
+                tp = peaks.max()
+                # Ensure TP is at least min_pts away
+                if (tp - curr_price) < min_pts:
+                    tp = curr_price + min_pts * 1.5
+                return round(tp, 2)
+            return round(curr_price + 50, 2)
+            
+        else:
+            # Search for recent Low Pivot (Support)
+            recent_lows = df.low.rolling(5).apply(lambda x: x.iloc[2] == min(x), raw=False)
+            valleys = df.low[recent_lows == 1].tail(3)
+            if not valleys.empty:
+                tp = valleys.min()
+                if (curr_price - tp) < min_pts:
+                    tp = curr_price - min_pts * 1.5
+                return round(tp, 2)
+            return round(curr_price - 50, 2)
 
     def confirm_reversal(self, df: pd.DataFrame, signal_type: str) -> bool:
         """

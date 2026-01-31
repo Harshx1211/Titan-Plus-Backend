@@ -1,6 +1,6 @@
 import logging
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Dict
 import os
 import uuid
@@ -147,12 +147,18 @@ class DataProvider:
         # 1. Try Shoonya (Primary)
         shoonya_data = self.shoonya.get_market_data(symbol)
         if shoonya_data and shoonya_data['lp'] > 0:
-            # [v9.6.2] Use logical proxy for future price if data is missing to prevent Basis Veto
             spot = shoonya_data['lp']
+            # [v9.7] Real basis if mapping succeeded, fallback to proxy if 0
+            future = shoonya_data.get('future_lp', 0)
+            if future <= 0:
+                future = spot + 45.0
+                
             return MarketData(
                 symbol=symbol,
                 spot_price=spot,
-                future_price=spot + 45.0, 
+                future_price=future,
+                oi=shoonya_data.get('oi', 0),
+                pcr=0.95, # Need option chain for real PCR
                 timestamp=datetime.now(),
                 source="SHOONYA"
             )
@@ -185,6 +191,76 @@ class DataProvider:
     def _apply_jitter(self):
         """Add randomized delay to break bot-detection patterns."""
         time.sleep(self._random.uniform(0.1, 0.5))
+
+    def get_intraday_history(self, symbol: str, start_time: datetime, end_time: datetime, interval: int = 5) -> pd.DataFrame:
+        """
+        [v9.9] Robust chunked intraday fetching.
+        """
+        fetch_interval = 1 if interval <= 3 else interval
+        
+        # Split into 7-day chunks to prevent Shoonya timeouts
+        chunks = []
+        curr_start = start_time
+        while curr_start < end_time:
+            curr_end = min(curr_start + timedelta(days=7), end_time)
+            logger.info(f"DATA: Fetching {symbol} {fetch_interval}m chunk: {curr_start.date()} to {curr_end.date()}")
+            
+            raw_chunk = self.shoonya.get_historical_data(symbol, fetch_interval, curr_start, curr_end)
+            if raw_chunk:
+                chunks.extend(raw_chunk)
+            
+            curr_start = curr_end + timedelta(seconds=1)
+            time.sleep(0.5) # Avoid rate limits
+            
+        if not chunks:
+             return pd.DataFrame()
+             
+        df = pd.DataFrame(chunks)
+        # Drop duplicates if any overlap
+        if 'time' in df.columns:
+            df.drop_duplicates(subset=['time'], inplace=True)
+            
+        # Clean up
+        if 'timestamp' not in df.columns:
+             for alt in ['time', 'ssst']:
+                 if alt in df.columns:
+                     df.rename(columns={alt: 'timestamp'}, inplace=True)
+                     break
+                     
+        if 'timestamp' in df.columns:
+            df['timestamp'] = pd.to_datetime(df['timestamp'], format='%d-%m-%Y %H:%M:%S', errors='coerce')
+            df.dropna(subset=['timestamp'], inplace=True)
+            df.set_index('timestamp', inplace=True)
+            df.sort_index(inplace=True)
+            
+        price_cols = {'into': 'open', 'inth': 'high', 'intl': 'low', 'intc': 'close', 'v': 'volume', 'intv': 'volume'}
+        for raw, target in price_cols.items():
+            if raw in df.columns:
+                df[target] = pd.to_numeric(df[raw], errors='coerce')
+        
+        cols_to_keep = [c for c in ['open', 'high', 'low', 'close', 'volume'] if c in df.columns]
+        df = df[cols_to_keep]
+        
+        if fetch_interval == 1 and interval > 1:
+            df = self.aggregate_to_tf(df, f"{interval}min")
+            
+        return df.dropna()
+
+    def aggregate_to_tf(self, df: pd.DataFrame, tf_str: str) -> pd.DataFrame:
+        """Helper to aggregate 1m data to higher timeframes."""
+        if df.empty: return df
+        
+        agg_rules = {
+            'open': 'first',
+            'high': 'max',
+            'low': 'min',
+            'close': 'last',
+            'volume': 'sum'
+        }
+        # Filter agg_rules to only include columns present in the DataFrame
+        agg_rules = {col: rule for col, rule in agg_rules.items() if col in df.columns}
+        
+        return df.resample(tf_str).agg(agg_rules).dropna()
 
     def _fetch_from_groww(self, symbol: str) -> MarketData:
         """ Fetches live data from Groww API with cooldown awareness and stealth. """

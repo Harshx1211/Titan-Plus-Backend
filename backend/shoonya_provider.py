@@ -3,6 +3,7 @@ import os
 import pyotp
 import time
 import threading
+from datetime import datetime
 from typing import Optional, Dict, List
 from api_helper import ShoonyaApiPy
 from dotenv import load_dotenv
@@ -42,6 +43,72 @@ class ShoonyaProvider:
             "FINNIFTY": ("NSE", "26037"),
             "SENSEX": ("BSE", "1")
         }
+        
+        # [v9.7] Dynamic Futures Discovery
+        self.future_tokens = {} # {symbol: (exchange, token)}
+
+    def get_market_data(self, symbol: str) -> Optional[Dict]:
+        """Fetch market data for a given symbol or index."""
+        if not self.authenticated:
+            if not self.login():
+                return None
+        
+        try:
+            mapping = self.index_tokens.get(symbol)
+            if not mapping:
+                return None
+                
+            exchange, token = mapping
+            
+            # 1. Get Spot Data
+            res = self.api.get_quotes(exchange=exchange, token=token)
+            
+            data = {'symbol': symbol, 'lp': 0, 'pc': 0, 'v': 0, 'future_lp': 0, 'oi': 0}
+            
+            if res and res.get('stat') == 'Ok':
+                data['lp'] = float(res.get('lp', 0))
+                data['pc'] = float(res.get('pc', 0))
+                data['v'] = int(res.get('v', 0))
+                data['timestamp'] = res.get('request_time')
+            
+            # 2. Get Future Data (v9.7 - Hardened Basis)
+            fut_mapping = self.future_tokens.get(symbol)
+            if fut_mapping:
+                f_exch, f_token = fut_mapping
+                res_f = self.api.get_quotes(exchange=f_exch, token=f_token)
+                if res_f and res_f.get('stat') == 'Ok':
+                    data['future_lp'] = float(res_f.get('lp', 0))
+                    data['oi'] = int(res_f.get('oi', 0))
+                    logger.debug(f"Shoonya: Fetched real future for {symbol}: {data['future_lp']}")
+            
+            if data['lp'] > 0:
+                return data
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching market data for {symbol}: {e}")
+            return None
+
+    def refresh_futures_mapping(self):
+        """
+        [v9.7] Discovers the current month's future tokens for indices.
+        """
+        try:
+            from datetime import datetime
+            for symbol in ["NIFTY", "BANKNIFTY", "FINNIFTY"]:
+                # Shoonya search format: Nifty <MONTH><YY> FUT (No space sometimes or specific format)
+                # Actually, NIFTY <MONTH> FUT is common.
+                current_month = datetime.now().strftime("%b%y").upper()
+                search_text = f"{symbol} {current_month} FUT"
+                
+                res = self.api.searchscrip(exchange="NFO", searchtext=search_text)
+                if res and res.get('stat') == 'Ok' and res.get('values'):
+                    for val in res['values']:
+                        if "FUT" in val.get('tsym', ''):
+                            self.future_tokens[symbol] = ("NFO", val['token'])
+                            logger.info(f"Shoonya: Mapped {symbol} Future -> {val['tsym']} ({val['token']})")
+                            break
+        except Exception as e:
+            logger.error(f"Shoonya: Failed to refresh futures mapping: {e}")
 
     def login(self):
         with self._login_lock:
@@ -83,6 +150,8 @@ class ShoonyaProvider:
                     if res and res.get('stat') == 'Ok':
                         self.authenticated = True
                         logger.info(f"Shoonya Login SUCCESSFUL! (Offset: {offset}s)")
+                        # [v9.7] Discover futures after login
+                        self.refresh_futures_mapping()
                         return True
                     
                     error_msg = res.get('emsg') if res else 'No response'
@@ -99,55 +168,50 @@ class ShoonyaProvider:
             logger.error(f"Shoonya login failed for all offsets. Last error: {error_msg if 'error_msg' in locals() else 'None'}")
             return False
 
-    def get_market_data(self, symbol: str) -> Optional[Dict]:
-        """Fetch market data for a given symbol or index."""
+    def get_historical_data(self, symbol: str, interval: int = 5, start_time: datetime = None, end_time: datetime = None) -> List[Dict]:
+        """
+        [v9.8] Fetches intraday historical data for simulation.
+        interval: 1, 3, 5, 10, 15, 30, 60, 120, 240
+        """
         if not self.authenticated:
             if not self.login():
-                return None
+                 return []
+                 
+        mapping = self.index_tokens.get(symbol)
+        if not mapping:
+            return []
+            
+        exchange, token = mapping
+        
+        # Format times for Shoonya (Epoch)
+        s_time = int(start_time.timestamp()) if start_time else int(time.time()) - 86400
+        e_time = int(end_time.timestamp()) if end_time else int(time.time())
         
         try:
-            mapping = self.index_tokens.get(symbol)
-            if not mapping:
-                return None
-                
-            exchange, token = mapping
+            # [Fix] Shoonya sometimes fails if start_time is too far back or too close.
+            # Convert to strings as required by some versions of the helper
+            res = self.api.get_time_price_series(
+                exchange=exchange,
+                token=token,
+                starttime=str(s_time),
+                endtime=str(e_time),
+                interval=str(interval)
+            )
             
-            # Deep Diagnostic for Render
-            logger.debug(f"Fetching quotes for {symbol} ({exchange}:{token})...")
-            res = self.api.get_quotes(exchange=exchange, token=token)
-            
-            if res and res.get('stat') == 'Ok':
-                return {
-                    'symbol': symbol,
-                    'lp': float(res.get('lp', 0)),
-                    'pc': float(res.get('pc', 0)),
-                    'v': int(res.get('v', 0)),
-                    'timestamp': res.get('request_time')
-                }
+            if isinstance(res, list):
+                logger.info(f"Shoonya: Fetched {len(res)} candles for {symbol}")
+                return res
+            elif isinstance(res, dict) and res.get('stat') == 'Ok':
+                data = res.get('values', [])
+                logger.info(f"Shoonya: Fetched {len(data)} candles (Ok) for {symbol}")
+                return data
             else:
-                emsg = res.get('emsg', '') if res else 'No response'
-                
-                # [v9.6.3] Session Management: Handle Session Expiry
-                if "Session Expired" in str(emsg):
-                    logger.warning(f"Shoonya Session Expired. Attempting auto-relogin...")
-                    self.authenticated = False 
-                    if self.login():
-                        return self.get_market_data(symbol) # Retry once
-                
-                # [v9.6.1] SDK Patch results in detailed error reporting
-                logger.error(f"Failed to fetch quotes for {symbol}: {emsg}")
-                
-                if not res or emsg == 'No response':
-                    try:
-                        import requests
-                        test_res = requests.get("https://api.shoonya.com/NorenWClientTP/", timeout=5)
-                        logger.info(f"Shoonya Connectivity Test: Status {test_res.status_code}")
-                    except Exception as con_err:
-                        logger.error(f"Shoonya Connectivity Test FAILED: {con_err}")
-                return None
+                # If NIFTY fails, sometimes it needs the INDEX token check
+                logger.warning(f"Shoonya: Retry history for {symbol} with direct token... Raw Res: {res}")
+                return []
         except Exception as e:
-            logger.error(f"Error fetching market data for {symbol}: {e}")
-            return None
+            logger.error(f"Shoonya: History exception for {symbol}: {e}")
+            return []
 
     def get_live_data(self, symbols: List[str]):
         """Websocket implementation to be added in next phase"""

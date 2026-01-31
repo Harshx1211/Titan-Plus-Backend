@@ -144,7 +144,7 @@ class EvolutionEngine:
         new_threshold = self.governor.audit_threshold_proposal(0.75, metrics)
         if new_threshold > 0.75:
              logger.warning(f"GOVERNOR DECREE: System needs tightening to {new_threshold}")
-             # self.brain.update_threshold(new_threshold) # Future implementation
+             self.brain.update_threshold(new_threshold) # [v9.7] Active Enforcement
 
         # Save State
         self.brain.save_state()

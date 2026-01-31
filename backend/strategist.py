@@ -11,209 +11,125 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RegimeConfig:
-    """Configuration for regime detection thresholds [v9.6.6]"""
+    """Configuration for regime detection thresholds [v9.7.0 Institutional]"""
+    # Trend thresholds
     adx_trending_threshold: float = 25.0
-    adx_sideways_threshold: float = 20.0
     adx_momentum_threshold: float = 35.0
+    
+    # Sideways Quality Tiers (v2.0)
+    adx_sideways_strong: float = 25.0    # Upper bound for range
+    adx_sideways_weak: float = 20.0      # Lower bound for range
+    adx_chop_zone: float = 15.0          # Absolute chop
+    
+    # ATR Compression
     atr_compression_multiplier: float = 0.001
     volatility_shock_atr_multiple: float = 2.0
     velocity_shock_sigma: float = 3.0
+    
+    # Breadth
     breadth_bullish_threshold: int = 25
     breadth_veto_threshold: int = 15
-    regime_confirmation_bars: int = 3
+    
+    # Asymmetric Confirmation
+    regime_confirmation_trending: int = 3
+    regime_confirmation_sideways: int = 1  # Fast entry for ranges
+    
     min_bars_required: int = 30
 
 class MarketStrategist:
     """
-    Classifies Market Regime and determines strategy state.
-    Prioritizes confirmation over early entry. [Refactor v9.6.6]
-    
+    Classifies Market Regime and determines strategy state. [Upgrade v9.7.0]
     Features:
-    - Multi-indicator regime detection (ADX, ATR, Breadth)
-    - Volatility shock detection for aggressive exits
-    - Regime persistence requirements (anti-whipsaw)
-    - Bidirectional breadth analysis
-    - Macro trend bias calculation
+    - Multi-tier Sideways Detection (Strong/Normal/Weak)
+    - Asymmetric Confirmation (Fast scaling into ranges)
     """
     
-    def __init__(self, config: Optional[RegimeConfig] = None, adx_threshold: int = 25, volatility_compression: float = 1.0):
-        # Maintain backward compatibility with old init signature if needed
-        self.config = config or RegimeConfig(
-            adx_trending_threshold=float(adx_threshold),
-            atr_compression_multiplier=volatility_compression * 0.001
-        )
+    def __init__(self, config: Optional[RegimeConfig] = None):
+        self.config = config or RegimeConfig()
         self.regime_history: List[Regime] = []
-        self._last_regime_change_bar: int = 0
         
     def _check_volatility_shock(self, df: pd.DataFrame) -> bool:
-        """
-        Detects sudden expansion or price velocity collapse.
-        Returns True if a shock is detected (Aggressive Exit Trigger).
-        """
-        if len(df) < 20:
-            return False
+        """Detects sudden expansion or price velocity collapse."""
+        if len(df) < 20: return False
         
-        # 1. ATR Expansion Shock
+        # 1. ATR Expansion
         atr = df.ta.atr(length=14)
         if atr is not None and len(atr) > 1:
             curr_range = df['high'].iloc[-1] - df['low'].iloc[-1]
-            avg_atr = atr.iloc[-2]
-            
-            if curr_range > self.config.volatility_shock_atr_multiple * avg_atr:
-                logger.warning(f"ATR Shock detected: range={curr_range:.2f}, avg_atr={avg_atr:.2f}")
+            if curr_range > self.config.volatility_shock_atr_multiple * atr.iloc[-2]:
                 return True
                 
-        # 2. Price Velocity Shock (3-Sigma break)
+        # 2. Velocity Shock
         velocity = df['close'].diff(3)
         if len(velocity) > 20:
             vel_std = velocity.rolling(20).std().iloc[-2]
-            vel_mean = velocity.rolling(20).mean().iloc[-2]
-            curr_vel = velocity.iloc[-1]
-            
-            if pd.notna(vel_std) and vel_std > 0:
-                z_score = abs(curr_vel - vel_mean) / vel_std
-                if z_score > self.config.velocity_shock_sigma:
-                    logger.warning(f"Velocity Shock detected: z_score={z_score:.2f}")
-                    return True
-                
+            if vel_std > 0 and abs(velocity.iloc[-1] - velocity.rolling(20).mean().iloc[-2]) / vel_std > self.config.velocity_shock_sigma:
+                return True
         return False
 
     def _calculate_indicators(self, df: pd.DataFrame) -> Dict[str, float]:
-        """
-        Centralized indicator calculation with proper error handling.
-        Returns dict with all required indicators.
-        """
-        indicators = {
-            'adx': self.config.adx_trending_threshold,  # Default fallback
-            'atr': 0.0,
-            'price_mean': df['close'].mean() if len(df) > 0 else 0.0
-        }
-        
-        # Calculate ADX
+        indicators = {'adx': 25.0, 'atr': 0.0, 'price_mean': df['close'].mean() if len(df) > 0 else 0.0}
         adx_df = df.ta.adx(length=14)
         if adx_df is not None and 'ADX_14' in adx_df.columns:
-            adx_value = adx_df['ADX_14'].iloc[-1]
-            if pd.notna(adx_value):
-                indicators['adx'] = adx_value
-                
-        # Calculate ATR
-        atr_series = df.ta.atr(length=14)
-        if atr_series is not None and len(atr_series) > 0:
-            atr_value = atr_series.iloc[-1]
-            if pd.notna(atr_value):
-                indicators['atr'] = atr_value
-                
+            indicators['adx'] = adx_df['ADX_14'].iloc[-1]
+        atr_s = df.ta.atr(length=14)
+        if atr_s is not None and len(atr_s) > 0:
+            indicators['atr'] = atr_s.iloc[-1]
         return indicators
 
-    def _assess_breadth(
-        self, 
-        breadth: Optional[Dict], 
-        raw_regime: Regime, 
-        last_regime: Regime
-    ) -> Regime:
-        """
-        Bidirectional breadth analysis with entry/continuation logic.
-        """
-        if not breadth:
-            return raw_regime
-            
-        adv = breadth.get("advances", 50)
-        dec = breadth.get("declines", 50)
-        total = adv + dec
-        
-        if total == 0:
-            return raw_regime
-            
-        # Determine breadth bias
-        is_breadth_bullish = adv > dec and adv > self.config.breadth_bullish_threshold
-        is_breadth_bearish = dec > adv and dec > self.config.breadth_bullish_threshold
-        is_breadth_extreme_weak = adv < self.config.breadth_veto_threshold
-        
-        if raw_regime != Regime.TRENDING:
-            return raw_regime
-            
-        # TRENDING regime breadth rules
-        is_entry_phase = last_regime != Regime.TRENDING
-        
-        if is_entry_phase:
-            # Entry: Only veto on extreme weakness
-            if is_breadth_extreme_weak and not is_breadth_bearish:
-                logger.info(f"STRATEGIST: Breadth veto on entry: adv={adv}, dec={dec}")
-                return Regime.UNCERTAIN
-        else:
-            # Continuation: Must have breadth alignment (bullish OR bearish)
-            if not is_breadth_bullish and not is_breadth_bearish:
-                logger.info(f"STRATEGIST: Breadth divergence on continuation: adv={adv}, dec={dec}")
-                return Regime.UNCERTAIN
-                
-        return raw_regime
-
-    def classify_regime(
-        self, 
-        df: pd.DataFrame, 
-        breadth: Optional[Dict] = None
-    ) -> Regime:
-        """
-        Uses ADX, ATR, and BREADTH for Regime Classification.
-        """
+    def classify_regime(self, df: pd.DataFrame, breadth: Optional[Dict] = None) -> Regime:
+        """Multi-tier Classification with Asymmetric Confirmation."""
         if df is None or len(df) < self.config.min_bars_required:
             return Regime.UNCERTAIN
             
-        # Get last confirmed regime
         last_regime = self.regime_history[-1] if self.regime_history else Regime.UNCERTAIN
-        
-        # 0. Check for volatility shock (immediate exit from trending)
         if last_regime == Regime.TRENDING and self._check_volatility_shock(df):
             self.regime_history.append(Regime.UNCERTAIN)
             return Regime.UNCERTAIN
 
-        # 1. Calculate indicators
-        indicators = self._calculate_indicators(df)
-        current_adx = indicators['adx']
-        current_atr = indicators['atr']
-        price_mean = indicators['price_mean']
+        inds = self._calculate_indicators(df)
+        adx, atr, p_mean = inds['adx'], inds['atr'], inds['price_mean']
         
-        # 2. Raw regime classification from price-based indicators
-        raw_regime = Regime.UNCERTAIN
-        
-        if current_adx > self.config.adx_trending_threshold:
-            raw_regime = Regime.TRENDING
-        elif (current_adx < self.config.adx_sideways_threshold and 
-              current_atr < (price_mean * self.config.atr_compression_multiplier)):
-            raw_regime = Regime.SIDEWAYS
-            
-        # 3. Apply breadth filter (bidirectional)
-        raw_regime = self._assess_breadth(breadth, raw_regime, last_regime)
-        
-        # 4. Handle transitions with confirmation requirement
-        if last_regime == Regime.TRENDING and raw_regime != Regime.TRENDING:
-            logger.info(f"STRATEGIST: Regime transition: {last_regime.value} -> UNCERTAIN")
-            self.regime_history.append(Regime.UNCERTAIN)
-            return Regime.UNCERTAIN
-            
-        # 5. Require confirmation bars before regime change
-        self.regime_history.append(raw_regime)
-        
-        # Keep only recent history
-        if len(self.regime_history) > 10:
-            self.regime_history = self.regime_history[-10:]
-            
-        # Check for confirmation
-        confirmation_bars = min(
-            self.config.regime_confirmation_bars, 
-            len(self.regime_history)
-        )
-        
-        if confirmation_bars >= self.config.regime_confirmation_bars:
-            recent_regimes = self.regime_history[-confirmation_bars:]
-            if all(r == raw_regime for r in recent_regimes):
-                if raw_regime != last_regime:
-                    logger.info(f"STRATEGIST: Regime confirmed: {last_regime.value} -> {raw_regime.value}")
-                return raw_regime
+        # 1. Determine Raw Regime Target
+        raw_target = Regime.UNCERTAIN
+        if adx > self.config.adx_trending_threshold:
+            raw_target = Regime.TRENDING
+        elif self.config.adx_sideways_weak <= adx < self.config.adx_sideways_strong:
+            # Quality Tiering
+            if atr < (p_mean * self.config.atr_compression_multiplier):
+                raw_target = Regime.SIDEWAYS_STRONG
             else:
-                return Regime.UNCERTAIN
-        else:
+                raw_target = Regime.SIDEWAYS_NORMAL
+        elif adx < self.config.adx_sideways_weak:
+            raw_target = Regime.SIDEWAYS_WEAK
+
+        # 2. Breadth Oversight
+        raw_target = self._assess_breadth(breadth, raw_target, last_regime)
+        
+        # 3. Asymmetric Confirmation Logic
+        self.regime_history.append(raw_target)
+        if len(self.regime_history) > 10: self.regime_history = self.regime_history[-10:]
+        
+        # Confirmation length depends on the target
+        is_sideways = "SIDEWAYS" in raw_target.value
+        conf_len = self.config.regime_confirmation_sideways if is_sideways else self.config.regime_confirmation_trending
+        
+        recent = self.regime_history[-conf_len:]
+        if len(recent) >= conf_len and all(r == raw_target for r in recent):
+            if raw_target != last_regime:
+                logger.info(f"STRATEGIST: Regime confirmed: {last_regime.value} -> {raw_target.value}")
+            return raw_target
+            
+        return last_regime if last_regime != Regime.UNCERTAIN else Regime.UNCERTAIN
+
+    def _assess_breadth(self, breadth: Optional[Dict], raw: Regime, last: Regime) -> Regime:
+        if not breadth or raw != Regime.TRENDING: return raw
+        adv, dec = breadth.get("advances", 50), breadth.get("declines", 50)
+        if adv + dec == 0: return raw
+        if adv < self.config.breadth_veto_threshold: return Regime.UNCERTAIN
+        if last != Regime.TRENDING and not (adv > dec and adv > self.config.breadth_bullish_threshold):
             return Regime.UNCERTAIN
+        return raw
 
     def is_momentum_dominant(self, df: pd.DataFrame) -> bool:
         """

@@ -1,0 +1,123 @@
+STARTING CONTINUOUS JAN 2026 AUDIT (STRICT PRODUCTION LOGIC + AUTO-TRAINING)
+============================================================
+Ready to Groww!
+Authority Reset for Clean Audit. Threshold set to 0.70.
+Authenticating with Shoonya...
+Fetching continuous history for January (One-Shot Safe Fetch)...
+Data Columns: ['open', 'high', 'low', 'close', 'volume']
+Data Sample (Head):
+                         open      high       low    close  volume
+timestamp                                                         
+2026-01-01 09:15:00  26175.05  26195.15  26165.45  26167.8       0
+2026-01-01 09:20:00  26166.45  26177.55  26157.95  26161.1       0
+2026-01-01 09:25:00  26160.35  26189.60  26149.55  26187.2       0
+Data Sample (Tail):
+                         open      high       low     close  volume
+timestamp                                                          
+2026-01-30 15:15:00  25321.00  25343.90  25316.45  25324.45       0
+2026-01-30 15:20:00  25325.15  25327.25  25311.05  25313.25       0
+2026-01-30 15:25:00  25313.85  25337.65  25309.60  25315.80       0
+Total Candles to Process: 1500
+--- Processing 2026-01-01 ---
+--- Processing 2026-01-02 ---
+   [Internal Thoughts] BULLISH: BLOCKED: 0.48 < 0.70
+   [Internal Thoughts] BEARISH: BLOCKED: 0.48 < 0.70
+--- Processing 2026-01-05 ---
+   [Internal Thoughts] BULLISH: BLOCKED: 0.64 < 0.70
+   [Internal Thoughts] BEARISH: BLOCKED: 0.64 < 0.70
+--- Processing 2026-01-06 ---
+--- Processing 2026-01-07 ---
+   [Internal Thoughts] BULLISH: BLOCKED: 0.68 < 0.70
+   [Internal Thoughts] BEARISH: BLOCKED: 0.68 < 0.70
+--- Processing 2026-01-08 ---
+   [Internal Thoughts] BULLISH: BLOCKED: 0.67 < 0.70
+   [Internal Thoughts] BEARISH: BLOCKED: 0.67 < 0.70
+--- Processing 2026-01-09 ---
+   [Internal Thoughts] BULLISH: BLOCKED: 0.42 < 0.70
+   [Internal Thoughts] BEARISH: BLOCKED: 0.42 < 0.70
+--- Processing 2026-01-12 ---
+   [15:00] BULLISH Conf: 0.64 | PNL: 22.2
+--- Processing 2026-01-13 ---
+   [Internal Thoughts] BULLISH: Low synergy (0.34).
+   [Internal Thoughts] BEARISH: Low synergy (0.34).
+   [09:25] BULLISH Conf: 0.68 | PNL: -40.0
+--- Processing 2026-01-14 ---
+   [Internal Thoughts] BULLISH: BLOCKED: 0.55 < 0.70
+   [Internal Thoughts] BEARISH: BLOCKED: 0.55 < 0.70
+--- Processing 2026-01-16 ---
+   [Internal Thoughts] BULLISH: BLOCKED: 0.45 < 0.70
+   [Internal Thoughts] BEARISH: BLOCKED: 0.45 < 0.70
+--- Processing 2026-01-19 ---
+--- Processing 2026-01-20 ---
+   [Internal Thoughts] BULLISH: BLOCKED: 0.64 < 0.70
+   [Internal Thoughts] BEARISH: BLOCKED: 0.64 < 0.70
+--- Processing 2026-01-21 ---
+   [10:20] BULLISH Conf: 0.66 | PNL: -40.0
+   [10:40] BULLISH Conf: 0.67 | PNL: -40.0
+   [10:50] BULLISH Conf: 0.66 | PNL: -40.0
+   [Internal Thoughts] BULLISH: BLOCKED: 0.57 < 0.60
+   [Internal Thoughts] BEARISH: BLOCKED: 0.57 < 0.60
+   [11:25] BULLISH Conf: 0.63 | PNL: 80.0
+   [12:25] BULLISH Conf: 0.67 | PNL: 80.0
+--- Processing 2026-01-22 ---
+   [Internal Thoughts] BULLISH: BLOCKED: 0.59 < 0.70
+   [Internal Thoughts] BEARISH: BLOCKED: 0.59 < 0.70
+--- Processing 2026-01-23 ---
+--- Processing 2026-01-27 ---
+   [Internal Thoughts] BULLISH: BLOCKED: 0.67 < 0.70
+   [Internal Thoughts] BEARISH: BLOCKED: 0.67 < 0.70
+--- Processing 2026-01-28 ---
+   [10:05] BULLISH Conf: 0.64 | PNL: 80.0
+   [10:25] BULLISH Conf: 0.62 | PNL: 80.0
+   [Internal Thoughts] BULLISH: BLOCKED: 0.43 < 0.60
+   [Internal Thoughts] BEARISH: BLOCKED: 0.43 < 0.60
+   [11:35] BULLISH Conf: 0.62 | PNL: -40.0
+--- Processing 2026-01-29 ---
+   [Internal Thoughts] BULLISH: BLOCKED: 0.56 < 0.70
+   [Internal Thoughts] BEARISH: BLOCKED: 0.56 < 0.70
+--- Processing 2026-01-30 ---
+
+============================================================
+=== CONTINUOUS JANUARY 2026 BACKTEST SUMMARY ===
+      Date  Trades    PNL
+2026-01-01       0   0.00
+2026-01-02       0   0.00
+2026-01-05       0   0.00
+2026-01-06       0   0.00
+2026-01-07       0   0.00
+2026-01-08       0   0.00
+2026-01-09       0   0.00
+2026-01-12       1  22.25
+2026-01-13       1 -40.00
+2026-01-14       0   0.00
+2026-01-16       0   0.00
+2026-01-19       0   0.00
+2026-01-20       0   0.00
+2026-01-21       5  40.00
+2026-01-22       0   0.00
+2026-01-23       0   0.00
+2026-01-27       0   0.00
+2026-01-28       3 120.00
+2026-01-29       0   0.00
+2026-01-30       0   0.00
+------------------------------------------------------------
+Total Trading Days: 4
+Total Trades: 10
+Overall Win Rate: 50.0%
+Cumulative Points: 142.25
+============================================================
+
+ERRORS:
+2026-01-31 23:00:36,635 - INFO - DATA: Initializing Groww API...
+2026-01-31 23:00:37,829 - INFO - DATA: Groww API Connected Successfully.
+2026-01-31 23:00:37,829 - INFO - Shoonya: Identity initialized as abc1234_ull0
+2026-01-31 23:00:38,147 - INFO - Shoonya Login SUCCESSFUL! (Offset: 0s)
+2026-01-31 23:00:38,872 - INFO - DATA: Shoonya API Connected and Verified.
+2026-01-31 23:00:39,111 - INFO - SUPABASE: Connection Established.
+2026-01-31 23:00:39,111 - INFO - SUPABASE: Hardened async worker initialized.
+2026-01-31 23:00:39,128 - INFO - BRAIN: State loaded (v2.0).
+2026-01-31 23:00:39,714 - INFO - Shoonya: Fetched 1500 candles for NIFTY
+2026-01-31 23:00:46,043 - INFO - HTTP Request: POST https://eiafuzgqbtfstaparhpe.supabase.co/rest/v1/brain_snapshots "HTTP/2 400 Bad Request"
+2026-01-31 23:00:46,046 - ERROR - SUPABASE WORKER ERROR: {'message': "Could not find the 'decision' column of 'brain_snapshots' in the schema cache", 'code': 'PGRST204', 'hint': None, 'details': None}
+2026-01-31 23:00:51,461 - INFO - HTTP Request: POST https://eiafuzgqbtfstaparhpe.supabase.co/rest/v1/brain_snapshots "HTTP/2 400 Bad Request"
+2026-01-31 23:00:51,462 - ERROR - SUPABASE WORKER ERROR: {'message': "Could not find the 'decision' column of 'brain_snapshots' in the schema cache", 'code': 'PGRST204', 'hint': None, 'details': None}

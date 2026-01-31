@@ -1,6 +1,6 @@
 import time
 import logging
-from typing import Dict, List
+from typing import Dict, List, Any, Union
 from models import TradeSignal, SignalConfidence
 
 # Configure logging
@@ -39,34 +39,43 @@ class RiskEngine:
         if self.last_loss_time == 0: return False
         return (time.time() - self.last_loss_time) < 3600
 
-    def log_result(self, is_win: bool):
+    def log_trade(self, is_win: bool):
         if is_win:
             self.win_streak += 1
         else:
             self.win_streak = 0
             self.last_loss_time = time.time()
 
-    def get_suggested_size(self, confidence: SignalConfidence) -> float:
+    def get_suggested_size(self, confidence: Any, base_size: int = 1) -> int:
         """
         Implements Winning Streak Dampening and Recovery Mode logic.
         """
-        base_size = {
-            SignalConfidence.LOW: 0.0,
-            SignalConfidence.MEDIUM: 0.5,
-            SignalConfidence.HIGH: 0.75,
-            SignalConfidence.EXTREME: 1.0
-        }.get(confidence, 0.0)
-
-        # 1. Recovery Mode (Post-Loss)
+        # 1. Map confidence to multiplier
+        if isinstance(confidence, (float, int)):
+             mult = 1.0 if confidence > 0.9 else (0.75 if confidence > 0.7 else 0.5)
+             if confidence < 0.4: mult = 0.0
+        else:
+             # Handle SignalConfidence Enum (Legacy/Hybrid)
+             mult = {
+                SignalConfidence.LOW: 0.0,
+                SignalConfidence.MEDIUM: 0.5,
+                SignalConfidence.HIGH: 0.75,
+                SignalConfidence.EXTREME: 1.0
+             }.get(confidence, 0.0)
+             
+        size = float(base_size) * mult
+        
+        # 2. Recovery Mode (Post-Loss)
         if time.time() - self.last_loss_time < 3600:
-            return base_size * 0.25 # Aggressive reduction
-
-        # 2. Institutional Dampener: Protect against overconfidence after wins
+            size *= 0.25 # Aggressive reduction
+            
+        # 3. Institutional Dampener: Protect against overconfidence after wins
         if self.win_streak >= 3:
             logger.info(f"WINNING STREAK DAMPENER ACTIVE: {self.win_streak} wins")
-            return base_size * 0.5 # Reduce size to lock in gains/prevent recklessness
-
-        return base_size
+            size *= 0.5
+            
+        if mult == 0: return 0
+        return max(1, round(size))
 
 if __name__ == "__main__":
     risk = RiskEngine()

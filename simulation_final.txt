@@ -1,0 +1,234 @@
+STARTING TRUTHFUL SIMULATION FOR TUESDAY: 2026-01-27
+Ready to Groww!
+Authenticating with Shoonya...
+Login Successful.
+Fetching historical data for NIFTY from 2026-01-27 09:15:00 to 2026-01-27 15:30:00...
+Processing 75 candles...
+Pre-warming Brain Engine with prior history...
+[09:25] BULLISH Brain: High conviction (0.88).
+[09:25] BEARISH Brain: High conviction (0.88).
+[BRAIN] [09:25] BULLISH | Conf: 0.88 | Size: 1
+[09:35] BULLISH Brain: High conviction (0.85).
+[09:35] BEARISH Brain: High conviction (0.85).
+[BRAIN] [09:35] BULLISH | Conf: 0.85 | Size: 1
+[12:10] BULLISH Brain: High conviction (0.88).
+[12:10] BEARISH Brain: High conviction (0.88).
+[BRAIN] [12:10] BULLISH | Conf: 0.88 | Size: 1
+[12:20] BULLISH Brain: High conviction (0.88).
+[12:20] BEARISH Brain: High conviction (0.88).
+[BRAIN] [12:20] BULLISH | Conf: 0.88 | Size: 1
+[13:05] BULLISH Brain: High conviction (0.88).
+[13:05] BEARISH Brain: High conviction (0.88).
+[BRAIN] [13:05] BULLISH | Conf: 0.88 | Size: 1
+[13:15] BULLISH Brain: High conviction (0.88).
+[13:15] BEARISH Brain: High conviction (0.88).
+[BRAIN] [13:15] BULLISH | Conf: 0.88 | Size: 1
+[13:20] BULLISH Brain: High conviction (0.88).
+[13:20] BEARISH Brain: High conviction (0.88).
+[BRAIN] [13:20] BULLISH | Conf: 0.88 | Size: 1
+[13:40] BULLISH Brain: High conviction (0.88).
+[13:40] BEARISH Brain: High conviction (0.87).
+[BRAIN] [13:40] BULLISH | Conf: 0.87 | Size: 1
+[14:05] BULLISH Brain: High conviction (0.87).
+[14:05] BEARISH Brain: High conviction (0.87).
+[BRAIN] [14:05] BULLISH | Conf: 0.87 | Size: 1
+[14:35] BULLISH Brain: APPROVED: 0.80 > 0.75
+[14:35] BEARISH Brain: APPROVED: 0.79 > 0.75
+[BRAIN] [14:35] BULLISH | Conf: 0.79 | Size: 1
+[14:45] BULLISH Brain: High conviction (0.84).
+[14:45] BEARISH Brain: High conviction (0.84).
+[BRAIN] [14:45] BULLISH | Conf: 0.84 | Size: 1
+[14:55] BULLISH Brain: High conviction (0.86).
+[14:55] BEARISH Brain: High conviction (0.86).
+[BRAIN] [14:55] BULLISH | Conf: 0.86 | Size: 1
+[15:05] BULLISH Brain: High conviction (0.84).
+[15:05] BEARISH Brain: High conviction (0.84).
+[BRAIN] [15:05] BULLISH | Conf: 0.84 | Size: 1
+
+[PNL] Auditing outcomes for generated trades...
+
+========================================
+=== FINAL SIMULATION RESULTS (Jan 27, 2026) ===
+ Time    Type    Entry          Outcome   PNL  Exit
+09:25 BULLISH 24958.55 SUCCESS (TARGET)  80.0 09:35
+09:35 BULLISH 25091.50 SUCCESS (TARGET)  80.0 10:15
+12:10 BULLISH 25120.35        LOSS (SL) -40.0 12:35
+12:20 BULLISH 25127.60        LOSS (SL) -40.0 12:30
+13:05 BULLISH 25089.60        LOSS (SL) -40.0 13:35
+13:15 BULLISH 25098.05        LOSS (SL) -40.0 13:35
+13:20 BULLISH 25103.55        LOSS (SL) -40.0 13:35
+13:40 BULLISH 25045.25        LOSS (SL) -40.0 14:05
+14:05 BULLISH 25024.45 SUCCESS (TARGET)  80.0 14:40
+14:35 BULLISH 25092.40 SUCCESS (TARGET)  80.0 15:10
+14:45 BULLISH 25115.20 SUCCESS (TARGET)  80.0 15:15
+14:55 BULLISH 25139.45 SUCCESS (TARGET)  80.0 15:20
+15:05 BULLISH 25147.70 SUCCESS (TARGET)  80.0 15:20
+----------------------------------------
+Total Trades: 13
+Win Rate: 53.8%
+Net Points: 320.00
+Verdict: STRATEGY SUCCESSFUL (PROFITABLE)
+========================================
+
+ERRORS:
+2026-01-31 22:42:07,037 - INFO - DATA: Initializing Groww API...
+2026-01-31 22:42:08,113 - INFO - DATA: Groww API Connected Successfully.
+2026-01-31 22:42:08,113 - INFO - Shoonya: Identity initialized as abc1234_54k0
+2026-01-31 22:42:08,466 - INFO - Shoonya Login SUCCESSFUL! (Offset: 0s)
+2026-01-31 22:42:08,467 - ERROR - Shoonya: Failed to refresh futures mapping: 'ShoonyaApiPy' object has no attribute 'search_scrip'
+2026-01-31 22:42:08,467 - INFO - DATA: Shoonya API Connected and Verified.
+2026-01-31 22:42:08,718 - INFO - SUPABASE: Connection Established.
+2026-01-31 22:42:08,719 - INFO - SUPABASE: Hardened async worker initialized.
+2026-01-31 22:42:08,719 - INFO - BRAIN: State loaded (v2.0).
+2026-01-31 22:42:08,719 - ERROR - Shoonya: Failed to refresh futures mapping: 'ShoonyaApiPy' object has no attribute 'search_scrip'
+2026-01-31 22:42:09,064 - INFO - Shoonya: Fetched 450 candles for NIFTY
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly
+f:\FnO\backend\scripts\simulate_last_day.py:85: FutureWarning: last is deprecated and will be removed in a future version. Please create a mask and filter using `.loc` instead
+  hist_window = df_nifty.loc[:current_time].last('200B') # roughly

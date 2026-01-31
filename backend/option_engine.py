@@ -262,6 +262,218 @@ class OptionEngine:
             "days_to_expiry": days_to_expiry,
             "rejection_reasons": []
         }
+    
+    def analyze_coi(self, current_chain: pd.DataFrame, previous_chain: pd.DataFrame, 
+                    spot: float, price_change: float) -> Dict:
+        """
+        [ADVANCED] Change in OI Analysis - Detects fresh institutional positions
+        
+        Returns signal type and strength based on COI + price action
+        """
+        if current_chain.empty or previous_chain.empty:
+            return {"signal": "NEUTRAL", "strength": 0.0, "reasons": []}
+        
+        # Merge chains on strike
+        merged = current_chain.merge(previous_chain, on='strike', suffixes=('_curr', '_prev'))
+        
+        # Calculate COI
+        merged['coi_call'] = merged['call_oi_curr'] - merged['call_oi_prev']
+        merged['coi_put'] = merged['put_oi_curr'] - merged['put_oi_prev']
+        
+        # Focus on ATM strikes (within 200 points)
+        atm_strikes = merged[abs(merged['strike'] - spot) <= 200]
+        
+        total_coi_call = atm_strikes['coi_call'].sum()
+        total_coi_put = atm_strikes['coi_put'].sum()
+        
+        reasons = []
+        signal = "NEUTRAL"
+        strength = 0.0
+        
+        # Fresh Call Buying + Price Up = STRONG BULLISH
+        if total_coi_call > 10000 and price_change > 0:
+            signal = "FRESH_CALL_BUYING"
+            strength = min(total_coi_call / 50000, 1.0)
+            reasons.append(f"Fresh Call OI: +{total_coi_call:,.0f}")
+        
+        # Fresh Put Buying + Price Down = STRONG BEARISH
+        elif total_coi_put > 10000 and price_change < 0:
+            signal = "FRESH_PUT_BUYING"
+            strength = min(total_coi_put / 50000, 1.0)
+            reasons.append(f"Fresh Put OI: +{total_coi_put:,.0f}")
+        
+        # Call Unwinding + Price Up = WEAK BULLISH
+        elif total_coi_call < -10000 and price_change > 0:
+            signal = "CALL_UNWINDING"
+            strength = 0.3
+            reasons.append(f"Call Unwinding: {total_coi_call:,.0f}")
+        
+        # Put Unwinding + Price Down = WEAK BEARISH
+        elif total_coi_put < -10000 and price_change < 0:
+            signal = "PUT_UNWINDING"
+            strength = 0.3
+            reasons.append(f"Put Unwinding: {total_coi_put:,.0f}")
+        
+        # Call Writing + Price Down = BEARISH
+        elif total_coi_call > 10000 and price_change < 0:
+            signal = "CALL_WRITING"
+            strength = 0.7
+            reasons.append(f"Call Writing: +{total_coi_call:,.0f}")
+        
+        # Put Writing + Price Up = BULLISH
+        elif total_coi_put > 10000 and price_change > 0:
+            signal = "PUT_WRITING"
+            strength = 0.7
+            reasons.append(f"Put Writing: +{total_coi_put:,.0f}")
+        
+        return {
+            "signal": signal,
+            "strength": strength,
+            "reasons": reasons,
+            "coi_call": total_coi_call,
+            "coi_put": total_coi_put
+        }
+    
+    def calculate_iv_percentile(self, current_iv: float, historical_iv: List[float]) -> Dict:
+        """
+        [ADVANCED] IV Percentile - Where current IV stands vs 90-day history
+        
+        Returns percentile and regime classification
+        """
+        if not historical_iv or len(historical_iv) < 30:
+            return {"percentile": 50.0, "regime": "UNKNOWN", "score": 0.0}
+        
+        # Calculate percentile
+        rank = sum(1 for iv in historical_iv if current_iv > iv)
+        percentile = (rank / len(historical_iv)) * 100
+        
+        # Classify regime
+        if percentile < 20:
+            regime = "DEAD_MARKET"
+            score = -0.3  # Avoid trading
+        elif percentile < 30:
+            regime = "LOW_VOL"
+            score = 0.0
+        elif 30 <= percentile <= 70:
+            regime = "OPTIMAL"
+            score = 0.3  # Good for scalping
+        elif percentile <= 80:
+            regime = "ELEVATED"
+            score = 0.1
+        else:
+            regime = "PANIC"
+            score = -0.5  # Avoid trading
+        
+        return {
+            "percentile": round(percentile, 1),
+            "regime": regime,
+            "score": score,
+            "current_iv": current_iv
+        }
+    
+    def get_implied_move(self, chain_df: pd.DataFrame, spot: float) -> Dict:
+        """
+        [ADVANCED] Implied Move - Expected daily range from ATM straddle
+        
+        Returns expected range and reversal zones
+        """
+        if chain_df.empty:
+            return {"implied_move": 0.0, "upper_bound": spot, "lower_bound": spot}
+        
+        # Find ATM strike
+        chain_df['dist_from_spot'] = abs(chain_df['strike'] - spot)
+        atm_row = chain_df.loc[chain_df['dist_from_spot'].idxmin()]
+        
+        # ATM Straddle = ATM Call Premium + ATM Put Premium
+        atm_call_premium = atm_row.get('call_ltp', 0)
+        atm_put_premium = atm_row.get('put_ltp', 0)
+        straddle_price = atm_call_premium + atm_put_premium
+        
+        # Implied Move = Straddle × 0.85 (statistical adjustment)
+        implied_move = straddle_price * 0.85
+        
+        upper_bound = spot + implied_move
+        lower_bound = spot - implied_move
+        
+        # Check if near boundary (reversal zone)
+        distance_to_upper = abs(spot - upper_bound)
+        distance_to_lower = abs(spot - lower_bound)
+        
+        if distance_to_upper < implied_move * 0.1:
+            zone = "NEAR_UPPER_BOUND"
+            reversal_probability = 0.7
+        elif distance_to_lower < implied_move * 0.1:
+            zone = "NEAR_LOWER_BOUND"
+            reversal_probability = 0.7
+        else:
+            zone = "WITHIN_RANGE"
+            reversal_probability = 0.3
+        
+        return {
+            "implied_move": round(implied_move, 1),
+            "upper_bound": round(upper_bound, 1),
+            "lower_bound": round(lower_bound, 1),
+            "zone": zone,
+            "reversal_probability": reversal_probability,
+            "straddle_price": round(straddle_price, 1)
+        }
+    
+    def calculate_net_greeks(self, chain_df: pd.DataFrame, spot: float) -> Dict:
+        """
+        [ADVANCED] Net Greeks Flow - Aggregate Delta/Vega positioning
+        
+        Returns net delta and vega exposure
+        """
+        if chain_df.empty:
+            return {"net_delta": 0.0, "net_vega": 0.0, "bias": "NEUTRAL"}
+        
+        # Simple Delta approximation (for ATM strikes)
+        # Call Delta ≈ 0.5 at ATM, Put Delta ≈ -0.5 at ATM
+        # Adjust based on moneyness
+        
+        net_delta = 0.0
+        net_vega = 0.0
+        
+        for _, row in chain_df.iterrows():
+            strike = row['strike']
+            call_oi = row.get('call_oi', 0)
+            put_oi = row.get('put_oi', 0)
+            
+            # Distance from spot
+            dist = strike - spot
+            
+            # Approximate Delta (simplified Black-Scholes)
+            if abs(dist) < 300:  # Only ATM matters
+                # Call Delta increases as strike < spot
+                call_delta = 0.5 + (spot - strike) / 1000
+                call_delta = max(0.1, min(0.9, call_delta))
+                
+                # Put Delta = Call Delta - 1
+                put_delta = call_delta - 1
+                
+                # Net Delta contribution
+                net_delta += (call_oi * call_delta) + (put_oi * put_delta)
+                
+                # Vega is same for calls and puts (simplified)
+                vega = 0.3  # Constant approximation
+                net_vega += (call_oi + put_oi) * vega
+        
+        # Normalize
+        net_delta = net_delta / 100000  # Scale down
+        
+        # Determine bias
+        if net_delta > 0.5:
+            bias = "BULLISH_POSITIONING"
+        elif net_delta < -0.5:
+            bias = "BEARISH_POSITIONING"
+        else:
+            bias = "NEUTRAL"
+        
+        return {
+            "net_delta": round(net_delta, 2),
+            "net_vega": round(net_vega, 0),
+            "bias": bias
+        }
 
 if __name__ == "__main__":
     # Mock for testing

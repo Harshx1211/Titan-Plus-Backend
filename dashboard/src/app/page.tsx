@@ -435,7 +435,7 @@ export default function TitanDashboard() {
                             )}
                           </div>
                           <p className="text-xs text-slate-500 font-mono">
-                            ID: {signal.decision_id || 'N/A'}
+                            Index: {signal.entry_price.toFixed(0)} | Strike: {signal.strike || 'N/A'}
                           </p>
                         </div>
 
@@ -449,40 +449,73 @@ export default function TitanDashboard() {
                         </div>
                       </div>
 
-                      {/* Price Levels */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-                        <div>
-                          <div className="text-xs text-slate-500 font-mono mb-1">Entry</div>
-                          <div className="text-lg font-bold text-cyan-400">
-                            ₹{signal.entry_price.toFixed(2)}
-                          </div>
+                      {/* Option Premium Prices */}
+                      <div className="mb-4">
+                        <div className="text-xs text-slate-400 font-mono uppercase tracking-wider mb-2">
+                          Option Premium
                         </div>
-                        <div>
-                          <div className="text-xs text-slate-500 font-mono mb-1">Stop Loss</div>
-                          <div className="text-lg font-bold text-rose-400">
-                            ₹{signal.stop_loss.toFixed(2)}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                          <div>
+                            <div className="text-xs text-slate-500 font-mono mb-1">Entry</div>
+                            <div className="text-lg font-bold text-cyan-400">
+                              ₹{signal.premium_entry?.toFixed(2) || signal.entry_price.toFixed(2)}
+                            </div>
                           </div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-slate-500 font-mono mb-1">Target</div>
-                          <div className="text-lg font-bold text-emerald-400">
-                            ₹{signal.target.toFixed(2)}
+                          <div>
+                            <div className="text-xs text-slate-500 font-mono mb-1">Stop Loss</div>
+                            <div className="text-lg font-bold text-rose-400">
+                              ₹{signal.premium_sl?.toFixed(2) || signal.stop_loss.toFixed(2)}
+                            </div>
                           </div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-slate-500 font-mono mb-1">R:R</div>
-                          <div className="text-lg font-bold text-white">
-                            {((signal.target - signal.entry_price) / (signal.entry_price - signal.stop_loss)).toFixed(2)}
+                          <div>
+                            <div className="text-xs text-slate-500 font-mono mb-1">Target</div>
+                            <div className="text-lg font-bold text-emerald-400">
+                              ₹{signal.premium_target?.toFixed(2) || signal.target.toFixed(2)}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-slate-500 font-mono mb-1">R:R</div>
+                            <div className="text-lg font-bold text-white">
+                              1:{signal.premium_target && signal.premium_entry && signal.premium_sl
+                                ? ((signal.premium_target - signal.premium_entry) / (signal.premium_entry - signal.premium_sl)).toFixed(1)
+                                : ((signal.target - signal.entry_price) / (signal.entry_price - signal.stop_loss)).toFixed(1)}
+                            </div>
                           </div>
                         </div>
                       </div>
 
+                      {/* Quality Score */}
+                      {signal.confidence_val && (
+                        <div className="mb-4 p-3 bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 rounded-lg border border-emerald-500/20">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-mono text-slate-400 uppercase tracking-wider">
+                              Quality Score
+                            </span>
+                            <span className="text-lg font-bold text-emerald-400">
+                              {(signal.confidence_val * 10).toFixed(1)}/10.0
+                            </span>
+                          </div>
+                          <div className="mt-2 flex items-center gap-1">
+                            {[...Array(5)].map((_, i) => (
+                              <span key={i} className={`text-lg ${i < Math.floor((signal.confidence_val || 0) * 5) ? 'text-emerald-400' : 'text-slate-700'}`}>
+                                ⭐
+                              </span>
+                            ))}
+                            <span className="ml-2 text-xs font-mono text-emerald-400 uppercase">
+                              {signal.confidence}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Confidence & Reasoning */}
                       <div className="space-y-3">
-                        <ConfidenceMeter
-                          level={signal.confidence}
-                          value={signal.confidence_val}
-                        />
+                        {!signal.confidence_val && (
+                          <ConfidenceMeter
+                            level={signal.confidence}
+                            value={signal.confidence_val}
+                          />
+                        )}
 
                         <div className="bg-slate-800/30 rounded-lg p-3 border border-slate-700/30">
                           <p className="text-xs text-slate-400 font-mono leading-relaxed">
@@ -511,14 +544,21 @@ export default function TitanDashboard() {
                         )}
                       </div>
 
-                      {/* Action Button */}
-                      <button
-                        onClick={() => signal.decision_id && handleExecuteTrade(signal.decision_id)}
-                        className="mt-4 w-full sm:w-auto px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white font-mono text-sm rounded-lg transition-all duration-200 flex items-center justify-center gap-2 group"
-                      >
-                        <span>Execute Trade</span>
-                        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                      </button>
+                      {/* Action Buttons */}
+                      <div className="mt-4 flex gap-2">
+                        <button
+                          onClick={() => signal.decision_id && handleExecuteTrade(signal.decision_id)}
+                          className="flex-1 px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white font-mono text-sm rounded-lg transition-all duration-200 flex items-center justify-center gap-2 group"
+                        >
+                          <span>Execute Trade</span>
+                          <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                        </button>
+                        <button
+                          className="px-6 py-2.5 bg-slate-800/50 hover:bg-slate-700/50 text-slate-400 hover:text-slate-300 font-mono text-sm rounded-lg transition-all duration-200 border border-slate-700/50"
+                        >
+                          Skip
+                        </button>
+                      </div>
                     </div>
                   ))
                 ) : (
@@ -553,8 +593,8 @@ export default function TitanDashboard() {
                     <div key={idx} className="p-3 bg-slate-800/30 rounded-lg border border-slate-700/30 hover:border-slate-600/50 transition-colors">
                       <div className="flex items-start gap-2 mb-2">
                         <span className={`px-2 py-0.5 rounded text-xs font-mono uppercase tracking-wider ${thought.type === 'INFO' ? 'bg-cyan-500/10 text-cyan-400' :
-                            thought.type === 'WARN' ? 'bg-amber-500/10 text-amber-400' :
-                              'bg-rose-500/10 text-rose-400'
+                          thought.type === 'WARN' ? 'bg-amber-500/10 text-amber-400' :
+                            'bg-rose-500/10 text-rose-400'
                           }`}>
                           {thought.type}
                         </span>

@@ -24,40 +24,28 @@ USE_V2_LOGIC = os.getenv("BRAIN_V2_ENABLED", "true").lower() == "true"
 @dataclass
 class BrainConfig:
     """Configuration for regime detection thresholds [v2.0.0]"""
-    # Window sizes (adaptive by regime)
-    window_size_trending: int = 300
-    window_size_sideways: int = 500
+    # Window sizes (v2.0 - FAST Sideways, SLOW Trending)
+    window_size_trending: int = 500  # Slow tracking for persistence
+    window_size_sideways: int = 200  # Fast adaptation for ranges
     window_size_uncertain: int = 200
     
     # Statistical thresholds
     min_history_bars: int = 50
-    variance_floor: float = 1e-6  # Prevent division by zero
-    z_score_clip: float = 3.0     # Clip extreme outliers
-    sigmoid_scale: float = 1.5    # Sigmoid steepness
+    variance_floor: float = 1e-6
+    z_score_clip: float = 3.0
+    sigmoid_scale: float = 1.5
     
-    # Basis stability
-    basis_hard_floor: float = 0.12
-    basis_sigma_threshold: float = 3.0
-    basis_min_std: float = 0.01
-    
-    # Authority learning rates
-    authority_lr_approve_win: float = 0.02
-    authority_lr_approve_loss: float = 0.05
-    authority_lr_block_win: float = 0.01
-    authority_lr_block_loss: float = 0.02
-    authority_floor: float = 0.3
-    authority_ceiling: float = 1.0
-    authority_decay: float = 0.995  # Exponential decay toward 1.0
-    
-    # Reputation learning
-    reputation_lr: float = 0.03
-    reputation_floor: float = 0.5
-    reputation_ceiling: float = 1.5
-    
-    # Confidence thresholds by regime
+    # Confidence thresholds
     threshold_trending: float = 0.60
     threshold_sideways: float = 0.75
+    threshold_sideways_strong: float = 0.70 # More lenient in high quality
+    threshold_sideways_weak: float = 0.85   # Very strict in chop
     threshold_uncertain: float = 0.90
+    
+    # Skirmisher evaluation (v2.1)
+    min_risk_reward: float = 1.5
+    skirmisher_authority_floor: float = 0.5
+    skirmisher_quality_floor: float = 0.6
     
     # IV Skew thresholds
     iv_skew_high: float = 1.3
@@ -71,6 +59,23 @@ class BrainConfig:
     
     # Feature defaults
     default_feature_weight: float = 1.0
+    
+    # Learning Rates (v2.1)
+    reputation_lr: float = 0.05
+    authority_lr_approve_win: float = 0.02
+    authority_lr_approve_loss: float = 0.10 # Aggressively penalize bad approvals
+    authority_lr_block_win: float = 0.01
+    authority_lr_block_loss: float = 0.01
+    authority_decay: float = 0.99
+    
+    # Validation Bounds
+    reputation_floor: float = 0.5
+    reputation_ceiling: float = 1.5
+    authority_floor: float = 0.3
+    authority_ceiling: float = 1.0
+    basis_hard_floor: float = 0.02
+    basis_min_std: float = 0.01
+    basis_sigma_threshold: float = 3.0
 
 @dataclass
 class BrainMetrics:
@@ -119,7 +124,11 @@ class BrainEngine:
         
         # Regime authority (confidence in each regime's decisions)
         self.authority: Dict[str, float] = {
-            "TRENDING": 1.0, "SIDEWAYS": 1.0, "UNCERTAIN": 1.0
+            "TRENDING": 1.0, 
+            "SIDEWAYS_STRONG": 1.0, 
+            "SIDEWAYS_NORMAL": 1.0, 
+            "SIDEWAYS_WEAK": 1.0,
+            "UNCERTAIN": 1.0
         }
         
         # Rolling feature history (using deque for O(1) performance)
@@ -136,12 +145,20 @@ class BrainEngine:
         
         self.decisions: Dict[str, DecisionObject] = {}
         
+        # [v2.5] Intelligence Layer
+        from news_service import NewsService
+        self.news = NewsService()
+        
         # Load and migrate state
         self.load_state()
 
     def health_check(self) -> Dict[str, Any]:
         """Load balancer / system health monitoring"""
-        auth_health = all(self.config.authority_floor <= v <= self.config.authority_ceiling for v in self.authority.values())
+        # Assuming authority_floor and authority_ceiling are defined in config
+        # For now, using a placeholder if not present in BrainConfig
+        authority_floor = getattr(self.config, 'authority_floor', 0.0)
+        authority_ceiling = getattr(self.config, 'authority_ceiling', 1.0)
+        auth_health = all(authority_floor <= v <= authority_ceiling for v in self.authority.values())
         return {
             "status": "HEALTHY" if auth_health else "DEGRADED",
             "version": self.LOGIC_VERSION,
@@ -170,14 +187,22 @@ class BrainEngine:
             new_state["logic_version"] = self.LOGIC_VERSION
             
             # 2. Ensure authority has all regimes in correct format
-            for r in ["TRENDING", "SIDEWAYS", "UNCERTAIN"]:
+            valid_regimes = ["TRENDING", "SIDEWAYS_STRONG", "SIDEWAYS_NORMAL", "SIDEWAYS_WEAK", "UNCERTAIN"]
+            for r in valid_regimes:
                 if r not in new_state.get("authority", {}):
-                    new_state.setdefault("authority", {})[r] = 1.0
+                    # Map old SIDEWAYS to NORMAL if migrating
+                    if r == "SIDEWAYS_NORMAL" and "SIDEWAYS" in new_state.get("authority", {}):
+                        new_state.setdefault("authority", {})[r] = new_state["authority"]["SIDEWAYS"]
+                    else:
+                        new_state.setdefault("authority", {})[r] = 1.0
             
             # 3. Handle reputation bounds if needed
             reps = new_state.get("feature_reputation", {})
+            # Assuming reputation_floor and reputation_ceiling are defined in config
+            reputation_floor = getattr(self.config, 'reputation_floor', 0.0)
+            reputation_ceiling = getattr(self.config, 'reputation_ceiling', 1.0)
             for f in reps:
-                reps[f] = max(self.config.reputation_floor, min(self.config.reputation_ceiling, reps[f]))
+                reps[f] = max(reputation_floor, min(reputation_ceiling, reps[f]))
             
             return new_state
         return old_state
@@ -224,7 +249,9 @@ class BrainEngine:
             return None
             
         if "BASIS" in feature_name:
-            if value <= 0.0 or value >= 100.0:
+            # Assuming basis_hard_floor is defined in config
+            basis_hard_floor = getattr(self.config, 'basis_hard_floor', 0.0)
+            if value <= basis_hard_floor or value >= 100.0:
                 logger.debug(f"BRAIN: Suspicious basis: {value}")
                 return None
         return value
@@ -237,6 +264,9 @@ class BrainEngine:
         window_size = {
             Regime.TRENDING: self.config.window_size_trending,
             Regime.SIDEWAYS: self.config.window_size_sideways,
+            Regime.SIDEWAYS_STRONG: self.config.window_size_sideways,
+            Regime.SIDEWAYS_NORMAL: self.config.window_size_sideways,
+            Regime.SIDEWAYS_WEAK: self.config.window_size_sideways,
             Regime.UNCERTAIN: self.config.window_size_uncertain
         }.get(regime, self.config.window_size_uncertain)
         
@@ -271,14 +301,19 @@ class BrainEngine:
         mean = series.mean()
         std = series.std() 
         
+        # Assuming basis_hard_floor and basis_min_std, basis_sigma_threshold are defined in config
+        basis_hard_floor = getattr(self.config, 'basis_hard_floor', 0.0)
+        basis_min_std = getattr(self.config, 'basis_min_std', 0.0)
+        basis_sigma_threshold = getattr(self.config, 'basis_sigma_threshold', 0.0)
+
         abs_diff = abs(current_basis - mean)
-        is_abs_unstable = abs_diff > self.config.basis_hard_floor
+        is_abs_unstable = abs_diff > basis_hard_floor
         
         is_sigma_unstable = False
         sigma_jump = 0.0
-        if std > self.config.basis_min_std:
+        if std > basis_min_std:
             sigma_jump = abs_diff / std
-            is_sigma_unstable = sigma_jump > self.config.basis_sigma_threshold
+            is_sigma_unstable = sigma_jump > basis_sigma_threshold
         
         is_unstable = (is_abs_unstable or is_sigma_unstable) and current_basis < 99.0
         
@@ -331,20 +366,27 @@ class BrainEngine:
         
         return 1 / (1 + math.exp(-self.config.sigmoid_scale * z_score))
 
-    def get_confidence_boost(self, features: Dict[str, float], regime: str = "UNCERTAIN", 
+    def _get_authority(self, regime: Regime) -> float:
+        """Get authority with backward compatibility (C2 Fix)"""
+        key = regime.value
+        if key == "SIDEWAYS" and key not in self.authority:
+            return self.authority.get("SIDEWAYS_NORMAL", 1.0)
+        return self.authority.get(key, 1.0)
+
+    def get_confidence_boost(self, features: Dict[str, float], regime_val: str, 
                                 signal_intent: Optional[str] = None, iv_skew: float = 1.0) -> Tuple[float, List[str]]:
         """Stateless confidence calculation with V2 statistical rigor."""
         start_time = time.perf_counter()
         
-        # Determine regime enum with logging fallback
+        # Determine regime enum
+        target_regime = Regime.UNCERTAIN
         try:
-            regime_enum = Regime(regime)
+            target_regime = Regime(regime_val)
         except ValueError:
-            logger.warning(f"BRAIN: Invalid regime '{regime}' -> Defaults to UNCERTAIN")
-            regime_enum = Regime.UNCERTAIN
+            logger.warning(f"BRAIN: Invalid regime '{regime_val}' -> Defaults to UNCERTAIN")
 
         # Sync window size
-        self._ensure_window_size(regime_enum)
+        self._ensure_window_size(target_regime)
 
         norm_features = {}
         thoughts = []
@@ -371,7 +413,7 @@ class BrainEngine:
             if self.stage == 1:
                 return 0.5, ["Cold start: Neutral bias (Passive mode)."]
             else:
-                return 0.0, ["⚠️ Cold start: VETO until warm history."]
+                return 0.0, ["VETO: Cold start - history required."]
         
         # Weighted Scoring
         weighted_score = 0.0
@@ -388,12 +430,12 @@ class BrainEngine:
         if boost > 0.8: thoughts.append(f"High conviction ({boost:.2f}).")
         elif boost < 0.4: thoughts.append(f"Low synergy ({boost:.2f}).")
 
-        boost, iv_thoughts = self._apply_iv_skew_adjustment(boost, signal_intent, iv_skew, regime_enum)
+        boost, iv_thoughts = self._apply_iv_skew_adjustment(boost, signal_intent, iv_skew, target_regime)
         thoughts.extend(iv_thoughts)
 
         # Authority Scaling
-        regime_auth = self.authority.get(regime_enum.value, 1.0)
-        if regime_auth < 0.5:
+        regime_auth = self._get_authority(target_regime)
+        if regime_auth < 0.5: # Assuming 0.5 is a reasonable floor for general authority
             boost *= 0.6
             thoughts.append(f"AUTH VETO: {regime_auth:.2f} too low.")
             
@@ -406,10 +448,19 @@ class BrainEngine:
         return boost, thoughts
 
     def generate_decision(self, features: Dict[str, float], regime: Regime, is_commit: bool = False, 
-                          pattern_score: float = 0.0, signal_intent: Optional[str] = None, iv_skew: float = 1.0) -> Tuple[Optional[str], List[str]]:
+                          pattern_score: float = 0.0, signal_intent: Optional[str] = None, iv_skew: float = 1.0,
+                          news_sentiment: float = 0.0) -> Tuple[Optional[str], List[str]]:
         """Trade decision path."""
         if self.stage == 1 and is_commit:
             return None, ["Passive Mode: Decision suppressed."]
+
+        # News Veto Logic
+        if abs(news_sentiment) > 0.8:
+            # If news is extreme, only allow if signal aligns perfectly
+            if news_sentiment > 0.8 and signal_intent != "BULLISH":
+                return None, [f"Blocked: Extreme Bearish News Veto ({news_sentiment})"]
+            if news_sentiment < -0.8 and signal_intent != "BEARISH":
+                return None, [f"Blocked: Extreme Bullish News Veto ({news_sentiment})"]
 
         if is_commit and pattern_score < 0.7:
             return None, [f"Blocked: Pattern {pattern_score:.2f} < 0.70."]
@@ -417,11 +468,23 @@ class BrainEngine:
         decision_id = str(uuid.uuid4())[:8]
         boost, thoughts = self.get_confidence_boost(features, regime.value, signal_intent, iv_skew)
         
+        # Apply news influence
+        if news_sentiment != 0.0:
+            if (news_sentiment > 0 and signal_intent == "BULLISH") or (news_sentiment < 0 and signal_intent == "BEARISH"):
+                boost *= 1.2
+                thoughts.append(f"News Confluence: +20% boost ({news_sentiment})")
+            else:
+                boost *= 0.8
+                thoughts.append(f"News Friction: -20% penalty ({news_sentiment})")
+        
+        # 2. Threshold determination (Regime-aware)
         threshold = {
             Regime.TRENDING: self.config.threshold_trending,
-            Regime.SIDEWAYS: self.config.threshold_sideways,
+            Regime.SIDEWAYS_STRONG: self.config.threshold_sideways_strong,
+            Regime.SIDEWAYS_NORMAL: self.config.threshold_sideways,
+            Regime.SIDEWAYS_WEAK: self.config.threshold_sideways_weak,
             Regime.UNCERTAIN: self.config.threshold_uncertain
-        }.get(regime, 0.75)
+        }.get(regime, self.config.threshold_sideways)
         
         decision_str = "APPROVE" if boost > threshold else "BLOCK"
         
@@ -478,7 +541,9 @@ class BrainEngine:
                     else: 
                         delta = self.config.authority_lr_block_win if efficacy == 1 else -self.config.authority_lr_block_loss
                     
-                    new_auth = self.authority[bucket] + delta
+                    # Use get() and setdefault for safety against missing regime keys in authority map
+                    curr_auth = self.authority.get(bucket, 1.0)
+                    new_auth = curr_auth + delta
                     new_auth = new_auth * self.config.authority_decay + 1.0 * (1 - self.config.authority_decay)
                     self.authority[bucket] = max(self.config.authority_floor, min(self.config.authority_ceiling, new_auth))
 
@@ -497,6 +562,57 @@ class BrainEngine:
             
         except Exception as e:
             logger.error(f"BRAIN: Log failed: {e}")
+
+    def evaluate_skirmisher_signal(
+        self,
+        signal: Dict,
+        regime: Regime,
+        iv_skew: float
+    ) -> Tuple[bool, List[str]]:
+        """
+        Brain's statistical oversight for Skirmisher tactical signals. [Institutional v2.0]
+        """
+        thoughts = []
+        
+        # 1. Regime alignment check
+        if not ("SIDEWAYS" in regime.value or regime == Regime.UNCERTAIN):
+            return False, ["BRAIN: VETO - Skirmisher active outside Sideways/Uncertain regime."]
+        
+        # 2. Risk:Reward Validation
+        rr = signal.get("risk_reward", 0)
+        if rr < self.config.min_risk_reward:
+            return False, [f"BRAIN: VETO - R:R {rr:.2f} below threshold {self.config.min_risk_reward}"]
+            
+        # 3. Authority Check (Learned reliability in this regime)
+        auth = self.authority.get(regime.value, 1.0)
+        if auth < self.config.authority_floor:
+             return False, [f"BRAIN: VETO - Authority in {regime.value} too low ({auth:.2f})"]
+             
+        # 4. IV Skew Bias Check (Meta-Consistency)
+        # Use brain's existing IV adjustment logic to see if it would boost/suppress this direction
+        sig_type = "BULLISH" if "BULLISH" in signal["type"] else "BEARISH"
+        # Dummy boost check
+        if iv_skew > self.config.iv_skew_high and sig_type == "BULLISH":
+             thoughts.append("BRAIN: Caution - Squaring long scalp against high put skew.")
+        
+        # 5. Quality Filter
+        conf = signal.get("confidence", 0)
+        if conf < 0.6:
+             return False, [f"BRAIN: VETO - Signal quality {conf:.2f} below floor."]
+
+        thoughts.append(f"BRAIN: ✅ APPROVE Scalp (Auth: {auth:.2f}, R:R: {rr:.2f})")
+        return True, thoughts
+
+    def update_threshold(self, new_val: float):
+        """
+        [v9.7] One-Way Tightening.
+        Allows the Evolution Governor to increase system strictness.
+        """
+        old_val = self.config.threshold_sideways
+        if new_val > old_val:
+            self.config.threshold_sideways = new_val
+            self.config.threshold_sideways_weak = min(0.95, new_val + 0.10)
+            logger.warning(f"BRAIN: GOVERNOR tightening threshold {old_val} -> {new_val}")
 
 if __name__ == "__main__":
     # Internal Health Check / Stress Test

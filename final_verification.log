@@ -1,0 +1,26 @@
+﻿test_bessel_correction (test_brain_v2.TestBrainV2.test_bessel_correction)
+Verify statistical correctness (Sample vs Population std) ... Bessel Correction: Correct
+ok
+test_cold_start_distinction (test_brain_v2.TestBrainV2.test_cold_start_distinction)
+Passive mode gets 0.5, Filter mode gets 0.0 ... Cold Start Logic: Correct
+ok
+test_health_check (test_brain_v2.TestBrainV2.test_health_check)
+Verify health check reporting ... Health Checks: Correct
+ok
+test_iv_skew_regime_awareness (test_brain_v2.TestBrainV2.test_iv_skew_regime_awareness)
+IV skew should treat trending differently from uncertain ... IV Skew Regime Awareness: Correct
+ok
+test_learning_updates (test_brain_v2.TestBrainV2.test_learning_updates)
+Verify reputation and authority update correctly after log_snapshot ... Learning Updates: Correct
+ok
+test_migration_roundtrip (test_brain_v2.TestBrainV2.test_migration_roundtrip)
+State migration should preserve and bound values ... State Migration: Correct
+ok
+test_nan_handling (test_brain_v2.TestBrainV2.test_nan_handling)
+Ensure NaN doesn't crash or corrupt state ... NaN Safety: Correct
+ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.286s
+
+OK

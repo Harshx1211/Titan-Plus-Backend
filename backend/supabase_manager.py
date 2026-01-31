@@ -8,6 +8,7 @@ import logging
 import threading
 import queue
 import time
+import json
 
 load_dotenv()
 
@@ -154,11 +155,9 @@ class SupabaseManager:
                 "regime": signal_data.get("regime", "UNCERTAIN"),
                 "decision": signal_data.get("decision", "BLOCK"),
                 "efficacy": signal_data.get("efficacy", 0),
-                "confidence_boost": signal_data.get("confidence_boost", 0.0),
                 "features": json.dumps(signal_data.get("features", {})),
                 "outcome": outcome,
-                "stage": stage,
-                "auth": signal_data.get("regime_authority", 1.0)
+                "stage": stage
             }
             if self.queue.full():
                 self.queue.get_nowait()

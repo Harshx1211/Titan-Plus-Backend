@@ -7,6 +7,9 @@ import uuid
 class Regime(Enum):
     TRENDING = "TRENDING"
     SIDEWAYS = "SIDEWAYS"
+    SIDEWAYS_STRONG = "SIDEWAYS_STRONG"
+    SIDEWAYS_NORMAL = "SIDEWAYS_NORMAL"
+    SIDEWAYS_WEAK = "SIDEWAYS_WEAK"
     UNCERTAIN = "UNCERTAIN"
 
 class DivergenceType(Enum):

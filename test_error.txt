@@ -1,0 +1,37 @@
+﻿python : Traceback 
+(most recent call 
+last):
+At line:1 char:1
++ python f:\FnO\tes
+ts\test_brain_v2.py
+ 2>&1 | Out-File 
+-FilePath f:\FnO 
+...
++ ~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~
+~~~~~
+    + CategoryInfo 
+             : No  
+  tSpecified: (T   
+ raceback (most    
+ recent call l    
+ast)::String)     
+[], RemoteExce    
+ption
+    + FullyQualifi 
+   edErrorId : Na  
+  tiveCommandErr   
+ or
+ 
+  File "f:\FnO\test
+s\test_brain_v2.py"
+, line 17, in 
+<module>
+    from 
+brain_engine 
+import 
+BrainEngine, 
+BrainConfig, Regime
+ModuleNotFoundError
+: No module named 
+'brain_engine'

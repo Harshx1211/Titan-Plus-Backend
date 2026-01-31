@@ -20,7 +20,8 @@ from option_engine import OptionEngine
 from session_auditor import SessionAuditor
 from data_provider import DataProvider
 from trap_hunter import TrapHunter
-from skirmisher import Skirmisher
+from skirmisher_v2 import SkirmisherV2
+from telegram_notifier import TelegramNotifier
 from database import DatabaseManager
 import asyncio
 import threading
@@ -102,11 +103,13 @@ live_state = LiveState()
 session_auditor = SessionAuditor()
 
 # Engines
+# Global Strategy Components
 sentinel = DataSentinel()
 strategist = MarketStrategist()
+skirmisher = SkirmisherV2()
+brain = BrainEngine(stage=3) # Stage 3: Full Filter Mode
 pattern_engine = PatternEngine()
 risk_engine = RiskEngine()
-brain = BrainEngine()
 trap_hunter = TrapHunter() # [v9.1] Sidecar Module
 # Helper: Safe Brain Interface (Phase 28 Compatibility)
 def call_brain_safely(action: str, **kwargs):
@@ -147,10 +150,11 @@ def call_brain_safely(action: str, **kwargs):
             )
     return None, []
 
-skirmisher = Skirmisher() # [v9.2] Sandboxed Scalper
+# evolution_engine = EvolutionEngine(brain)  # Initialized later if needed
 evolution_engine = EvolutionEngine(brain)
 option_engine = OptionEngine()
 db = DatabaseManager()
+telegram_notifier = TelegramNotifier()
 data_provider = DataProvider()
 
 if data_provider.use_groww:
@@ -393,6 +397,8 @@ def run_engine_loop():
                     live_state.data_source = src_status["name"]
             except Exception as e:
                 logger.warning(f"ENGINE: Snapshot fetch failed for {symbol}: {e}", exc_info=True)
+                live_state.add_thought("DATA_ERROR", f"Snapshot failed for {symbol}. Source issues?")
+                continue
                 # Use hardcoded fallback to keep ticker alive even if everything fails
                 if symbol == "NIFTY" and live_state.prices["NIFTY"] == 0: live_state.prices["NIFTY"] = 24500.0
                 if symbol == "SENSEX" and live_state.prices["SENSEX"] == 0: live_state.prices["SENSEX"] = 81500.0
@@ -451,6 +457,8 @@ def run_engine_loop():
                 )
             except Exception as e:
                 logger.warning(f"ENGINE: Analysis failed for {symbol}: {e}", exc_info=True)
+                live_state.add_thought("ANALYZE_ERROR", f"Feature analysis crashed for {symbol}. NaN?")
+                continue
                 pattern_results = {"score": 0.0, "patterns": []}
                 macro_bias = 0
                 macro_zones = []
@@ -476,6 +484,8 @@ def run_engine_loop():
                         live_state.market_message = f"GEX/PAIN CONFLUENCE [{symbol}]: Institutional Gravity"
             except Exception as e:
                 logger.warning(f"ENGINE: Option chain failed for {symbol}: {e}", exc_info=True)
+                live_state.add_thought("CHAIN_ERROR", f"Option chain fetch failed for {symbol}.")
+                continue
                 chain_df, is_synthetic = pd.DataFrame(), True
 
             # Phase 11/30: Inter-Market Synergy (BankNifty vs Nifty)
@@ -584,15 +594,16 @@ def run_engine_loop():
                     "ADX": adx_val
                 }
                 
-                # Phase 26 Fix: Sync history with Brain features
-                live_state.beta_history["OI"].append(oi_res)
-                if len(live_state.beta_history["OI"]) > 200:
-                    live_state.beta_history["OI"].pop(0)
             except Exception as e:
                 logger.error(f"FEATURE ERROR: {e}", exc_info=True)
                 brain_features = {"OI_RES": 0, "PCR": 1.0, "BASIS_RES": 0, "ADX": 25.0}
             
             # v8.1: Stateless Inference (Phase 28: Now Signal-Aware)
+            # [C8 Fix] Calculate intent BEFORE first usage
+            likely_intent = "BULLISH" if pattern_results["score"] > 0.6 and curr_strength > 0 else (
+                "BEARISH" if pattern_results["score"] > 0.6 else None
+            )
+
             decision_id, thoughts = call_brain_safely(
                 "DECIDE",
                 features=brain_features, 
@@ -622,8 +633,6 @@ def run_engine_loop():
                     live_state.resets_today += 1
                     logger.warning("BRAIN: SHAPE DRIFT DETECTED. Soft reset triggered.")
 
-            # Calculate Brain Boost (Phase 28: Now Signal-Aware if intent is likely)
-            likely_intent = "BULLISH" if pattern_results["score"] > 0.6 and curr_strength > 0 else ("BEARISH" if pattern_results["score"] > 0.6 else None)
             # Calculate Brain Boost (Phase 28: Using Safe Wrapper)
             confidence_boost, boost_thoughts = call_brain_safely(
                 "BOOST",
@@ -703,9 +712,11 @@ def run_engine_loop():
 
                     # Finalize with Accountability
                     brain_decision_id = sig.decision_id if hasattr(sig, 'decision_id') else decision_id
+                    is_win = True if price_delta > APP_CONFIG["SIGNAL_TARGET_POINTS"] else False
+                    
                     brain.log_snapshot(
                         decision_id=brain_decision_id,
-                        outcome=True if price_delta > APP_CONFIG["SIGNAL_TARGET_POINTS"] else False,
+                        outcome=is_win,
                         performance={
                             "mfe": sig.mfe,
                             "mae": sig.mae,
@@ -715,8 +726,15 @@ def run_engine_loop():
                         freeze_authority=is_passive
                     )
                     
+                    # [v9.7] Risk & Sidecar Feedback Loop
+                    pnl_sim = price_delta if is_win else -price_adverse
+                    if "SIDECAR" in sig.logic_version:
+                        trap_hunter.update_outcome(brain_decision_id, pnl_sim)
+                    else:
+                        risk_engine.log_trade(is_win)
+                    
                     # Log to Truth Ledger (for Dashboard UI)
-                    db.log_outcome(brain_decision_id, "WIN" if price_delta > APP_CONFIG["SIGNAL_TARGET_POINTS"] else "LOSS", persistence=is_structural)
+                    db.log_outcome(brain_decision_id, "WIN" if is_win else "LOSS", persistence=is_structural)
 
             # 6. Signal Generation
             if pattern_results["score"] > APP_CONFIG["PATTERN_SCORE_THRESHOLD_HIGH"]:
@@ -744,6 +762,12 @@ def run_engine_loop():
                         )
                         
                         if not opt_trade.get("rejection_reasons"):
+                            # [v9.7] Risk-Adjusted Sizing
+                            suggested_size = risk_engine.get_suggested_size(
+                                confidence=applied_boost,
+                                base_size=APP_CONFIG.get("BASE_LOTS", 1)
+                            )
+                            
                             new_signal = TradeSignal(
                                 symbol=symbol,
                                 entry_price=market_data.spot_price,
@@ -756,10 +780,20 @@ def run_engine_loop():
                                 decision_id=decision_id,
                                 logic_version="v8.5.0",
                                 spread_at_entry=abs(market_data.future_price - market_data.spot_price),
+                                quantity=suggested_size, # Applied Risk logic
                                 **opt_trade
                             )
                             live_state.active_signals.append(new_signal)
-                            logger.info(f"SIGNAL: {new_signal.option_symbol} bound to Decision {decision_id}")
+                            logger.info(f"SIGNAL: {new_signal.option_symbol} bound to Decision {decision_id}. Size: {suggested_size}")
+                            
+                            # [TELEGRAM NOTIFICATION]
+                            try:
+                                telegram_notifier.send_signal(
+                                    new_signal.dict(), 
+                                    dashboard_url=APP_CONFIG.get("DASHBOARD_URL", "")
+                                )
+                            except Exception as e:
+                                logger.error(f"TELEGRAM: Failed to send signal: {e}")
                         else:
                             logger.warning(f"SIGNAL REJECTED: {opt_trade['rejection_reasons']}")
             
@@ -799,38 +833,55 @@ def run_engine_loop():
                          ))
                          logger.warning(f"SIDECAR EXECUTE: {sidecar_decision['reason']}")
                 
-                # [v9.2] The Skirmisher (Sandboxed Scalper)
-                # If everything else is silent (Brain Blocking, Sidecar Blocking, or just no signal)
-                # AND we are in SIDEWAYS regime, check for Activity Scalps.
-                if live_state.current_regime == Regime.SIDEWAYS and not detected_patterns:
-                    # Only run if no heavy pattern was found (Brain silence)
+                # [v9.7] The Skirmisher V2 (Institutional Upgrade)
+                # If brain/sidecar are silent, check for tactical activity scalps in sideways regimes
+                is_sideways = "SIDEWAYS" in live_state.current_regime.value
+                if is_sideways and not detected_patterns:
+                    # [C3 Fix] Provide proper 15m HTF data and actual IV skew
+                    try:
+                        hist_15m = data_provider.get_history(symbol, interval="15minute")
+                    except:
+                        hist_15m = hist_df # Fallback if provider fails
+                    
+                    actual_iv_skew = live_state.iv_skew.get(symbol, 1.0)
+                    
                     scalp = skirmisher.check_scalp_signal(
-                        df=hist_df, 
-                        current_regime="SIDEWAYS"
+                        df=hist_df,
+                        df_htf=hist_15m, 
+                        current_regime=live_state.current_regime.value,
+                        iv_skew=actual_iv_skew
                     )
                     
                     if scalp["action"] == "EXECUTE":
-                        # Log Scalp (Activity Only)
-                        trade_id = skirmisher.log_execution(
-                            trade_type=scalp["type"],
-                            entry_price=market_data.spot_price,
-                            reason=scalp["reason"]
+                        # 0. Brain Statistical Oversight
+                        approved, thoughts = brain.evaluate_skirmisher_signal(
+                            signal=scalp,
+                            regime=live_state.current_regime,
+                            iv_skew=actual_iv_skew
                         )
-                        live_state.active_signals.append(TradeSignal(
-                             symbol=symbol,
-                             entry_price=market_data.spot_price,
-                             stop_loss=APP_CONFIG["SKIRMISHER_STOP_LOSS_POINTS"], # Tight Scalp SL
-                             target=APP_CONFIG["SKIRMISHER_TARGET_POINTS"], # Scalp Target
-                             confidence=SignalConfidence.LOW,
-                             regime=Regime.SIDEWAYS,
-                             reasoning=f"⚠️ TACTICAL SCALP: {scalp['reason']}",
-                             timestamp=datetime.now(timezone.utc),
-                             decision_id=trade_id,
-                             logic_version="v9.2_SKIRMISHER",
-                             spread_at_entry=0.0,
-                             option_symbol=f"SCALP_{symbol}" 
-                        ))
-                        logger.warning(f"SKIRMISHER EXECUTE: {scalp['reason']}")
+                        
+                        for t in thoughts: live_state.add_thought("BRAIN", t)
+                        
+                        if approved:
+                            # Log Scalp (Activity Only)
+                            trade_id = skirmisher.log_execution(scalp)
+                            live_state.active_signals.append(TradeSignal(
+                                 symbol=symbol,
+                                 entry_price=market_data.spot_price,
+                                 stop_loss=scalp["stop_loss"],
+                                 target=scalp["take_profit"],
+                                 confidence=SignalConfidence.LOW,
+                                 regime=live_state.current_regime,
+                                 reasoning=f"⚠️ V2 SCALP: {scalp['reason']} (Qual: {scalp['quality']})",
+                                 timestamp=datetime.now(timezone.utc),
+                                 decision_id=trade_id,
+                                 logic_version="v2.0_SKIRMISHER_INSTITUTIONAL",
+                                 spread_at_entry=0.0,
+                                 option_symbol=f"SCALP_{symbol}" 
+                            ))
+                            logger.warning(f"SKIRMISHER V2 EXECUTE: {scalp['reason']}")
+                        else:
+                            logger.info(f"SKIRMISHER V2 VETOED by Brain.")
 
 
             
