@@ -1,7 +1,6 @@
 "use client";
-// Titan Plus Institutional - v9.6.5 Production Build
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Shield,
   Activity,
@@ -10,18 +9,31 @@ import {
   Binary,
   BarChart3,
   Cpu,
-  Unplug,
   Zap,
-  LayoutGrid,
-  Lock,
-  Target,
+  TrendingUp,
+  TrendingDown,
   Eye,
-  Crosshair
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Brain,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  Target,
+  Clock,
+  DollarSign,
+  Percent,
+  BarChart2
 } from 'lucide-react';
+
+// ============================================================================
+// Type Definitions
+// ============================================================================
 
 interface TradeSignal {
   symbol: string;
-  entry_price: number; // Index Spot Price
+  entry_price: number;
   stop_loss: number;
   target: number;
   confidence: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
@@ -30,13 +42,13 @@ interface TradeSignal {
   timestamp: string;
   is_live?: boolean;
   divergence?: 'NONE' | 'SOFT' | 'HARD';
-  option_symbol?: string; // e.g., NIFTY 24500 PE
-  premium_entry?: number; // Buy @ 150
-  premium_sl?: number; // SL @ 140
-  premium_target?: number; // Target @ 190
+  option_symbol?: string;
+  premium_entry?: number;
+  premium_sl?: number;
+  premium_target?: number;
   strike?: number;
-  option_type?: string; // CE or PE
-  decision_id?: string; // Immutable Causal Link
+  option_type?: string;
+  decision_id?: string;
   mfe?: number;
   mae?: number;
   time_to_mfe?: number;
@@ -64,453 +76,648 @@ interface SystemState {
   is_learning: boolean;
 }
 
-export default function Home() {
+// ============================================================================
+// Utility Components
+// ============================================================================
+
+const StatusBadge: React.FC<{ connected: boolean }> = ({ connected }) => (
+  <div className="flex items-center gap-2">
+    {connected ? (
+      <>
+        <Wifi className="w-4 h-4 text-emerald-500" />
+        <span className="text-xs font-mono text-emerald-500 uppercase tracking-wider">
+          Live
+        </span>
+      </>
+    ) : (
+      <>
+        <WifiOff className="w-4 h-4 text-rose-500" />
+        <span className="text-xs font-mono text-rose-500 uppercase tracking-wider">
+          Disconnected
+        </span>
+      </>
+    )}
+  </div>
+);
+
+const RegimeBadge: React.FC<{ regime: string }> = ({ regime }) => {
+  const colors = {
+    TRENDING: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+    SIDEWAYS: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+    UNCERTAIN: 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+  };
+
+  return (
+    <span className={`px-3 py-1 rounded-md border text-xs font-mono uppercase tracking-wider ${colors[regime as keyof typeof colors] || colors.UNCERTAIN}`}>
+      {regime}
+    </span>
+  );
+};
+
+const ConfidenceMeter: React.FC<{ level: string; value?: number }> = ({ level, value }) => {
+  const config = {
+    EXTREME: { width: '100%', color: 'bg-emerald-500', glow: 'shadow-emerald-500/50' },
+    HIGH: { width: '75%', color: 'bg-cyan-500', glow: 'shadow-cyan-500/50' },
+    MEDIUM: { width: '50%', color: 'bg-amber-500', glow: 'shadow-amber-500/50' },
+    LOW: { width: '25%', color: 'bg-rose-500', glow: 'shadow-rose-500/50' }
+  };
+
+  const conf = config[level as keyof typeof config] || config.LOW;
+
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between items-center">
+        <span className="text-xs font-mono text-slate-400 uppercase tracking-wider">
+          {level}
+        </span>
+        {value && (
+          <span className="text-xs font-mono text-slate-500">
+            {(value * 100).toFixed(0)}%
+          </span>
+        )}
+      </div>
+      <div className="h-2 bg-slate-800/50 rounded-full overflow-hidden">
+        <div
+          className={`h-full ${conf.color} ${conf.glow} shadow-lg transition-all duration-500`}
+          style={{ width: conf.width }}
+        />
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// Main Dashboard Component
+// ============================================================================
+
+export default function TitanDashboard() {
   const [state, setState] = useState<SystemState | null>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [accuracy, setAccuracy] = useState<any>(null);
-  const [activeAsset, setActiveAsset] = useState<'NIFTY' | 'SENSEX'>('NIFTY');
   const [connected, setConnected] = useState(false);
-  const [loading, setLoading] = useState(true);  // FIX #5: Add loading state
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://titan-plus-backend.onrender.com';
+
+  // ========================================================================
+  // Data Fetching
+  // ========================================================================
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://titan-plus-backend.onrender.com';
         const [stateRes, historyRes, accRes] = await Promise.all([
           fetch(`${API_URL}/state`),
           fetch(`${API_URL}/history`),
           fetch(`${API_URL}/accuracy`)
         ]);
 
-        const newState = await stateRes.json();
-        const newHistory = await historyRes.json();
-        const newAcc = await accRes.json();
+        if (!stateRes.ok || !historyRes.ok || !accRes.ok) {
+          throw new Error('API response error');
+        }
+
+        const [newState, newHistory, newAcc] = await Promise.all([
+          stateRes.json(),
+          historyRes.json(),
+          accRes.json()
+        ]);
 
         setState(newState);
         setHistory(newHistory);
         setAccuracy(newAcc);
         setConnected(true);
-        setLoading(false);  // FIX #5: Set loading to false after first fetch
-        setErrorMessage(null); // Clear any previous errors
+        setLoading(false);
+        setError(null);
+        setLastUpdate(new Date());
       } catch (err) {
-        console.error("Link Failure:", err);
+        console.error('Connection error:', err);
         setConnected(false);
-        setLoading(false);  // FIX #5: Set loading to false even on error
-        setErrorMessage("Failed to connect to the backend API. Please check the network connection and API_URL.");
+        setLoading(false);
+        setError(err instanceof Error ? err.message : 'Connection failed');
       }
     };
 
-    const interval = setInterval(fetchData, 2000);
     fetchData();
+    const interval = setInterval(fetchData, 2000);
     return () => clearInterval(interval);
-  }, []);
+  }, [API_URL]);
 
-  // Recovery Mode disabled - User has full control
-  // const isRecovering = state?.is_in_recovery;
+  // ========================================================================
+  // Computed Metrics
+  // ========================================================================
+
+  const metrics = useMemo(() => {
+    if (!state) return null;
+
+    const breadthRatio = state.breadth.advances / Math.max(state.breadth.declines, 1);
+    const activeCount = state.active_signals?.length || 0;
+    const recentThoughts = state.thought_logs?.slice(-5) || [];
+
+    return {
+      breadthRatio,
+      activeCount,
+      recentThoughts,
+      isHealthy: connected && !state.is_in_recovery && state.data_latency < 5000
+    };
+  }, [state, connected]);
+
+  // ========================================================================
+  // Trade Execution
+  // ========================================================================
 
   const handleExecuteTrade = async (signalId: string) => {
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://titan-plus-backend.onrender.com';
     try {
       const response = await fetch(`${API_URL}/execute_trade`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ signal_id: signalId }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signal_id: signalId })
       });
 
-      if (response.ok) {
-        console.log(`Trade for signal ${signalId} executed successfully!`);
-        setErrorMessage(null); // Clear any previous errors
-        // Optionally, re-fetch state or update UI to reflect executed trade
-      } else {
+      if (!response.ok) {
         const errorData = await response.json();
-        const msg = errorData.detail || response.statusText;
-        console.error(`Failed to execute trade for signal ${signalId}:`, msg);
-        setErrorMessage(`Failed to execute trade: ${msg}`);
+        throw new Error(errorData.detail || 'Execution failed');
       }
-    } catch (error) {
-      console.error(`Error executing trade for signal ${signalId}:`, error);
-      setErrorMessage(`Error executing trade: ${error instanceof Error ? error.message : String(error)}`);
+
+      console.log(`Trade ${signalId} executed`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Execution error');
     }
   };
 
-  // FIX #5: Show loading state
+  // ========================================================================
+  // Loading State
+  // ========================================================================
+
   if (loading) {
     return (
-      <main className="min-h-screen bg-[#010103] flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-slate-500 font-mono text-sm uppercase tracking-widest">Initializing Oracle...</p>
+      <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center p-4">
+        <div className="text-center space-y-6">
+          <div className="relative">
+            <div className="w-20 h-20 border-4 border-slate-800 border-t-cyan-500 rounded-full animate-spin mx-auto" />
+            <div className="absolute inset-0 w-20 h-20 border-4 border-slate-800 border-t-emerald-500 rounded-full animate-spin mx-auto" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }} />
+          </div>
+          <div className="space-y-2">
+            <p className="text-slate-400 font-mono text-sm uppercase tracking-widest">
+              Initializing Oracle
+            </p>
+            <p className="text-slate-600 font-mono text-xs">
+              Connecting to BrainEngine v2.0...
+            </p>
+          </div>
         </div>
       </main>
     );
   }
 
+  // ========================================================================
+  // Main Dashboard UI
+  // ========================================================================
+
   return (
-    <main className="min-h-screen selection:bg-cyan-500/30 overflow-hidden flex flex-col">
-
-      {/* Top Meta-Ticker (Status Bar) */}
-      <div className="ticker-wrap h-8 flex items-center justify-between px-4 bg-black/60 backdrop-blur-md z-40 border-b border-white/[0.03]">
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
-            <div className={`status-dot ${connected ? 'text-emerald-500' : 'text-rose-500 animate-slow-pulse'}`} />
-            <span className="text-[10px] font-mono font-black uppercase tracking-widest text-slate-500">
-              {connected ? 'Sync: Nominal' : 'Sync: Lost'}
-            </span>
-          </div>
-          {errorMessage && (
-            <div className="flex items-center gap-2 text-[10px] font-mono font-black uppercase tracking-widest text-rose-500 animate-pulse">
-              <Shield className="w-3 h-3" /> {errorMessage}
-            </div>
-          )}
-          <div className="flex items-center gap-4 text-[10px] font-mono text-slate-600 font-bold uppercase tracking-widest border-l border-white/[0.05] pl-6">
-            <LayoutGrid className="w-3 h-3" />
-            <span>Terminal: 002-X</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-6">
-          <div className="hidden md:flex items-center gap-3">
-            <span className="text-[10px] font-mono text-slate-600 font-bold uppercase tracking-tighter">VIX:</span>
-            <span className="text-[10px] font-mono text-amber-500 font-black tracking-tighter">
-              {state?.market_message === 'MARKET_CLOSED' || state?.vix === 0 ? '-' : state?.vix?.toFixed(2) || '--.--'}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-mono text-slate-500 font-black">{state?.data_latency?.toFixed(0) || '0'}ms</span>
-            <Unplug className="w-3 h-3 text-slate-700" />
-          </div>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
-        <div className="p-4 md:p-6 lg:p-10 max-w-[1900px] mx-auto space-y-6">
-
-          {/* Header Area */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-white/[0.03] pb-6">
-            <div className="flex items-center gap-4">
-              <div className="bg-cyan-500/10 p-2.5 rounded-xs border border-cyan-500/20">
-                <Cpu className="text-cyan-400 w-5 h-5" />
+    <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
+      {/* Header */}
+      <header className="border-b border-slate-800/50 backdrop-blur-xl bg-slate-950/50 sticky top-0 z-50">
+        <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            {/* Logo & Title */}
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center">
+                <Shield className="w-6 h-6 text-white" />
               </div>
-              <div className="flex flex-col">
-                <h1 className="text-lg font-black tracking-[0.2em] uppercase text-white leading-none">The Oracle</h1>
-                <span className="text-[9px] font-mono text-slate-600 font-bold tracking-widest mt-1">Institutional Flow Interface</span>
+              <div>
+                <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-cyan-400 to-emerald-400 bg-clip-text text-transparent">
+                  Titan Oracle
+                </h1>
+                <p className="text-xs text-slate-500 font-mono">
+                  BrainEngine v2.0 Command Center
+                </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-3 w-full md:w-auto">
-              {['NIFTY', 'SENSEX'].map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setActiveAsset(s as any)}
-                  className={`flex-1 md:flex-none flex flex-col justify-center px-6 py-2 border transition-all ${activeAsset === s ? 'border-cyan-500/30 bg-cyan-500/5' : 'border-white/5 opacity-50 hover:opacity-100 hover:bg-white/5'}`}
-                >
-                  <span className="text-[9px] font-mono font-black text-slate-600 uppercase tracking-tighter">{s} Index</span>
-                  <span className={`text-sm font-mono font-black tracking-tighter ${s === 'NIFTY' ? 'text-cyan-400' : 'text-emerald-400'}`}>
-                    {state?.prices?.[s]?.toLocaleString() || '---'}
-                  </span>
-                </button>
-              ))}
+            {/* Status & Metrics */}
+            <div className="flex items-center gap-4 flex-wrap">
+              <StatusBadge connected={connected} />
+
+              {state && (
+                <>
+                  <RegimeBadge regime={state.regime} />
+
+                  <div className="flex items-center gap-2 px-3 py-1 rounded-md bg-slate-800/50 border border-slate-700/50">
+                    <Clock className="w-4 h-4 text-slate-400" />
+                    <span className="text-xs font-mono text-slate-400">
+                      {lastUpdate.toLocaleTimeString()}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Error Banner */}
+      {error && (
+        <div className="bg-rose-500/10 border-b border-rose-500/20 px-4 py-3">
+          <div className="max-w-[1920px] mx-auto flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-rose-400 flex-shrink-0" />
+            <p className="text-sm text-rose-300 font-mono">{error}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content */}
+      <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        {/* Key Metrics Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* VIX Card */}
+          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-4 hover:border-slate-700/50 transition-colors">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-mono text-slate-400 uppercase tracking-wider">
+                VIX
+              </span>
+              <Activity className="w-4 h-4 text-amber-400" />
+            </div>
+            <div className="text-3xl font-bold text-white mb-1">
+              {state?.vix.toFixed(2) || '--'}
+            </div>
+            <div className="text-xs text-slate-500 font-mono">
+              Volatility Index
             </div>
           </div>
 
-          {/* Master Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* Breadth Card */}
+          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-4 hover:border-slate-700/50 transition-colors">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-mono text-slate-400 uppercase tracking-wider">
+                Breadth
+              </span>
+              <BarChart3 className="w-4 h-4 text-cyan-400" />
+            </div>
+            <div className="text-3xl font-bold text-white mb-1">
+              {state ? `${state.breadth.advances}/${state.breadth.declines}` : '--'}
+            </div>
+            <div className="text-xs text-slate-500 font-mono">
+              Adv/Dec Ratio: {metrics?.breadthRatio.toFixed(2) || '--'}
+            </div>
+          </div>
 
-            {/* Widget 1: Regime Sentinel */}
-            <section className="tactical-panel bg-white/[0.02]">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-[10px] font-mono font-black text-slate-500 tracking-widest uppercase flex items-center gap-2">
-                  <Activity className="w-3.5 h-3.5" /> Market Regime
-                </h3>
-                <span className={`text-[10px] font-mono font-black px-2 py-0.5 border ${state?.regime === 'TRENDING' ? 'border-emerald-500/20 text-emerald-400 bg-emerald-500/10' : 'border-amber-500/20 text-amber-500 bg-amber-500/10'}`}>
-                  {state?.regime || 'UNCERTAIN'}
+          {/* Sector Synergy Card */}
+          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-4 hover:border-slate-700/50 transition-colors">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-mono text-slate-400 uppercase tracking-wider">
+                Synergy
+              </span>
+              <Target className="w-4 h-4 text-emerald-400" />
+            </div>
+            <div className="text-3xl font-bold text-white mb-1">
+              {state?.sector_synergy ? `${(state.sector_synergy * 100).toFixed(0)}%` : '--'}
+            </div>
+            <div className="text-xs text-slate-500 font-mono">
+              NIFTY-BANK Alignment
+            </div>
+          </div>
+
+          {/* Active Signals Card */}
+          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-4 hover:border-slate-700/50 transition-colors">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-mono text-slate-400 uppercase tracking-wider">
+                Signals
+              </span>
+              <Zap className="w-4 h-4 text-violet-400" />
+            </div>
+            <div className="text-3xl font-bold text-white mb-1">
+              {metrics?.activeCount || 0}
+            </div>
+            <div className="text-xs text-slate-500 font-mono">
+              Active Positions
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+
+          {/* Left Column: Active Signals */}
+          <div className="xl:col-span-2 space-y-6">
+
+            {/* Tactical Execution Board */}
+            <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-800/50 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center">
+                    <Target className="w-5 h-5 text-cyan-400" />
+                  </div>
+                  <h2 className="text-lg font-bold text-white">Tactical Execution Board</h2>
+                </div>
+                <span className="text-xs font-mono text-slate-500">
+                  {state?.active_signals?.length || 0} Active
                 </span>
               </div>
-              <div className="space-y-4">
-                <div className="p-3 bg-black/40 border border-white/[0.03] rounded-xs">
-                  <p className="text-[10px] text-slate-500 font-mono leading-relaxed font-bold uppercase text-center italic tracking-widest">
-                    {state?.market_message || 'SYSTEM_CALIBRATING'}
-                  </p>
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-[10px] font-mono font-black text-slate-600">
-                  <div className="flex flex-col">
-                    <span className="opacity-50 tracking-tighter mb-1">ADVANCES</span>
-                    <span className="text-emerald-400 text-sm tracking-tighter">
-                      {state?.market_message === 'MARKET_CLOSED' ? '-' : (state?.breadth?.advances || '0')}
-                    </span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="opacity-50 tracking-tighter mb-1">DECLINES</span>
-                    <span className="text-rose-400 text-sm tracking-tighter">
-                      {state?.market_message === 'MARKET_CLOSED' ? '-' : (state?.breadth?.declines || '0')}
-                    </span>
-                  </div>
-                </div>
-                {state?.is_in_recovery && (
-                  <div className="p-3 bg-rose-900/40 border border-rose-500/20 rounded-xs mt-4">
-                    <p className="text-[10px] text-rose-300 font-mono leading-relaxed font-bold uppercase text-center italic tracking-widest">
-                      SYSTEM_IN_RECOVERY_MODE
+
+              <div className="divide-y divide-slate-800/50">
+                {state?.active_signals && state.active_signals.length > 0 ? (
+                  state.active_signals.map((signal, idx) => (
+                    <div key={idx} className="p-6 hover:bg-slate-800/30 transition-colors">
+                      {/* Signal Header */}
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-3">
+                            <h3 className="text-xl font-bold text-white">
+                              {signal.symbol}
+                            </h3>
+                            {signal.option_symbol && (
+                              <span className="text-sm font-mono text-slate-400">
+                                {signal.option_symbol}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 font-mono">
+                            ID: {signal.decision_id || 'N/A'}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {signal.is_live && (
+                            <span className="px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-400 text-xs font-mono uppercase tracking-wider border border-emerald-500/20">
+                              Live
+                            </span>
+                          )}
+                          <RegimeBadge regime={signal.regime} />
+                        </div>
+                      </div>
+
+                      {/* Price Levels */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+                        <div>
+                          <div className="text-xs text-slate-500 font-mono mb-1">Entry</div>
+                          <div className="text-lg font-bold text-cyan-400">
+                            ₹{signal.entry_price.toFixed(2)}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-slate-500 font-mono mb-1">Stop Loss</div>
+                          <div className="text-lg font-bold text-rose-400">
+                            ₹{signal.stop_loss.toFixed(2)}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-slate-500 font-mono mb-1">Target</div>
+                          <div className="text-lg font-bold text-emerald-400">
+                            ₹{signal.target.toFixed(2)}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-slate-500 font-mono mb-1">R:R</div>
+                          <div className="text-lg font-bold text-white">
+                            {((signal.target - signal.entry_price) / (signal.entry_price - signal.stop_loss)).toFixed(2)}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Confidence & Reasoning */}
+                      <div className="space-y-3">
+                        <ConfidenceMeter
+                          level={signal.confidence}
+                          value={signal.confidence_val}
+                        />
+
+                        <div className="bg-slate-800/30 rounded-lg p-3 border border-slate-700/30">
+                          <p className="text-xs text-slate-400 font-mono leading-relaxed">
+                            {signal.reasoning}
+                          </p>
+                        </div>
+
+                        {/* Performance Metrics */}
+                        {(signal.mfe || signal.mae) && (
+                          <div className="flex items-center gap-4 text-xs font-mono">
+                            {signal.mfe && (
+                              <div className="flex items-center gap-1">
+                                <TrendingUp className="w-3 h-3 text-emerald-400" />
+                                <span className="text-slate-500">MFE:</span>
+                                <span className="text-emerald-400">{signal.mfe.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {signal.mae && (
+                              <div className="flex items-center gap-1">
+                                <TrendingDown className="w-3 h-3 text-rose-400" />
+                                <span className="text-slate-500">MAE:</span>
+                                <span className="text-rose-400">{signal.mae.toFixed(2)}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Action Button */}
+                      <button
+                        onClick={() => signal.decision_id && handleExecuteTrade(signal.decision_id)}
+                        className="mt-4 w-full sm:w-auto px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white font-mono text-sm rounded-lg transition-all duration-200 flex items-center justify-center gap-2 group"
+                      >
+                        <span>Execute Trade</span>
+                        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-12 text-center">
+                    <div className="w-16 h-16 rounded-full bg-slate-800/50 flex items-center justify-center mx-auto mb-4">
+                      <Target className="w-8 h-8 text-slate-600" />
+                    </div>
+                    <p className="text-slate-500 font-mono text-sm">
+                      No active signals. Awaiting market opportunities...
                     </p>
                   </div>
                 )}
               </div>
-            </section>
+            </div>
+          </div>
 
-            {/* Widget 2: Institutional Flow */}
-            <section className="tactical-panel">
-              <h3 className="text-[10px] font-mono font-black text-slate-500 tracking-widest uppercase mb-6 flex items-center gap-2">
-                <Binary className="w-3.5 h-3.5" /> Flow Guardrails
-              </h3>
-              <div className="space-y-4 font-mono">
-                <div className="flex justify-between group">
-                  <span className="text-[10px] text-slate-600 uppercase font-black tracking-tighter group-hover:text-slate-400 transition-colors">IV Skew Bias</span>
-                  <span className={`text-xs font-black tracking-tighter ${(state?.iv_skew?.[activeAsset] ?? 0) > 1.3 ? 'text-rose-500' : 'text-cyan-400'}`}>
-                    {state?.market_message === 'MARKET_CLOSED' || state?.iv_skew?.[activeAsset] === 0 ? '-' : state?.iv_skew?.[activeAsset]?.toFixed(2) || '1.00'}
-                  </span>
+          {/* Right Column: Brain Activity & Metrics */}
+          <div className="space-y-6">
+
+            {/* Epistemic Flow (Brain Thoughts) */}
+            <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-800/50 flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center">
+                  <Brain className="w-5 h-5 text-violet-400" />
                 </div>
-                <div className="flex justify-between group">
-                  <span className="text-[10px] text-slate-600 uppercase font-black tracking-tighter group-hover:text-slate-400 transition-colors">Sector Synergy</span>
-                  <span className={`text-xs font-black tracking-tighter ${(state?.sector_synergy ?? 0) > 1.0 ? 'text-emerald-500' : 'text-amber-500'}`}>
-                    {state?.market_message === 'MARKET_CLOSED' ? '-' : ((state?.sector_synergy ?? 0) > 1.0 ? 'Matched' : 'Drift')}
-                  </span>
-                </div>
-                <div className="flex justify-between group">
-                  <span className="text-[10px] text-slate-600 uppercase font-black tracking-tighter group-hover:text-slate-400 transition-colors">Institutional Max Pain</span>
-                  <span className="text-xs font-black tracking-tighter text-rose-500">
-                    {state?.market_message === 'MARKET_CLOSED' ? '-' : (state?.max_pain?.[activeAsset] || '-')}
-                  </span>
-                </div>
-                <div className="flex justify-between group">
-                  <span className="text-[10px] text-slate-600 uppercase font-black tracking-tighter group-hover:text-slate-400 transition-colors">Gamma Exposure</span>
-                  <span className={`text-xs font-black tracking-tighter ${(state?.gex_bias?.[activeAsset] ?? 0) > 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                    {state?.market_message === 'MARKET_CLOSED' ? '-' : ((state?.gex_bias?.[activeAsset] ?? 0) > 0 ? 'LONG_G' : (state?.gex_bias?.[activeAsset] ?? 0) < 0 ? 'SHORT_G' : 'NEUTRAL')}
-                  </span>
-                </div>
+                <h2 className="text-lg font-bold text-white">Epistemic Flow</h2>
               </div>
-            </section>
 
-            {/* Widget 3: Strategic Scoreboard */}
-            <section className="tactical-panel bg-white/[0.01]">
-              <h3 className="text-[10px] font-mono font-black text-slate-500 tracking-widest uppercase mb-6 flex items-center gap-2">
-                <Target className="w-3.5 h-3.5" /> Strategic Score
-              </h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-black/40 border border-white/[0.04]">
-                  <div className="text-[8px] text-slate-700 font-black uppercase mb-2 tracking-[0.2em]">Win_Ratio</div>
-                  <div className="text-xl font-mono font-black text-cyan-400 leading-none tracking-tighter">
-                    {state?.market_message === 'MARKET_CLOSED' ? '-' : `${accuracy?.win_rate || '0.0'}%`}
+              <div className="p-4 space-y-2 max-h-[400px] overflow-y-auto custom-scrollbar">
+                {metrics?.recentThoughts && metrics.recentThoughts.length > 0 ? (
+                  metrics.recentThoughts.map((thought, idx) => (
+                    <div key={idx} className="p-3 bg-slate-800/30 rounded-lg border border-slate-700/30 hover:border-slate-600/50 transition-colors">
+                      <div className="flex items-start gap-2 mb-2">
+                        <span className={`px-2 py-0.5 rounded text-xs font-mono uppercase tracking-wider ${thought.type === 'INFO' ? 'bg-cyan-500/10 text-cyan-400' :
+                            thought.type === 'WARN' ? 'bg-amber-500/10 text-amber-400' :
+                              'bg-rose-500/10 text-rose-400'
+                          }`}>
+                          {thought.type}
+                        </span>
+                        <span className="text-xs font-mono text-slate-500">
+                          {new Date(thought.timestamp).toLocaleTimeString()}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-300 font-mono leading-relaxed">
+                        {thought.msg}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8">
+                    <Eye className="w-8 h-8 text-slate-600 mx-auto mb-2" />
+                    <p className="text-xs text-slate-500 font-mono">
+                      Observing market conditions...
+                    </p>
                   </div>
-                </div>
-                <div className="p-4 bg-black/40 border border-white/[0.04]">
-                  <div className="text-[8px] text-slate-700 font-black uppercase mb-2 tracking-[0.2em]">Edge_Exp</div>
-                  <div className="text-xl font-mono font-black text-emerald-400 leading-none tracking-tighter">
-                    {state?.market_message === 'MARKET_CLOSED' ? '-' : `+${accuracy?.expectancy || '0.0'}`}
-                  </div>
-                </div>
+                )}
               </div>
-              {/* FIX #8: Removed hardcoded audit verdict */}
-            </section>
+            </div>
 
-            {/* Widget 4: Memory & Stability */}
-            <section className="tactical-panel">
-              <h3 className="text-[10px] font-mono font-black text-slate-500 tracking-widest uppercase mb-6 flex items-center gap-2">
-                <Lock className="w-3.5 h-3.5" /> Evolution Pulse
-              </h3>
-              <div className="space-y-4">
+            {/* Flow Guardrails */}
+            <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-800/50">
+                <h2 className="text-lg font-bold text-white">Flow Guardrails</h2>
+              </div>
+
+              <div className="p-6 space-y-6">
+                {/* IV Skew */}
+                {state?.iv_skew && Object.keys(state.iv_skew).length > 0 && (
+                  <div>
+                    <div className="text-xs font-mono text-slate-400 uppercase tracking-wider mb-3">
+                      IV Skew (Fear/Hedging)
+                    </div>
+                    {Object.entries(state.iv_skew).map(([asset, skew]) => (
+                      <div key={asset} className="mb-3">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-sm font-mono text-slate-300">{asset}</span>
+                          <span className={`text-sm font-mono ${skew > 1.3 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                            {skew.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="h-2 bg-slate-800/50 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full transition-all duration-500 ${skew > 1.3 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                            style={{ width: `${Math.min(skew * 50, 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* GEX Bias */}
+                {state?.gex_bias && Object.keys(state.gex_bias).length > 0 && (
+                  <div>
+                    <div className="text-xs font-mono text-slate-400 uppercase tracking-wider mb-3">
+                      Gamma Exposure
+                    </div>
+                    {Object.entries(state.gex_bias).map(([asset, gex]) => (
+                      <div key={asset} className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-mono text-slate-300">{asset}</span>
+                        <span className={`text-sm font-mono ${gex > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {gex > 0 ? '+' : ''}{gex.toFixed(2)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* System Health */}
                 <div>
-                  <div className="flex justify-between text-[9px] font-mono font-bold mb-2">
-                    <span className="text-slate-600 uppercase tracking-tighter">Feature Authority</span>
-                    <span className="text-emerald-500 tracking-tighter">1.0000</span>
+                  <div className="text-xs font-mono text-slate-400 uppercase tracking-wider mb-3">
+                    System Health
                   </div>
-                  <div className="h-[2px] bg-white/5 overflow-hidden">
-                    <div className="h-full bg-emerald-500 w-full shadow-[0_0_10px_rgba(16,185,129,0.3)]" />
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-slate-300">Data Latency</span>
+                      <span className={`text-sm font-mono ${state && state.data_latency < 5000 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {state?.data_latency || 0}ms
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-slate-300">Recovery Mode</span>
+                      {state?.is_in_recovery ? (
+                        <XCircle className="w-4 h-4 text-rose-400" />
+                      ) : (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-slate-300">Learning Active</span>
+                      {state?.is_learning ? (
+                        <CheckCircle2 className="w-4 h-4 text-cyan-400" />
+                      ) : (
+                        <XCircle className="w-4 h-4 text-slate-600" />
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div className="flex justify-between text-[10px] font-mono font-black text-slate-600 uppercase pt-2">
-                  <span className="opacity-50">Resets Remaining</span>
-                  <span className="text-cyan-400">{state?.resets_today !== undefined ? state.resets_today : '-'} / 1</span>
-                </div>
-                <div className="text-[8px] text-slate-800 font-mono italic leading-relaxed uppercase pt-2 border-t border-white/[0.03]">
-                  Autonomous DNA calibrations occur post-session. Integrity lock active.
                 </div>
               </div>
-            </section>
+            </div>
 
+            {/* Accuracy Card */}
+            {accuracy && (
+              <div className="bg-gradient-to-br from-cyan-500/10 to-emerald-500/10 backdrop-blur-sm border border-cyan-500/20 rounded-xl p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <BarChart2 className="w-6 h-6 text-cyan-400" />
+                  <h3 className="text-lg font-bold text-white">Performance</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-xs text-slate-400 font-mono mb-1">Accuracy</div>
+                    <div className="text-2xl font-bold text-white">
+                      {(accuracy.accuracy * 100).toFixed(1)}%
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-400 font-mono mb-1">Win Rate</div>
+                    <div className="text-2xl font-bold text-emerald-400">
+                      {accuracy.win_rate ? `${(accuracy.win_rate * 100).toFixed(1)}%` : 'N/A'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
+        </div>
 
-          {/* Execution & Order Board */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-
-            {/* Left: Signals (Order Tickets) */}
-            <div className="lg:col-span-8 space-y-6">
-              <div className="flex items-center justify-between px-2">
-                <h2 className="text-xs font-black uppercase tracking-[0.3em] flex items-center gap-3 text-slate-600">
-                  <Crosshair className="w-4 h-4" /> Tactical Execution Board
-                </h2>
-              </div>
-
-              {state?.active_signals && state.active_signals.length > 0 ? (
-                state.active_signals.map((signal, i) => (
-                  <div key={i} className="bg-black/40 border border-white/[0.06] p-6 lg:p-10 relative overflow-hidden group">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-cyan-500 shadow-[0_0_20px_rgba(34,211,238,0.3)]" />
-
-                    <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8 mb-10">
-                      <div>
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className={`text-[8px] font-mono font-black px-2 py-0.5 border ${signal.logic_version?.includes('SKIRMISHER') ? 'text-amber-500 border-amber-500/20' : 'text-cyan-400 border-cyan-400/20'}`}>
-                            {signal.logic_version?.includes('SKIRMISHER') ? 'ACTIVITY_SCALP' : 'ULTRA_ALPHA'}
-                          </span>
-                          <span className="text-[9px] font-mono text-slate-600 font-bold uppercase tracking-widest">{signal.decision_id || 'ID_NIF_X'}</span>
-                        </div>
-                        <h3 className="text-4xl font-black italic data-text leading-none text-white uppercase">{signal.option_symbol || signal.symbol}</h3>
-                        <p className="text-[10px] font-mono text-cyan-400/70 font-black mt-4 uppercase tracking-[0.2em]">{signal.reasoning}</p>
-                      </div>
-
-                      <div className="flex items-center gap-6">
-                        <div className="text-right flex flex-col items-end">
-                          <span className="text-[9px] font-mono text-slate-700 font-bold uppercase tracking-widest mb-1">Conf. Rating</span>
-                          <span className="text-xl font-mono font-black text-slate-300 tracking-tighter">{(signal.confidence_val || 0.85).toFixed(2)}</span>
-                        </div>
-                        <button onClick={() => handleExecuteTrade(signal.decision_id || '')} className="px-8 py-3 bg-white hover:bg-cyan-400 text-black font-black text-[10px] uppercase tracking-[0.4em] transition-all cursor-pointer">
-                          EXECUTE
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-6 font-mono border-t border-white/[0.03] pt-8">
-                      <div>
-                        <span className="text-[9px] text-slate-700 font-black uppercase block mb-2 tracking-widest">Buy_Point</span>
-                        <span className="text-2xl font-black text-emerald-400 tabular-nums tracking-tighter">₹{signal.premium_entry || signal.entry_price}</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] text-slate-700 font-black uppercase block mb-2 tracking-widest">Risk_Floor</span>
-                        <span className="text-2xl font-black text-rose-500 tabular-nums tracking-tighter">₹{signal.premium_sl || signal.stop_loss}</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] text-slate-700 font-black uppercase block mb-2 tracking-widest">Alpha_Ceil</span>
-                        <span className="text-2xl font-black text-cyan-400 tabular-nums tracking-tighter">₹{signal.premium_target || signal.target}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="border border-white/[0.02] bg-white/[0.005] py-24 md:py-32 flex flex-col items-center justify-center text-center px-10">
-                  <Binary className="w-12 h-12 text-slate-800 mb-6 opacity-20" />
-                  <h3 className="text-[10px] font-black text-slate-800 uppercase tracking-[0.6em] italic">Statistically Silent Zone</h3>
-                  <p className="text-[10px] text-slate-900 font-mono mt-4 uppercase max-w-[320px] leading-relaxed tracking-[0.1em] font-black opacity-20">No institutional footprints identified. Standby for orthogonal convergence.</p>
-                </div>
-              )}
+        {/* Footer */}
+        <div className="border-t border-slate-800/50 pt-6 pb-4">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 font-mono">
+            <div>
+              © 2026 Titan Oracle · BrainEngine v2.0 · All systems operational
             </div>
-
-            {/* Right: History & Logs */}
-            <div className="lg:col-span-4 space-y-6">
-              <section className="tactical-panel bg-white/[0.01] flex flex-col min-h-[400px]">
-                <h2 className="text-[10px] font-mono font-black text-slate-500 tracking-widest uppercase mb-8 flex items-center justify-between">
-                  <span className="flex items-center gap-2"><History className="w-3.5 h-3.5" /> Session Ledger</span>
-                  <Shield className="w-3 h-3 opacity-20" />
-                </h2>
-                <div className="space-y-6 flex-grow overflow-y-auto max-h-[500px] pr-2 custom-scrollbar">
-                  {history.length > 0 ? history.slice(0, 15).map((log, i) => (
-                    <div key={i} className="flex justify-between items-center group border-b border-white/[0.02] pb-6 last:border-0">
-                      <div>
-                        <span className="text-xs font-black text-slate-300 uppercase tracking-tighter">{log.symbol}</span>
-                        <div className="flex items-center gap-3 mt-1.5 opacity-50">
-                          <span className="text-[8px] font-mono font-bold text-slate-600 uppercase">{new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                          <span className="text-[8px] font-mono font-bold text-slate-700">|</span>
-                          <span className={`text-[8px] font-mono font-black uppercase ${log.value === 'WIN' ? 'text-emerald-500' : 'text-rose-500'}`}>{log.value}</span>
-                        </div>
-                      </div>
-                      <Eye className="w-3 h-3 text-slate-800 group-hover:text-cyan-400 transition-colors" />
-                    </div>
-                  )) : (
-                    <div className="flex flex-col items-center justify-center py-20 opacity-10 grayscale">
-                      <Binary className="w-10 h-10 mb-4 text-slate-700" />
-                      <span className="text-[9px] font-mono uppercase tracking-widest font-black">Link Pending...</span>
-                    </div>
-                  )}
-                </div>
-              </section>
-
-              {/* Widget: Stream of Consciousness (Epistemic Transparency) */}
-              <section className="tactical-panel bg-black/40 border-cyan-500/10 h-[400px] flex flex-col">
-                <div className="flex items-center justify-between mb-6">
-                  <span className="label-text flex items-center gap-2">
-                    <Binary className="w-3.5 h-3.5 text-cyan-500" /> Epistemic Flow
-                  </span>
-                  {state?.is_learning && (
-                    <span className="text-[8px] font-mono text-emerald-400 animate-pulse uppercase font-black">DNA Calibration Active</span>
-                  )}
-                </div>
-
-                <div className="flex-grow overflow-y-auto custom-scrollbar space-y-4 pr-2">
-                  {state?.thought_logs && state.thought_logs.length > 0 ? (
-                    state.thought_logs.slice().reverse().map((thought, i) => (
-                      <div key={i} className="thought-entry group">
-                        <div className="flex justify-between items-start mb-1">
-                          <span className={`text-[8px] font-mono font-black border px-1.5 py-0.5 ${thought.type === 'VETO' ? 'border-rose-500/20 text-rose-500' :
-                            thought.type === 'LEARN' ? 'border-emerald-500/20 text-emerald-400' :
-                              'border-cyan-500/20 text-cyan-400'
-                            }`}>
-                            {thought.type}
-                          </span>
-                          <span className="text-[7px] font-mono text-slate-800 font-bold">
-                            {new Date(thought.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                          </span>
-                        </div>
-                        <p className="text-[10px] font-mono text-slate-400 leading-relaxed group-hover:text-slate-200 transition-colors">
-                          {thought.msg}
-                        </p>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="flex flex-col items-center justify-center h-full opacity-20 grayscale">
-                      <Cpu className="w-8 h-8 mb-4 text-slate-700" />
-                      <span className="text-[9px] font-mono uppercase tracking-widest font-black">Awaiting Neural Activity...</span>
-                    </div>
-                  )}
-                </div>
-              </section>
+            <div className="flex items-center gap-4">
+              <span>Latency: {state?.data_latency || 0}ms</span>
+              <span>·</span>
+              <span>Resets: {state?.resets_today || 0}</span>
             </div>
-
           </div>
-
-          {/* Institutional Methodology (Muted Footer Sections) */}
-          <footer className="mt-20 pt-16 border-t border-white/[0.03] space-y-20 pb-40">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-12 gap-y-16">
-              {[
-                { title: "Unified Sigma Gate", desc: "Price anchors are validated against a two-tier gate dispersion from a single unified epistemic history source." },
-                { title: "ATM Liquidity Bias", desc: "Pick liquidity-dominant contracts (OI/Volume) over nearest-neighbor ATM to ensure execution quality." },
-                { title: "Expiry Sensitivity", desc: "Conditioned on time-to-expiry to avoid Gamma distortions near the terminal session." },
-                { title: "Advisory Autonomy", desc: "Self-calibrating feature weights within bounded reputation limits under strict governor control." }
-              ].map((item, i) => (
-                <div key={i}>
-                  <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4 border-l border-cyan-500/30 pl-3">{item.title}</h4>
-                  <p className="text-[10px] text-slate-700 uppercase leading-relaxed font-bold font-mono">{item.desc}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex flex-col md:flex-row justify-between items-center gap-10 opacity-30 group">
-              <div className="flex items-center gap-12 text-[9px] font-mono font-black text-slate-700 uppercase tracking-[0.4em]">
-                <span className="flex items-center gap-3"><Zap className="w-4 h-4 text-cyan-500/50" /> Statistical Agency</span>
-                <span className="flex items-center gap-3"><Lock className="w-4 h-4 text-emerald-500/50" /> Integrity Lock</span>
-              </div>
-              <div className="flex flex-col items-center md:items-end gap-2">
-                <div className="text-[9px] font-mono text-slate-800 font-black uppercase tracking-widest">
-                  &copy; 2026 THE ORACLE // v9.4.0_PROD // AUTH_SYNC_COMPLETE
-                </div>
-                <div className="text-[7px] font-mono text-slate-900 font-black uppercase tracking-[0.5em] group-hover:text-slate-700 transition-colors">
-                  Built for Institutional Preservation
-                </div>
-              </div>
-            </div>
-          </footer>
-
         </div>
       </div>
 
+      {/* Custom Scrollbar Styles */}
+      <style jsx global>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: rgba(15, 23, 42, 0.3);
+          border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(71, 85, 105, 0.5);
+          border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: rgba(71, 85, 105, 0.7);
+        }
+      `}</style>
     </main>
   );
 }
