@@ -2,12 +2,14 @@ import os
 import requests
 import sys
 
-# Hardcoded for testing (Replace with your actual Chat ID if you have it)
-# Or set env var: $env:TELEGRAM_CHAT_ID="your_id"
-BOT_TOKEN = "8491359765:AAGgRh7_3CjIUpzJq4cKzPeb58Ztbx2iU8Q"
+# ENV VARS ONLY - DO NOT HARDCODE SECRETS
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-if not CHAT_ID:
+if not BOT_TOKEN or not CHAT_ID:
+    print("❌ Error: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set.")
+    print("Please set them as environment variables to run this test.")
+    sys.exit(1)
     print("❌ Error: TELEGRAM_CHAT_ID environment variable not set.")
     print("Please set it or paste it here to test.")
     sys.exit(1)

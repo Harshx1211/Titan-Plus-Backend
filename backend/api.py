@@ -552,14 +552,19 @@ def run_engine_loop():
                 # Formula: Beta = Cov(Raw_X, Raw_Y) / Var(Y)
                 if price_var > 1e-4:
                     # OI Beta (Now using Raw OI history)
-                    oi_raw_pool = pd.Series(brain.raw_history.get("OI_RAW", [])[-20:])
+                    # FIX: List slicing on deque/list before pd.Series conversion
+                    oi_raw_list = list(brain.raw_history.get("OI_RAW", []))
+                    oi_raw_pool = pd.Series(oi_raw_list[-20:])
+                    
                     if len(oi_raw_pool) == len(price_velocities.iloc[-len(oi_raw_pool):]):
                         oi_beta = oi_raw_pool.cov(price_velocities.iloc[-len(oi_raw_pool):]) / price_var
                         oi_beta = max(-1.5, min(1.5, oi_beta))
                     else: oi_beta = 0.2
                     
                     # Basis Beta (Now using Raw Basis history)
-                    basis_raw_pool = pd.Series(brain.raw_history.get("BASIS_RAW", [])[-20:])
+                    basis_raw_list = list(brain.raw_history.get("BASIS_RAW", []))
+                    basis_raw_pool = pd.Series(basis_raw_list[-20:])
+                    
                     if len(basis_raw_pool) == len(price_velocities.iloc[-len(basis_raw_pool):]):
                         basis_beta = basis_raw_pool.cov(price_velocities.iloc[-len(basis_raw_pool):]) / price_var
                         basis_beta = max(-2.0, min(2.0, basis_beta))
@@ -600,8 +605,9 @@ def run_engine_loop():
             
             # v8.1: Stateless Inference (Phase 28: Now Signal-Aware)
             # [C8 Fix] Calculate intent BEFORE first usage
-            likely_intent = "BULLISH" if pattern_results["score"] > 0.6 and curr_strength > 0 else (
-                "BEARISH" if pattern_results["score"] > 0.6 else None
+            # Fix UnboundLocalError: Ensure likely_intent is always defined
+            likely_intent = "BULLISH" if pattern_results and pattern_results.get("score", 0) > 0.6 and curr_strength > 0 else (
+                "BEARISH" if pattern_results and pattern_results.get("score", 0) > 0.6 else None
             )
 
             decision_id, thoughts = call_brain_safely(
