@@ -46,9 +46,9 @@ requirements.txt
 
 # UN-IGNORE EXCEPTIONS (Must be last for Vercel)
 !dashboard/
-!package.json
-!next.config.js
-!next.config.ts
-!postcss.config.js
-!tailwind.config.js
-!tsconfig.json
+!dashboard/package.json
+!dashboard/next.config.js
+!dashboard/next.config.ts
+!dashboard/postcss.config.js
+!dashboard/tailwind.config.js
+!dashboard/tsconfig.json
