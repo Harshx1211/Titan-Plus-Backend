@@ -2,6 +2,9 @@
 .git/
 .vercel/
 .next/
+backend/
+node_modules/
+venv/
 *.pyc
 __pycache__/
 logs/
@@ -40,9 +43,6 @@ requirements.txt
 *.db
 *.csv
 *.txt
-backend/
-venv/
-node_modules/
 
 # UN-IGNORE EXCEPTIONS (Must be last for Vercel)
 !dashboard/
