@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Optional, Tuple
 import uvicorn
+from config import APP_CONFIG
 import pandas as pd
 import logging
 import time
@@ -53,7 +54,7 @@ class LiveState:
         self.last_update = datetime.now(timezone.utc)
         self.symbols = ["NIFTY", "SENSEX"]
         self.current_symbol_idx = 0
-        self.vix = 15.0
+        self.vix = APP_CONFIG["VIX_DEFAULT"]
         self.breadth = {"advances": 0, "declines": 0}
         self.market_message = "System Stable"
         self.data_source = "PUBLIC_SCRAPER"
@@ -149,8 +150,8 @@ def is_market_open():
     if now.weekday() >= 5:  # Saturday = 5, Sunday = 6
         return False
     
-    market_start = now.replace(hour=9, minute=15, second=0, microsecond=0)
-    market_end = now.replace(hour=15, minute=30, second=0, microsecond=0)
+    market_start = now.replace(hour=APP_CONFIG["MARKET_START_HOUR"], minute=APP_CONFIG["MARKET_START_MINUTE"], second=0, microsecond=0)
+    market_end = now.replace(hour=APP_CONFIG["MARKET_END_HOUR"], minute=APP_CONFIG["MARKET_END_MINUTE"], second=0, microsecond=0)
     
     return market_start <= now <= market_end
 
@@ -259,6 +260,18 @@ async def post_feedback(signal_id: int, outcome: str, override: bool = False):
     # Logic to log feedback and retrain brain
     return {"status": "success"}
 
+@app.post("/execute_trade")
+async def execute_trade(signal_id: str):
+    logger.info(f"API: Trade execution requested for Signal ID: {signal_id}")
+    try:
+        # In a real system, this would involve integration with a broker API
+        # For now, we just log and return a success status
+        live_state.add_thought("TRADE", f"Simulating trade execution for {signal_id}")
+        return {"status": "trade_executed", "signal_id": signal_id}
+    except Exception as e:
+        logger.error(f"API: Failed to execute trade for Signal ID {signal_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to execute trade: {e}")
+
 @app.post("/evolve")
 async def trigger_evolution(date: Optional[str] = None):
     """Triggers the Overnight Learning (Evolution) process."""
@@ -266,25 +279,33 @@ async def trigger_evolution(date: Optional[str] = None):
     live_state.add_thought("LEARN", f"Starting Overnight Evolutionary Audit for {date or 'today'}...")
     try:
         result = evolution_engine.evolve_session(date)
-        
+
         # Add specific learning results to thoughts
         for feat, rep in result.get("reputation_updates", {}).items():
             if rep != 1.0: # Only if it changed or is non-neutral
                 live_state.add_thought("LEARN", f"DNA Calibration: {feat} reputation adjusted to {rep:.2f}")
-        
+
         live_state.add_thought("LEARN", f"Session Audit Complete. Governor Status: {result.get('governor_status', 'ACTIVE')}")
         return {"status": "evolution_complete", "details": result}
+    except Exception as e:
+        logger.error(f"API: Evolution process failed for {date or 'today'}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Evolution process failed: {e}")
     finally:
         live_state.is_learning = False
 
 @app.post("/reset")
 async def reset_system():
     """Emergency Reset: Clears recovery mode and active signals."""
-    risk_engine.reset()
-    live_state.active_signals = []
-    live_state.market_message = "SYSTEM RESET: Lockout Cleared"
-    logger.info("API: Emergency System Reset Triggered")
-    return {"status": "system_reset_complete"}
+    try:
+        risk_engine.reset()
+        live_state.active_signals = []
+        live_state.market_message = "SYSTEM RESET: Lockout Cleared"
+        logger.info("API: Emergency System Reset Triggered")
+        live_state.add_thought("SYSTEM", "Emergency System Reset Triggered. Lockout Cleared.")
+        return {"status": "system_reset_complete"}
+    except Exception as e:
+        logger.error(f"API: System reset failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"System reset failed: {e}")
 
 def run_engine_loop():
     """
@@ -320,7 +341,7 @@ def run_engine_loop():
                 else:
                     live_state.data_source = src_status["name"]
             except Exception as e:
-                logger.warning(f"ENGINE: Snapshot fetch failed for {symbol}: {e}")
+                logger.warning(f"ENGINE: Snapshot fetch failed for {symbol}: {e}", exc_info=True)
                 # Use hardcoded fallback to keep ticker alive even if everything fails
                 if symbol == "NIFTY" and live_state.prices["NIFTY"] == 0: live_state.prices["NIFTY"] = 24500.0
                 if symbol == "SENSEX" and live_state.prices["SENSEX"] == 0: live_state.prices["SENSEX"] = 81500.0
@@ -378,7 +399,7 @@ def run_engine_loop():
                     macro_zones=macro_zones
                 )
             except Exception as e:
-                logger.warning(f"ENGINE: Analysis failed for {symbol}: {e}")
+                logger.warning(f"ENGINE: Analysis failed for {symbol}: {e}", exc_info=True)
                 pattern_results = {"score": 0.0, "patterns": []}
                 macro_bias = 0
                 macro_zones = []
@@ -399,11 +420,11 @@ def run_engine_loop():
                     
                     # Confluence: Max Pain + GEX Bias
                     sym_max_pain = live_state.max_pain[symbol]
-                    if abs(market_data.spot_price - sym_max_pain) < 20:
+                    if abs(market_data.spot_price - sym_max_pain) < APP_CONFIG["MAX_PAIN_THRESHOLD"]:
                         pattern_results["score"] *= 1.2
                         live_state.market_message = f"GEX/PAIN CONFLUENCE [{symbol}]: Institutional Gravity"
             except Exception as e:
-                logger.warning(f"ENGINE: Option chain failed for {symbol}: {e}")
+                logger.warning(f"ENGINE: Option chain failed for {symbol}: {e}", exc_info=True)
                 chain_df, is_synthetic = pd.DataFrame(), True
 
             # Phase 11/30: Inter-Market Synergy (BankNifty vs Nifty)
@@ -435,7 +456,7 @@ def run_engine_loop():
                 # Note: Directional IV Veto relocated to post-pattern generation 
                 # to ensure signal_intent awareness (Meta-Awareness v8.6.0)
                 
-                if live_state.vix > 20:
+                if live_state.vix > APP_CONFIG["HIGH_VOLATILITY_VIX"]:
                     pattern_results["score"] *= 0.8 # Tighten requirements in high volatility
                     live_state.market_message = "VIX HIGH: Use Defensive Guardrails"
                 else:
@@ -451,10 +472,10 @@ def run_engine_loop():
             live_state.current_regime = strategist.classify_regime(hist_df, breadth=live_state.breadth)
             
             # Phase 9: Time-Based Institutional Filter
-            now = datetime.now().time()
-            lull_start = datetime.strptime("12:00", "%H:%M").time()
-            lull_end = datetime.strptime("13:30", "%H:%M").time()
-            is_lull = lull_start <= now <= lull_end
+            now_time = datetime.now().time()
+            lull_start = datetime.strptime(f"{APP_CONFIG['LULL_START_HOUR']}:{APP_CONFIG['LULL_START_MINUTE']:02d}", "%H:%M").time()
+            lull_end = datetime.strptime(f"{APP_CONFIG['LULL_END_HOUR']}:{APP_CONFIG['LULL_END_MINUTE']:02d}", "%H:%M").time()
+            is_lull = lull_start <= now_time <= lull_end
             if is_lull:
                 pattern_results["score"] *= 0.5
                 live_state.market_message = "INSTITUTIONAL LULL: Low Confidence Zone"
@@ -517,7 +538,7 @@ def run_engine_loop():
                 if len(live_state.beta_history["OI"]) > 200:
                     live_state.beta_history["OI"].pop(0)
             except Exception as e:
-                logger.error(f"FEATURE ERROR: {e}")
+                logger.error(f"FEATURE ERROR: {e}", exc_info=True)
                 brain_features = {"OI_RES": 0, "PCR": 1.0, "BASIS_RES": 0, "ADX": 25.0}
             
             # v8.1: Stateless Inference (Compute-only unless pattern detects)
@@ -567,7 +588,7 @@ def run_engine_loop():
             # Timing Guardrails (Calibration/Stabilization)
             now_ts = time.time()
             elapsed = now_ts - start_time
-            is_passive = elapsed < 800
+            is_passive = elapsed < APP_CONFIG["PASSIVE_MODE_THRESHOLD"]
             
             applied_boost = 1.0 if is_passive else confidence_boost
             
@@ -579,12 +600,12 @@ def run_engine_loop():
 
             # THE v8 DOUBLE-HANDSHAKE
             if not is_passive:
-                if pattern_results["score"] > 0.8 and applied_boost > 0.8:
+                if pattern_results["score"] > APP_CONFIG["PATTERN_SCORE_THRESHOLD_HIGH"] and applied_boost > APP_CONFIG["PATTERN_SCORE_THRESHOLD_HIGH"]:
                     # Phase 30: Synergy Boost
                     if live_state.sector_synergy > 1.0:
                         pattern_results["score"] *= 1.1 # Synergy boost
                     live_state.market_message = "SYNERGY CONFIRMATION: Dual Edge Active"
-                elif pattern_results["score"] < 0.6 and applied_boost > 0.8:
+                elif pattern_results["score"] < APP_CONFIG["PATTERN_SCORE_THRESHOLD_MEDIUM"] and applied_boost > APP_CONFIG["PATTERN_SCORE_THRESHOLD_HIGH"]:
                     # Brain sees it but chart is ugly -> Mute
                     applied_boost *= 0.5
                     live_state.market_message = "DIVERGENCE: Brain Disagrees with Price"
@@ -607,13 +628,13 @@ def run_engine_loop():
                 # Phase 27/28: Volatility-Normalized Persistence Decay
                 # MAE must be bounded relative to ATR to allow for natural breakout rotations.
                 # Threshold: MAE > Max(20, 2 * ATR)
-                atr_threshold = max(20, 2.0 * atr_val)
+                atr_threshold = max(APP_CONFIG["ATR_MAE_MIN_THRESHOLD"], APP_CONFIG["ATR_MAE_MULTIPLIER"] * atr_val)
                 integrity_decay = (sig.mae > atr_threshold) and (sig.mfe < 0.5 * atr_threshold)
                 
                 # Check for Exit
-                is_target = price_delta >= 100
-                is_sl = price_adverse >= 50
-                is_decay = integrity_decay and price_adverse > 15
+                is_target = price_delta >= APP_CONFIG["SIGNAL_TARGET_POINTS"]
+                is_sl = price_adverse >= APP_CONFIG["SIGNAL_STOP_LOSS_POINTS"]
+                is_decay = integrity_decay and price_adverse > APP_CONFIG["DECAY_PRICE_ADVERSE_THRESHOLD"]
                 
                 if is_target or is_sl or is_decay:
                     sig.is_live = False
@@ -629,7 +650,7 @@ def run_engine_loop():
                     brain_decision_id = sig.decision_id if hasattr(sig, 'decision_id') else decision_id
                     brain.log_snapshot(
                         decision_id=brain_decision_id,
-                        outcome=True if price_delta > 100 else False,
+                        outcome=True if price_delta > APP_CONFIG["SIGNAL_TARGET_POINTS"] else False,
                         performance={
                             "mfe": sig.mfe,
                             "mae": sig.mae,
@@ -640,10 +661,10 @@ def run_engine_loop():
                     )
                     
                     # Log to Truth Ledger (for Dashboard UI)
-                    db.log_outcome(brain_decision_id, "WIN" if price_delta > 100 else "LOSS", persistence=is_structural)
+                    db.log_outcome(brain_decision_id, "WIN" if price_delta > APP_CONFIG["SIGNAL_TARGET_POINTS"] else "LOSS", persistence=is_structural)
 
             # 6. Signal Generation
-            if pattern_results["score"] > 0.8:
+            if pattern_results["score"] > APP_CONFIG["PATTERN_SCORE_THRESHOLD_HIGH"]:
                 detected_patterns = pattern_results.get("patterns", [])
                 signal_type = "BULLISH" if any(p in ["VWAP_CROSSOVER", "HAMMER", "BULLISH_ENGULFING", "CPR_BREAKOUT"] for p in detected_patterns) else "BEARISH"
                 
@@ -671,8 +692,8 @@ def run_engine_loop():
                             new_signal = TradeSignal(
                                 symbol=symbol,
                                 entry_price=market_data.spot_price,
-                                stop_loss=50, 
-                                target=100,
+                                stop_loss=APP_CONFIG["SIGNAL_STOP_LOSS_POINTS"], 
+                                target=APP_CONFIG["SIGNAL_TARGET_POINTS"],
                                 confidence=SignalConfidence.HIGH if pattern_results["score"] > 0.9 else SignalConfidence.MEDIUM,
                                 regime=live_state.current_regime,
                                 reasoning=f"{signal_type} | {', '.join(detected_patterns)}",
@@ -710,8 +731,8 @@ def run_engine_loop():
                          live_state.active_signals.append(TradeSignal(
                              symbol=symbol,
                              entry_price=market_data.spot_price,
-                             stop_loss=30, # Strict Sidecar SL
-                             target=100,
+                             stop_loss=APP_CONFIG["SIDECAR_STOP_LOSS_POINTS"], # Strict Sidecar SL
+                             target=APP_CONFIG["SIDECAR_TARGET_POINTS"],
                              confidence=SignalConfidence.MEDIUM,
                              regime=Regime.SIDEWAYS, # Traps usually in sideways/confused interaction
                              reasoning=f"SIDECAR: {sidecar_decision['reason']}",
@@ -743,8 +764,8 @@ def run_engine_loop():
                         live_state.active_signals.append(TradeSignal(
                              symbol=symbol,
                              entry_price=market_data.spot_price,
-                             stop_loss=15, # Tight Scalp SL
-                             target=30, # Scalp Target
+                             stop_loss=APP_CONFIG["SKIRMISHER_STOP_LOSS_POINTS"], # Tight Scalp SL
+                             target=APP_CONFIG["SKIRMISHER_TARGET_POINTS"], # Scalp Target
                              confidence=SignalConfidence.LOW,
                              regime=Regime.SIDEWAYS,
                              reasoning=f"⚠️ TACTICAL SCALP: {scalp['reason']}",
@@ -762,16 +783,17 @@ def run_engine_loop():
             live_state.last_update = datetime.now(timezone.utc)
             
             # [v9.5] Memory Safety: Cap active signals to last 20 to prevent memory leak
-            if len(live_state.active_signals) > 20:
+            if len(live_state.active_signals) > APP_CONFIG["SIGNAL_ACTIVE_CAP"]:
                 live_state.active_signals = live_state.active_signals[-20:]
                 
             # [v9.5.7] Stealth Polling: 3s Base + 0-2s Jitter
             import random
-            sleep_time = 3 + random.uniform(0, 2)
+            sleep_time = APP_CONFIG["ENGINE_POLLING_BASE_SECONDS"] + random.uniform(0, APP_CONFIG["ENGINE_POLLING_JITTER_SECONDS"])
             time.sleep(sleep_time)
         except Exception as e:
-            logger.error(f"ENGINE ERROR: {e}")
-            time.sleep(5)
+            logger.error(f"ENGINE ERROR: {e}", exc_info=True)
+            live_state.add_thought("ERROR", f"Engine experienced critical error: {e}. Restarting loop...")
+            time.sleep(APP_CONFIG["ENGINE_ERROR_SLEEP_TIME"])
 
 @app.on_event("startup")
 async def startup_event():
@@ -785,4 +807,4 @@ if __name__ == "__main__":
     try:
         uvicorn.run(app, host="0.0.0.0", port=port)
     except Exception as e:
-        logger.error(f"API CRITICAL ERROR: {e}")
+        logger.critical(f"API CRITICAL ERROR: {e}", exc_info=True)

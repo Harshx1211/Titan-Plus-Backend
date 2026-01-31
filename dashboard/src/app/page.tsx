@@ -18,6 +18,31 @@ import {
   Crosshair
 } from 'lucide-react';
 
+interface TradeSignal {
+  symbol: string;
+  entry_price: number; // Index Spot Price
+  stop_loss: number;
+  target: number;
+  confidence: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
+  regime: 'TRENDING' | 'SIDEWAYS' | 'UNCERTAIN';
+  reasoning: string;
+  timestamp: string;
+  is_live?: boolean;
+  divergence?: 'NONE' | 'SOFT' | 'HARD';
+  option_symbol?: string; // e.g., NIFTY 24500 PE
+  premium_entry?: number; // Buy @ 150
+  premium_sl?: number; // SL @ 140
+  premium_target?: number; // Target @ 190
+  strike?: number;
+  option_type?: string; // CE or PE
+  decision_id?: string; // Immutable Causal Link
+  mfe?: number;
+  mae?: number;
+  time_to_mfe?: number;
+  spread_at_entry?: number;
+  logic_version?: string;
+}
+
 interface SystemState {
   prices: Record<string, number>;
   data_latency: number;
@@ -31,7 +56,7 @@ interface SystemState {
   max_pain: Record<string, number>;
   gex_bias: Record<string, number>;
   sector_synergy: number;
-  active_signals: any[];
+  active_signals: TradeSignal[];
   index_strengths?: Record<string, number>;
   thought_logs: Array<{ timestamp: string; type: string; msg: string }>;
   is_learning: boolean;
@@ -44,6 +69,7 @@ export default function Home() {
   const [activeAsset, setActiveAsset] = useState<'NIFTY' | 'SENSEX'>('NIFTY');
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);  // FIX #5: Add loading state
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -64,10 +90,12 @@ export default function Home() {
         setAccuracy(newAcc);
         setConnected(true);
         setLoading(false);  // FIX #5: Set loading to false after first fetch
+        setErrorMessage(null); // Clear any previous errors
       } catch (err) {
         console.error("Link Failure:", err);
         setConnected(false);
         setLoading(false);  // FIX #5: Set loading to false even on error
+        setErrorMessage("Failed to connect to the backend API. Please check the network connection and API_URL.");
       }
     };
 
@@ -78,6 +106,33 @@ export default function Home() {
 
   // Recovery Mode disabled - User has full control
   // const isRecovering = state?.is_in_recovery;
+
+  const handleExecuteTrade = async (signalId: string) => {
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://titan-plus-backend.onrender.com';
+    try {
+      const response = await fetch(`${API_URL}/execute_trade`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ signal_id: signalId }),
+      });
+
+      if (response.ok) {
+        console.log(`Trade for signal ${signalId} executed successfully!`);
+        setErrorMessage(null); // Clear any previous errors
+        // Optionally, re-fetch state or update UI to reflect executed trade
+      } else {
+        const errorData = await response.json();
+        const msg = errorData.detail || response.statusText;
+        console.error(`Failed to execute trade for signal ${signalId}:`, msg);
+        setErrorMessage(`Failed to execute trade: ${msg}`);
+      }
+    } catch (error) {
+      console.error(`Error executing trade for signal ${signalId}:`, error);
+      setErrorMessage(`Error executing trade: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
 
   // FIX #5: Show loading state
   if (loading) {
@@ -103,6 +158,11 @@ export default function Home() {
               {connected ? 'Sync: Nominal' : 'Sync: Lost'}
             </span>
           </div>
+          {errorMessage && (
+            <div className="flex items-center gap-2 text-[10px] font-mono font-black uppercase tracking-widest text-rose-500 animate-pulse">
+              <Shield className="w-3 h-3" /> {errorMessage}
+            </div>
+          )}
           <div className="flex items-center gap-4 text-[10px] font-mono text-slate-600 font-bold uppercase tracking-widest border-l border-white/[0.05] pl-6">
             <LayoutGrid className="w-3 h-3" />
             <span>Terminal: 002-X</span>
@@ -186,6 +246,13 @@ export default function Home() {
                     </span>
                   </div>
                 </div>
+                {state?.is_in_recovery && (
+                  <div className="p-3 bg-rose-900/40 border border-rose-500/20 rounded-xs mt-4">
+                    <p className="text-[10px] text-rose-300 font-mono leading-relaxed font-bold uppercase text-center italic tracking-widest">
+                      SYSTEM_IN_RECOVERY_MODE
+                    </p>
+                  </div>
+                )}
               </div>
             </section>
 
@@ -261,7 +328,7 @@ export default function Home() {
                 </div>
                 <div className="flex justify-between text-[10px] font-mono font-black text-slate-600 uppercase pt-2">
                   <span className="opacity-50">Resets Remaining</span>
-                  <span className="text-cyan-400">1 / 1</span>
+                  <span className="text-cyan-400">{state?.resets_today !== undefined ? state.resets_today : '-'} / 1</span>
                 </div>
                 <div className="text-[8px] text-slate-800 font-mono italic leading-relaxed uppercase pt-2 border-t border-white/[0.03]">
                   Autonomous DNA calibrations occur post-session. Integrity lock active.
@@ -304,7 +371,7 @@ export default function Home() {
                           <span className="text-[9px] font-mono text-slate-700 font-bold uppercase tracking-widest mb-1">Conf. Rating</span>
                           <span className="text-xl font-mono font-black text-slate-300 tracking-tighter">{(signal.confidence_val || 0.85).toFixed(2)}</span>
                         </div>
-                        <button className="px-8 py-3 bg-white hover:bg-cyan-400 text-black font-black text-[10px] uppercase tracking-[0.4em] transition-all cursor-pointer">
+                        <button onClick={() => handleExecuteTrade(signal.decision_id)} className="px-8 py-3 bg-white hover:bg-cyan-400 text-black font-black text-[10px] uppercase tracking-[0.4em] transition-all cursor-pointer">
                           EXECUTE
                         </button>
                       </div>
