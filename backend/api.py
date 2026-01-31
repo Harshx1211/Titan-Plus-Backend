@@ -130,7 +130,7 @@ def call_brain_safely(action: str, **kwargs):
         elif action == "BOOST":
             return brain.get_confidence_boost(
                 features=kwargs.get("features"),
-                regime=kwargs.get("regime").value if hasattr(kwargs.get("regime"), 'value') else kwargs.get("regime"),
+                regime_val=kwargs.get("regime").value if hasattr(kwargs.get("regime"), 'value') else kwargs.get("regime"),
                 signal_intent=kwargs.get("signal_intent"),
                 iv_skew=kwargs.get("iv_skew", 1.0)
             )
@@ -146,7 +146,7 @@ def call_brain_safely(action: str, **kwargs):
         elif action == "BOOST":
             return brain.get_confidence_boost(
                 features=kwargs.get("features"),
-                regime=kwargs.get("regime").value if hasattr(kwargs.get("regime"), 'value') else kwargs.get("regime")
+                regime_val=kwargs.get("regime").value if hasattr(kwargs.get("regime"), 'value') else kwargs.get("regime")
             )
     return None, []
 
