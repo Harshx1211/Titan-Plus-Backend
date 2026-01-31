@@ -142,6 +142,30 @@ class SupabaseManager:
             logger.error(f"SUPABASE ERROR: Failed accuracy report: {e}")
             return {"win_rate": 0.0, "total_trades": 0}
 
+    def log_snapshot(self, signal_data: Dict, outcome: int, stage: int = 1):
+        """Logs brain decision context to cloud."""
+        try:
+            data = {
+                "signal_id": f"BRAIN_{int(datetime.now().timestamp())}_{signal_data.get('decision_id', 'UNK')}",
+                "timestamp": datetime.now().isoformat(),
+                "timestamp_ns": time.time_ns(),
+                "seq_id": self._get_next_seq(),
+                "symbol": signal_data.get("symbol", "INDEX"),
+                "regime": signal_data.get("regime", "UNCERTAIN"),
+                "decision": signal_data.get("decision", "BLOCK"),
+                "efficacy": signal_data.get("efficacy", 0),
+                "confidence_boost": signal_data.get("confidence_boost", 0.0),
+                "features": json.dumps(signal_data.get("features", {})),
+                "outcome": outcome,
+                "stage": stage,
+                "auth": signal_data.get("regime_authority", 1.0)
+            }
+            if self.queue.full():
+                self.queue.get_nowait()
+            self.queue.put(("snapshot", data), block=False)
+        except Exception as e:
+            logger.error(f"SUPABASE SNAPSHOT ERROR: {e}")
+
     def get_history(self, limit: int = 50) -> List[Dict]:
         """Fetches latest signals from cloud."""
         try:

@@ -108,11 +108,51 @@ pattern_engine = PatternEngine()
 risk_engine = RiskEngine()
 brain = BrainEngine()
 trap_hunter = TrapHunter() # [v9.1] Sidecar Module
+# Helper: Safe Brain Interface (Phase 28 Compatibility)
+def call_brain_safely(action: str, **kwargs):
+    """
+    Wrapper to handle v1 vs v2 signature differences.
+    v2 requires signal_intent, iv_skew, etc.
+    """
+    try:
+        if action == "DECIDE":
+            return brain.generate_decision(
+                features=kwargs.get("features"),
+                regime=kwargs.get("regime"),
+                is_commit=kwargs.get("is_commit", False),
+                pattern_score=kwargs.get("pattern_score", 0.0),
+                signal_intent=kwargs.get("signal_intent"),
+                iv_skew=kwargs.get("iv_skew", 1.0)
+            )
+        elif action == "BOOST":
+            return brain.get_confidence_boost(
+                features=kwargs.get("features"),
+                regime=kwargs.get("regime").value if hasattr(kwargs.get("regime"), 'value') else kwargs.get("regime"),
+                signal_intent=kwargs.get("signal_intent"),
+                iv_skew=kwargs.get("iv_skew", 1.0)
+            )
+    except TypeError as e:
+        logger.warning(f"BRAIN: V2 call failed, falling back to v1 signature: {e}")
+        if action == "DECIDE":
+            return brain.generate_decision(
+                features=kwargs.get("features"),
+                regime=kwargs.get("regime"),
+                is_commit=kwargs.get("is_commit", False),
+                pattern_score=kwargs.get("pattern_score", 0.0)
+            )
+        elif action == "BOOST":
+            return brain.get_confidence_boost(
+                features=kwargs.get("features"),
+                regime=kwargs.get("regime").value if hasattr(kwargs.get("regime"), 'value') else kwargs.get("regime")
+            )
+    return None, []
+
 skirmisher = Skirmisher() # [v9.2] Sandboxed Scalper
 evolution_engine = EvolutionEngine(brain)
 option_engine = OptionEngine()
 db = DatabaseManager()
 data_provider = DataProvider()
+
 if data_provider.use_groww:
     live_state.data_source = "GROWW_API"
 
@@ -166,12 +206,23 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Heartbeat endpoint for the external pinger (cron-job.org)."""
+    """Heartbeat endpoint with Brain metrics for observability."""
     return {
         "status": "active",
         "engine": "Titan Plus",
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "cloud_memory": "Supabase Linked"
+        "cloud_memory": "Supabase Linked",
+        "brain": {
+            "health": brain.health_check(),
+            "metrics": {
+                "total_decisions": brain.metrics.total_decisions,
+                "approvals": brain.metrics.approvals,
+                "blocks": brain.metrics.blocks,
+                "avg_confidence": round(brain.metrics.avg_confidence, 3),
+                "nan_rejections": brain.metrics.nan_rejections,
+                "version": brain.LOGIC_VERSION
+            }
+        }
     }
 
 @app.get("/state", response_model=SystemState)
@@ -541,12 +592,14 @@ def run_engine_loop():
                 logger.error(f"FEATURE ERROR: {e}", exc_info=True)
                 brain_features = {"OI_RES": 0, "PCR": 1.0, "BASIS_RES": 0, "ADX": 25.0}
             
-            # v8.1: Stateless Inference (Compute-only unless pattern detects)
-            decision_id, thoughts = brain.generate_decision(
-                brain_features, 
+            # v8.1: Stateless Inference (Phase 28: Now Signal-Aware)
+            decision_id, thoughts = call_brain_safely(
+                "DECIDE",
+                features=brain_features, 
                 regime=live_state.current_regime, 
                 is_commit=False,
                 pattern_score=pattern_results["score"],
+                signal_intent=likely_intent,
                 iv_skew=live_state.iv_skew.get(symbol, 1.0)
             )
             
@@ -571,9 +624,11 @@ def run_engine_loop():
 
             # Calculate Brain Boost (Phase 28: Now Signal-Aware if intent is likely)
             likely_intent = "BULLISH" if pattern_results["score"] > 0.6 and curr_strength > 0 else ("BEARISH" if pattern_results["score"] > 0.6 else None)
-            confidence_boost, boost_thoughts = brain.get_confidence_boost(
-                brain_features, 
-                regime=live_state.current_regime.value,
+            # Calculate Brain Boost (Phase 28: Using Safe Wrapper)
+            confidence_boost, boost_thoughts = call_brain_safely(
+                "BOOST",
+                features=brain_features, 
+                regime=live_state.current_regime,
                 signal_intent=likely_intent,
                 iv_skew=live_state.iv_skew.get(symbol, 1.0)
             )
