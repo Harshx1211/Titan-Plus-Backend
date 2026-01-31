@@ -11,13 +11,8 @@ weekly_simulation.py
 verify_*.py
 api_*.txt
 *.json
-!skirmisher_ledger.json
-!skirmisher_state.json
-!sidecar_state.json
-!sidecar_trades.json
-!*.md
-!requirements.txt
-!vercel.json
-!Procfile
-!main.py
-!api.py
+# Expose Dashboard Config
+!dashboard/*.json
+!dashboard/*.mjs
+!dashboard/*.ts
+!dashboard/.gitignore
