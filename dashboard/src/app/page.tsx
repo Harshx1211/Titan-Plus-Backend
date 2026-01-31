@@ -42,6 +42,7 @@ interface TradeSignal {
   time_to_mfe?: number;
   spread_at_entry?: number;
   logic_version?: string;
+  confidence_val?: number;
 }
 
 interface SystemState {
@@ -372,7 +373,7 @@ export default function Home() {
                           <span className="text-[9px] font-mono text-slate-700 font-bold uppercase tracking-widest mb-1">Conf. Rating</span>
                           <span className="text-xl font-mono font-black text-slate-300 tracking-tighter">{(signal.confidence_val || 0.85).toFixed(2)}</span>
                         </div>
-                        <button onClick={() => handleExecuteTrade(signal.decision_id)} className="px-8 py-3 bg-white hover:bg-cyan-400 text-black font-black text-[10px] uppercase tracking-[0.4em] transition-all cursor-pointer">
+                        <button onClick={() => handleExecuteTrade(signal.decision_id || '')} className="px-8 py-3 bg-white hover:bg-cyan-400 text-black font-black text-[10px] uppercase tracking-[0.4em] transition-all cursor-pointer">
                           EXECUTE
                         </button>
                       </div>
