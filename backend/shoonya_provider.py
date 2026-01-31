@@ -2,6 +2,7 @@ import logging
 import os
 import pyotp
 import time
+import threading
 from typing import Optional, Dict, List
 from api_helper import ShoonyaApiPy
 from dotenv import load_dotenv
@@ -23,6 +24,9 @@ class ShoonyaProvider:
         # Use the verified endpoint from api_helper
         self.api = ShoonyaApiPy()
         self.authenticated = False
+        self._login_lock = threading.Lock()
+        self._last_login_attempt = 0
+        self._login_cooldown = 10 # Seconds
         
         # Standard Index Token Mappings (Exchange, Token)
         self.index_tokens = {
@@ -33,49 +37,59 @@ class ShoonyaProvider:
         }
 
     def login(self):
-        if not self.totp_secret:
-            logger.error("No SHOONYA_TOTP_SECRET found in .env")
-            return False
+        with self._login_lock:
+            # Check if another thread already logged in while we were waiting for the lock
+            if self.authenticated and (time.time() - self._last_login_attempt) < 60:
+                return True
+                
+            now = time.time()
+            if (now - self._last_login_attempt) < self._login_cooldown:
+                logger.warning(f"Shoonya login throttled. Waiting {self._login_cooldown}s between attempts.")
+                return False
+                
+            self._last_login_attempt = now
             
-        totp_key = self.totp_secret.replace(" ", "").upper()
-        totp = pyotp.TOTP(totp_key)
-        now = int(time.time())
-        
-        # Try multiple time windows (±2 minutes) to account for clock drift
-        # The SDK login handles the hashing of password and api_secret
-        offsets = [0, -30, 30, -60, 60, -90, 90, -120, 120]
-        
-        for offset in offsets:
-            try:
-                code = totp.at(now + offset)
+            if not self.totp_secret:
+                logger.error("No SHOONYA_TOTP_SECRET found in .env")
+                return False
                 
-                res = self.api.login(
-                    userid=self.user_id,
-                    password=self.password,
-                    twoFA=code,
-                    vendor_code=self.vendor_code,
-                    api_secret=self.api_key,
-                    imei=self.imei
-                )
-                
-                if res and res.get('stat') == 'Ok':
-                    self.authenticated = True
-                    logger.info(f"Shoonya Login SUCCESSFUL! (Offset: {offset}s)")
-                    return True
-                
-                error_msg = res.get('emsg') if res else 'No response'
-                logger.info(f"Login attempt failed (Offset {offset}s): {error_msg}")
-                
-                if res and 'Invalid OTP' not in str(error_msg):
-                    logger.warning(f"Aborting login retries due to non-OTP error: {error_msg}")
+            totp_key = self.totp_secret.replace(" ", "").upper()
+            totp = pyotp.TOTP(totp_key)
+            
+            # Try multiple time windows (±2 minutes) to account for clock drift
+            offsets = [0, -30, 30, -60, 60, -90, 90, -120, 120]
+            
+            for offset in offsets:
+                try:
+                    code = totp.at(int(now) + offset)
+                    
+                    res = self.api.login(
+                        userid=self.user_id,
+                        password=self.password,
+                        twoFA=code,
+                        vendor_code=self.vendor_code,
+                        api_secret=self.api_key,
+                        imei=self.imei
+                    )
+                    
+                    if res and res.get('stat') == 'Ok':
+                        self.authenticated = True
+                        logger.info(f"Shoonya Login SUCCESSFUL! (Offset: {offset}s)")
+                        return True
+                    
+                    error_msg = res.get('emsg') if res else 'No response'
+                    logger.info(f"Login attempt failed (Offset {offset}s): {error_msg}")
+                    
+                    if res and 'Invalid OTP' not in str(error_msg):
+                        logger.warning(f"Aborting login retries due to non-OTP error: {error_msg}")
+                        break
+                        
+                except Exception as e:
+                    logger.error(f"Critical exception during login attempt: {e}")
                     break
                     
-            except Exception as e:
-                logger.error(f"Critical exception during login attempt: {e}")
-                break
-                
-        logger.error(f"Shoonya login failed for all offsets. Last error: {error_msg if 'error_msg' in locals() else 'None'}")
-        return False
+            logger.error(f"Shoonya login failed for all offsets. Last error: {error_msg if 'error_msg' in locals() else 'None'}")
+            return False
 
     def get_market_data(self, symbol: str) -> Optional[Dict]:
         """Fetch market data for a given symbol or index."""
