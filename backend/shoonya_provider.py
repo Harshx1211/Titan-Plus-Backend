@@ -16,10 +16,17 @@ class ShoonyaProvider:
         self.user_id = os.getenv("SHOONYA_USER_ID")
         self.password = os.getenv("SHOONYA_PASSWORD")
         self.api_key = os.getenv("SHOONYA_API_KEY")
-        # Handle the typo in the Render dashboard just in case
-        self.imei = os.getenv("SHOONYA_IMEI") or os.getenv("SHOONYA_INEI") or 'ab234'
         self.vendor_code = os.getenv("SHOONYA_VENDOR_CODE")
         self.totp_secret = os.getenv("SHOONYA_TOTP_SECRET")
+        
+        # [v9.6.5] Unique Identity: Randomize IMEI suffix to prevent session collisions
+        import random
+        import string
+        suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
+        raw_imei = os.getenv("SHOONYA_IMEI") or os.getenv("SHOONYA_INEI") or 'ab234'
+        self.imei = f"{raw_imei}_{suffix}"
+        
+        logger.info(f"Shoonya: Identity initialized as {self.imei}")
         
         # Use the verified endpoint from api_helper
         self.api = ShoonyaApiPy()
@@ -39,7 +46,7 @@ class ShoonyaProvider:
     def login(self):
         with self._login_lock:
             # Check if another thread already logged in while we were waiting for the lock
-            if self.authenticated and (time.time() - self._last_login_attempt) < 60:
+            if self.authenticated and (time.time() - self._last_login_attempt) < 300: # 5 mins
                 return True
                 
             now = time.time()
@@ -48,6 +55,7 @@ class ShoonyaProvider:
                 return False
                 
             self._last_login_attempt = now
+            self.authenticated = False # Reset before attempt
             
             if not self.totp_secret:
                 logger.error("No SHOONYA_TOTP_SECRET found in .env")
