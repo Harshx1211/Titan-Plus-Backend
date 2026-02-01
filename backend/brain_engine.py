@@ -40,7 +40,7 @@ class BrainConfig:
     threshold_sideways: float = 0.75
     threshold_sideways_strong: float = 0.70 # More lenient in high quality
     threshold_sideways_weak: float = 0.85   # Very strict in chop
-    threshold_uncertain: float = 0.75       # [v9.6] Lowered from 0.90 to capture volatility
+    threshold_uncertain: float = 0.50       # [v9.7] Aggressive drop to 0.50 for high volatility
     
     # Skirmisher evaluation (v2.1)
     min_risk_reward: float = 1.5
