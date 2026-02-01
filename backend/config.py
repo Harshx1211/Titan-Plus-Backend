@@ -9,7 +9,7 @@ APP_CONFIG = {
     "LULL_START_MINUTE": int(os.getenv("LULL_START_MINUTE", "0")),
     "LULL_END_HOUR": int(os.getenv("LULL_END_HOUR", "13")),
     "LULL_END_MINUTE": int(os.getenv("LULL_END_MINUTE", "30")),
-    "PASSIVE_MODE_THRESHOLD": int(os.getenv("PASSIVE_MODE_THRESHOLD", "800")), # seconds
+    "PASSIVE_MODE_THRESHOLD": int(os.getenv("PASSIVE_MODE_THRESHOLD", "60")), # seconds
     "PATTERN_SCORE_THRESHOLD_HIGH": float(os.getenv("PATTERN_SCORE_THRESHOLD_HIGH", "0.4")),
     "PATTERN_SCORE_THRESHOLD_MEDIUM": float(os.getenv("PATTERN_SCORE_THRESHOLD_MEDIUM", "0.2")),
     "SIGNAL_TARGET_POINTS": float(os.getenv("SIGNAL_TARGET_POINTS", "100.0")),
