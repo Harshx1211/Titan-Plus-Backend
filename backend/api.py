@@ -466,10 +466,12 @@ def run_engine_loop():
                 atr_val = atr_df.iloc[-1] if atr_df is not None and not atr_df.empty else 0.0
 
                 live_state.current_regime = strategist.classify_regime(hist_df)
-                
-                # Calculate simple strength
-                curr_strength = (market_data.spot_price - hist_df.open.iloc[0]) / hist_df.open.iloc[0] * 100
-                live_state.index_strengths[symbol] = curr_strength
+                if not hist_df.empty:
+                    # Calculate simple strength
+                    curr_strength = (market_data.spot_price - hist_df.open.iloc[0]) / hist_df.open.iloc[0] * 100
+                    live_state.index_strengths[symbol] = curr_strength
+                else:
+                    curr_strength = 0.0
 
                 # [v9.9.5] Support & Resistance Analysis (Every 5 mins or on first run)
                 now_minute = datetime.now().minute
@@ -501,17 +503,16 @@ def run_engine_loop():
                 
                 # 4. Pattern Recognition (Now with MTF Boost, Advanced Patterns, and Macro Zones)
                 # 3. Strategy Analysis (The 'Chart' Logic)
-                # PatternEngine looks for VWAP crossovers, Hammer candles, and CPR breakouts.
-                pattern_results = pattern_engine.analyze(hist_df, market_data)
-                live_state.add_thought("ANALYSIS", f"Chart Pattern Score: {pattern_results['score']:.2f}. Found: {', '.join(pattern_results.get('patterns', ['NONE']))}")
+                # Note: 'analyze' was removed in favor of get_signal_confirmation
                 pattern_results = pattern_engine.get_signal_confirmation(
                     hist_df, 
                     macro_bias=macro_bias, 
                     macro_zones=macro_zones
                 )
+                live_state.add_thought("ANALYSIS", f"Chart Pattern Score: {pattern_results['score']:.2f}. Found: {', '.join(pattern_results.get('patterns', ['NONE']))}")
             except Exception as e:
                 logger.warning(f"ENGINE: Analysis failed for {symbol}: {e}", exc_info=True)
-                live_state.add_thought("ANALYZE_ERROR", f"Feature analysis crashed for {symbol}. NaN?")
+                live_state.add_thought("ANALYZE_ERROR", f"Feature analysis failed for {symbol}: {str(e)[:50]}")
                 continue
 
             if not pattern_results["patterns"]:
