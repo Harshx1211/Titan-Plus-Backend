@@ -52,8 +52,12 @@ class RiskEngine:
         """
         # 1. Map confidence to multiplier
         if isinstance(confidence, (float, int)):
-             mult = 1.0 if confidence > 0.8 else (0.75 if confidence > 0.6 else 0.5)
-             if confidence < 0.20: mult = 0.0
+             # [v9.8] Smooth scaling for lower thresholds
+             if confidence > 0.8: mult = 1.0
+             elif confidence > 0.6: mult = 0.75
+             elif confidence > 0.4: mult = 0.50
+             elif confidence > 0.2: mult = 0.30
+             else: mult = 0.15 # [v9.8] Minimal size for Brain Force signals (will round to 1)
         else:
              # Handle SignalConfidence Enum (Legacy/Hybrid)
              mult = {
