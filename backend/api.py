@@ -582,15 +582,6 @@ def run_engine_loop():
             # v8: Regime Veto (Fix Audit v8 Failure #6)
             live_state.current_regime = strategist.classify_regime(hist_df, breadth=live_state.breadth)
             
-            # Phase 9: Time-Based Institutional Filter
-            now_time = datetime.now().time()
-            lull_start = datetime.strptime(f"{APP_CONFIG['LULL_START_HOUR']}:{APP_CONFIG['LULL_START_MINUTE']:02d}", "%H:%M").time()
-            lull_end = datetime.strptime(f"{APP_CONFIG['LULL_END_HOUR']}:{APP_CONFIG['LULL_END_MINUTE']:02d}", "%H:%M").time()
-            is_lull = lull_start <= now_time <= lull_end
-            if is_lull:
-                pattern_results["score"] *= 0.5
-                live_state.market_message = "INSTITUTIONAL LULL: Low Confidence Zone"
-
             # v8.1: Orthogonal Feature Engineering (Fix Audit v8.1 #1)
             try:
                 # 1. Price Velocity & Variance Gate
@@ -656,8 +647,9 @@ def run_engine_loop():
             # v8.1: Stateless Inference (Phase 28: Now Signal-Aware)
             # [C8 Fix] Calculate intent BEFORE first usage
             # Fix UnboundLocalError: Ensure likely_intent is always defined
-            likely_intent = "BULLISH" if pattern_results and pattern_results.get("score", 0) > 0.6 and curr_strength > 0 else (
-                "BEARISH" if pattern_results and pattern_results.get("score", 0) > 0.6 else None
+            # [v9.8] Aggressive Intent: Use price velocity if patterns are silent
+            likely_intent = "BULLISH" if (pattern_results and pattern_results.get("score", 0) > 0.4 and curr_strength > 0) or price_vel_curr > 0.05 else (
+                "BEARISH" if (pattern_results and pattern_results.get("score", 0) > 0.4 and curr_strength < 0) or price_vel_curr < -0.05 else "BULLISH" # Default to Bullish Bias
             )
 
             decision_id, thoughts = call_brain_safely(
@@ -794,18 +786,35 @@ def run_engine_loop():
                     # Log to Truth Ledger (for Dashboard UI)
                     db.log_outcome(brain_decision_id, "WIN" if is_win else "LOSS", persistence=is_structural)
 
+            # Phase 9: Time-Based Institutional Filter (Relocated v9.8)
+            now_time = datetime.now().time()
+            lull_start = datetime.strptime(f"{APP_CONFIG['LULL_START_HOUR']}:{APP_CONFIG['LULL_START_MINUTE']:02d}", "%H:%M").time()
+            lull_end = datetime.strptime(f"{APP_CONFIG['LULL_END_HOUR']}:{APP_CONFIG['LULL_END_MINUTE']:02d}", "%H:%M").time()
+            is_lull = lull_start <= now_time <= lull_end
+            if is_lull:
+                if "BRAIN_PULL" in pattern_results.get("patterns", []):
+                    live_state.add_thought("LULL_BYPASS", "Institutional Lull: Bypassing for Brain Force.")
+                else:
+                    pattern_results["score"] *= 0.5
+                    live_state.add_thought("LULL", "Score halved due to mid-day lull.")
+
             # 6. Signal Generation
             if pattern_results["score"] > APP_CONFIG["PATTERN_SCORE_THRESHOLD_HIGH"]:
                 detected_patterns = pattern_results.get("patterns", [])
-                signal_type = "BULLISH" if any(p in ["VWAP_CROSSOVER", "HAMMER", "BULLISH_ENGULFING", "CPR_BREAKOUT"] for p in detected_patterns) else "BEARISH"
+                # [v9.8] Robust Intent Matching
+                signal_type = likely_intent if "BRAIN_PULL" in detected_patterns else (
+                    "BULLISH" if any(p in ["VWAP_CROSSOVER", "HAMMER", "BULLISH_ENGULFING", "CPR_BREAKOUT"] for p in detected_patterns) else "BEARISH"
+                )
                 
                 # Guardrail: Avoid duplicate active signals
                 if not any(s.symbol == symbol and s.is_live for s in live_state.active_signals):
                     # Phase 25/27: Hard Veto Gates
                     if is_basis_unstable:
                         logger.warning(f"SIGNAL VETO: Basis Dispersion unstable for {symbol}.")
+                        live_state.add_thought("VETO", f"Basis Unstable for {symbol}")
                     elif is_synthetic:
                         logger.warning(f"SIGNAL VETO: DATA_SYNTHETIC for {symbol}. Blocking execution.")
+                        live_state.add_thought("VETO", f"Data Synthetic for {symbol}")
                         live_state.market_message = f"DATA_OUTAGE: Synthetic Veto Active for {symbol}"
                     else:
                         opt_trade = option_engine.find_executable_option(
