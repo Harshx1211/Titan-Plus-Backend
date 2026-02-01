@@ -726,7 +726,7 @@ def run_engine_loop():
                 if live_state.sector_synergy > 1.0:
                     pattern_results["score"] *= 1.1 # Synergy boost
                 live_state.market_message = "SYNERGY CONFIRMATION: Dual Edge Active"
-            elif pattern_results["score"] < APP_CONFIG["PATTERN_SCORE_THRESHOLD_MEDIUM"] and confidence_boost > 0.50:
+            elif pattern_results["score"] <= APP_CONFIG["PATTERN_SCORE_THRESHOLD_HIGH"] and confidence_boost > 0.50:
                 # [v9.8] Brain Override: Pure Statistical Entry
                 # If chart is quiet but Brain screams "GO", we execute.
                 live_state.market_message = f"BRAIN FORCE: Statistical Alpha ({confidence_boost:.2f})"
