@@ -450,7 +450,11 @@ def run_engine_loop():
                 adx_df = hist_df.ta.adx()
                 if adx_df is not None and 'ADX_14' in adx_df.columns:
                     val = adx_df['ADX_14'].iloc[-1]
-                    adx_val = 25.0 if pd.isna(val) else val
+                    # Paranoid NaN check: pd.isna OR value inequality (standard float nan behavior)
+                    if pd.isna(val) or val != val:
+                        adx_val = 25.0
+                    else:
+                        adx_val = float(val)
                 else:
                     adx_val = 25.0
                 atr_df = hist_df.ta.atr()

@@ -307,9 +307,10 @@ class BrainEngine:
         std = series.std() 
         
         # Assuming basis_hard_floor and basis_min_std, basis_sigma_threshold are defined in config
-        basis_hard_floor = getattr(self.config, 'basis_hard_floor', 0.0)
-        basis_min_std = getattr(self.config, 'basis_min_std', 0.0)
-        basis_sigma_threshold = getattr(self.config, 'basis_sigma_threshold', 0.0)
+        # [v9.5] Fix: Use safe defaults in getattr in case config is stale
+        basis_hard_floor = getattr(self.config, 'basis_hard_floor', 5.0)
+        basis_min_std = getattr(self.config, 'basis_min_std', 0.5)
+        basis_sigma_threshold = getattr(self.config, 'basis_sigma_threshold', 3.0)
 
         abs_diff = abs(current_basis - mean)
         is_abs_unstable = abs_diff > basis_hard_floor
@@ -320,6 +321,9 @@ class BrainEngine:
             sigma_jump = abs_diff / std
             is_sigma_unstable = sigma_jump > basis_sigma_threshold
         
+        # Only flag unstable if basis is NOT near expiration (0.0) -> actually usually < 1.0 is near expiry
+        # But we use < 99.0 to just enable the check generally? 
+        # Original logic: and current_basis < 99.0
         is_unstable = (is_abs_unstable or is_sigma_unstable) and current_basis < 99.0
         
         if is_unstable:
