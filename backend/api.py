@@ -819,7 +819,15 @@ def run_engine_loop():
                             is_synthetic=is_synthetic
                         )
                         
-                        if not opt_trade.get("rejection_reasons"):
+                        if opt_trade.get("rejection_reasons"):
+                             # [v9.8] DEBUG: Log why option failed
+                             reasons = ", ".join(opt_trade.get("rejection_reasons", []))
+                             live_state.add_thought("OPTION_REJECT", f"Execution Failed: {reasons}")
+                             if "LIQUIDITY" in reasons:
+                                 # Fallback: Trying to find *any* option just to prove signal works?
+                                 # For now, just warn.
+                                 logger.warning(f"OPTION VETO: {symbol} rejected due to {reasons}")
+                        else:
                             # [v9.7] Risk-Adjusted Sizing
                             suggested_size = risk_engine.get_suggested_size(
                                 confidence=applied_boost,
@@ -852,8 +860,6 @@ def run_engine_loop():
                                 )
                             except Exception as e:
                                 logger.error(f"TELEGRAM: Failed to send signal: {e}")
-                        else:
-                            logger.warning(f"SIGNAL REJECTED: {opt_trade['rejection_reasons']}")
             
             else:
                 # [v9.1] Sidecar Route for Vetoed Signals
