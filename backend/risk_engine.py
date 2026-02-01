@@ -52,12 +52,12 @@ class RiskEngine:
         """
         # 1. Map confidence to multiplier
         if isinstance(confidence, (float, int)):
-             mult = 1.0 if confidence > 0.9 else (0.75 if confidence > 0.7 else 0.5)
-             if confidence < 0.4: mult = 0.0
+             mult = 1.0 if confidence > 0.8 else (0.75 if confidence > 0.6 else 0.5)
+             if confidence < 0.20: mult = 0.0
         else:
              # Handle SignalConfidence Enum (Legacy/Hybrid)
              mult = {
-                SignalConfidence.LOW: 0.0,
+                SignalConfidence.LOW: 0.1,
                 SignalConfidence.MEDIUM: 0.5,
                 SignalConfidence.HIGH: 0.75,
                 SignalConfidence.EXTREME: 1.0
@@ -80,8 +80,8 @@ class RiskEngine:
 if __name__ == "__main__":
     risk = RiskEngine()
     print(f"Initial Win Streak: {risk.win_streak}")
-    risk.log_result(True)
-    risk.log_result(True)
-    risk.log_result(True)
+    risk.log_trade(True)
+    risk.log_trade(True)
+    risk.log_trade(True)
     print(f"Win Streak after 3 wins: {risk.win_streak}")
     print(f"Suggested Size: {risk.get_suggested_size(SignalConfidence.HIGH)}")
