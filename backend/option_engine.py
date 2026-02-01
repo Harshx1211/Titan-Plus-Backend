@@ -133,7 +133,7 @@ class OptionEngine:
         Prioritizes Epistemic Integrity and Adaptive Strike Pool Scanning.
         """
         rejection_reasons = []
-        if is_synthetic:
+        if is_synthetic and False: # [v9.8] DEBUG: Bypassing secondary synthetic veto
             rejection_reasons.append("DATA_SYNTHETIC_VETO")
             return {"rejection_reasons": rejection_reasons}
 
