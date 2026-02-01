@@ -504,6 +504,11 @@ def run_engine_loop():
                 logger.warning(f"ENGINE: Analysis failed for {symbol}: {e}", exc_info=True)
                 live_state.add_thought("ANALYZE_ERROR", f"Feature analysis crashed for {symbol}. NaN?")
                 continue
+
+            if not pattern_results["patterns"]:
+                # [v9.7] Visibility: Log that we searched but found nothing
+                if now_minute % 5 == 0:
+                    live_state.add_thought("SEARCH", f"Scanning {symbol}... No patterns found.")
                 pattern_results = {"score": 0.0, "patterns": []}
                 macro_bias = 0
                 macro_zones = []
