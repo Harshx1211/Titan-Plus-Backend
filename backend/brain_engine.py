@@ -30,7 +30,7 @@ class BrainConfig:
     window_size_uncertain: int = 200
     
     # Statistical thresholds
-    min_history_bars: int = 12  # Reduced to 1m (12 * 5s) for faster startup
+    min_history_bars: int = 6  # Reduced to 30s (6 * 5s) for instant trading
     variance_floor: float = 1e-6
     z_score_clip: float = 3.0
     sigmoid_scale: float = 1.5
@@ -419,17 +419,15 @@ class BrainEngine:
         # Process cold start
         if not norm_features: 
             self.metrics.cold_starts += 1
-            # [v9.6] Enhanced Transparency: Show warmup progress
+            # [v9.8] ULTRA-FAST WARMUP: Allow trades during accumulation
             max_hist = 0
             for f in self.feature_history:
                 max_hist = max(max_hist, len(self.feature_history[f]))
             
             progress_msg = f"({max_hist}/{self.config.min_history_bars} bars)"
             
-            if self.stage == 1:
-                return 0.5, [f"Cold start: Learning mode {progress_msg}"]
-            else:
-                return 0.0, [f"VETO: Cold start - accumulating history {progress_msg}"]
+            # [v9.8] Neutral boost instead of zero during warmup
+            return 0.5, [f"Brain Warmup progressing {progress_msg}. Using neutral boost."]
         
         # Weighted Scoring
         weighted_score = 0.0
