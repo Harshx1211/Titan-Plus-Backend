@@ -448,7 +448,11 @@ def run_engine_loop():
                 
                 # Phase 26: Cache Indicators once per loop (v9.5.5: Added guards)
                 adx_df = hist_df.ta.adx()
-                adx_val = adx_df['ADX_14'].iloc[-1] if adx_df is not None and 'ADX_14' in adx_df.columns else 25.0
+                if adx_df is not None and 'ADX_14' in adx_df.columns:
+                    val = adx_df['ADX_14'].iloc[-1]
+                    adx_val = 25.0 if pd.isna(val) else val
+                else:
+                    adx_val = 25.0
                 atr_df = hist_df.ta.atr()
                 atr_val = atr_df.iloc[-1] if atr_df is not None and not atr_df.empty else 0.0
 
@@ -463,8 +467,19 @@ def run_engine_loop():
                 if now_minute % 5 == 0 or not live_state.supports.get(symbol):
                     try:
                         sr_levels = sr_engine.find_pivot_levels(hist_df, lookback=10)
-                        live_state.supports[symbol] = [s['level'] for s in sr_levels['supports']]
-                        live_state.resistances[symbol] = [r['level'] for r in sr_levels['resistances']]
+                        
+                        # Extract levels
+                        s_levels = [s['level'] for s in sr_levels['supports']]
+                        r_levels = [r['level'] for r in sr_levels['resistances']]
+                        
+                        # [Fallback] If no pivots found (Cold Start), use Period High/Low
+                        if not s_levels and not hist_df.empty:
+                            s_levels = [hist_df.low.min()]
+                        if not r_levels and not hist_df.empty:
+                            r_levels = [hist_df.high.max()]
+                            
+                        live_state.supports[symbol] = s_levels
+                        live_state.resistances[symbol] = r_levels
                     except Exception as e:
                         logger.warning(f"S/R Calc Failed for {symbol}: {e}")
 
