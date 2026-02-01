@@ -36,11 +36,11 @@ class BrainConfig:
     sigmoid_scale: float = 1.5
     
     # Confidence thresholds
-    threshold_trending: float = 0.60
-    threshold_sideways: float = 0.75
-    threshold_sideways_strong: float = 0.70 # More lenient in high quality
-    threshold_sideways_weak: float = 0.85   # Very strict in chop
-    threshold_uncertain: float = 0.50       # [v9.7] Aggressive drop to 0.50 for high volatility
+    threshold_trending: float = 0.20
+    threshold_sideways: float = 0.20
+    threshold_sideways_strong: float = 0.20 
+    threshold_sideways_weak: float = 0.20   
+    threshold_uncertain: float = 0.20       
     
     # Skirmisher evaluation (v2.1)
     min_risk_reward: float = 1.5

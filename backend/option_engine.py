@@ -148,8 +148,8 @@ class OptionEngine:
         # Start with ATM pool [ATM-1, ATM, ATM+1]
         # Expand if liquidity is below 'Dominance Threshold'
         option_type = "CE" if signal_type == "BULLISH" else "PE"
-        LIQUIDITY_DOMINANCE_THRESHOLD = 100000 # [v9.8] Dropped to 100k for ultra-responsive testing 
-        max_spread_pct = 0.25 # [v9.8] increased for testing
+        LIQUIDITY_DOMINANCE_THRESHOLD = 1000 # [v9.8] Dropped to 1k for total frequency 
+        max_spread_pct = 0.50 # [v9.8] increased for testing
         
         selected_strike = None
         base_premium = 0
