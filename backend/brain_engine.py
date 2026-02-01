@@ -30,7 +30,7 @@ class BrainConfig:
     window_size_uncertain: int = 200
     
     # Statistical thresholds
-    min_history_bars: int = 50
+    min_history_bars: int = 12  # Reduced to 1m (12 * 5s) for faster startup
     variance_floor: float = 1e-6
     z_score_clip: float = 3.0
     sigmoid_scale: float = 1.5
@@ -40,7 +40,7 @@ class BrainConfig:
     threshold_sideways: float = 0.75
     threshold_sideways_strong: float = 0.70 # More lenient in high quality
     threshold_sideways_weak: float = 0.85   # Very strict in chop
-    threshold_uncertain: float = 0.90
+    threshold_uncertain: float = 0.75       # [v9.6] Lowered from 0.90 to capture volatility
     
     # Skirmisher evaluation (v2.1)
     min_risk_reward: float = 1.5
@@ -419,10 +419,17 @@ class BrainEngine:
         # Process cold start
         if not norm_features: 
             self.metrics.cold_starts += 1
+            # [v9.6] Enhanced Transparency: Show warmup progress
+            max_hist = 0
+            for f in self.feature_history:
+                max_hist = max(max_hist, len(self.feature_history[f]))
+            
+            progress_msg = f"({max_hist}/{self.config.min_history_bars} bars)"
+            
             if self.stage == 1:
-                return 0.5, ["Cold start: Neutral bias (Passive mode)."]
+                return 0.5, [f"Cold start: Learning mode {progress_msg}"]
             else:
-                return 0.0, ["VETO: Cold start - history required."]
+                return 0.0, [f"VETO: Cold start - accumulating history {progress_msg}"]
         
         # Weighted Scoring
         weighted_score = 0.0
