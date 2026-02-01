@@ -66,7 +66,7 @@ class LiveState:
         self.prices = {"NIFTY": 25000.0, "SENSEX": 81500.0}
         self.max_pain = {"NIFTY": 0.0, "SENSEX": 0.0}
         self.option_battles = {"NIFTY": [], "SENSEX": []}
-        self.option_battles = {"NIFTY": [], "SENSEX": []}
+
         self.option_chains = {"NIFTY": [], "SENSEX": []}
         self.supports = {"NIFTY": [], "SENSEX": []}
         self.resistances = {"NIFTY": [], "SENSEX": []}
@@ -285,7 +285,7 @@ async def get_state():
         max_pain=live_state.max_pain,
         option_battles=live_state.option_battles,
         option_chains=live_state.option_chains,
-        option_chains=live_state.option_chains,
+
         iv_skew=live_state.iv_skew,
         supports=live_state.supports,
         resistances=live_state.resistances,
