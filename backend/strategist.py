@@ -154,6 +154,39 @@ class MarketStrategist:
             
         return False
 
+    def is_trap(self, df: pd.DataFrame, market_data: Any) -> Tuple[bool, str]:
+        """
+        Detects Institutional Traps (Price/Momentum Divergence).
+        [v2.0.0] High-Conviction Veto Gate.
+        """
+        if len(df) < 20: return False, "STABILIZING"
+        
+        # 1. RSI-Price Trap (Bull Trap)
+        # Price is high but RSI is collapsing
+        rsi = df.ta.rsi(length=14)
+        if rsi is not None and len(rsi) > 5:
+            curr_rsi = rsi.iloc[-1]
+            prev_rsi = rsi.iloc[-5]
+            price_delta = (df['close'].iloc[-1] - df['close'].iloc[-5]) / df['close'].iloc[-5]
+            
+            # Rising Price + Falling RSI = Bull Trap
+            if price_delta > 0.005 and curr_rsi < prev_rsi - 10:
+                return True, "BULL_TRAP: Momentum Exhaustion"
+            
+            # Falling Price + Rising RSI = Bear Trap
+            if price_delta < -0.005 and curr_rsi > prev_rsi + 10:
+                return True, "BEAR_TRAP: Stealth Accumulation"
+                
+        # 2. Volume Trap
+        # Price breakout on much lower volume than average
+        if 'volume' in df.columns:
+            avg_vol = df['volume'].rolling(20).mean().iloc[-2]
+            curr_vol = df['volume'].iloc[-1]
+            if curr_vol < 0.5 * avg_vol and abs(df['close'].iloc[-1] - df['open'].iloc[-1]) > (df['high'].mean() * 0.002):
+                return True, "LOW_VOLUME_TRAP"
+                
+        return False, "STABLE"
+
     def get_macro_bias(self, df_macro: pd.DataFrame) -> str:
         """
         Calculates the trend bias on a higher timeframe.

@@ -48,7 +48,7 @@ class BrainConfig:
     skirmisher_quality_floor: float = 0.6
     
     # IV Skew thresholds
-    iv_skew_high: float = 1.3
+    iv_skew_high: float = 2.5 # [v9.8] Relaxed to allow trades during extreme hedging periods
     iv_skew_bullish_discount: float = 0.7  # Reduce to 70% in bullish + high skew
     iv_skew_bearish_boost: float = 1.2     # Increase to 120% in bearish + high skew
     
