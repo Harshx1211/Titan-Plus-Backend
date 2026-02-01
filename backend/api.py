@@ -376,6 +376,9 @@ def run_engine_loop():
             # Rotate through symbols
             symbol = live_state.symbols[live_state.current_symbol_idx]
             live_state.current_symbol_idx = (live_state.current_symbol_idx + 1) % len(live_state.symbols)
+            
+            # [v9.8] Latency Pulse: Update timestamp per symbol to keep dashboard alive
+            live_state.last_update = datetime.now(timezone.utc)
 
             # 1. Fetch Data (Priority Ticker Update)
             detected_patterns = []
@@ -893,7 +896,7 @@ def run_engine_loop():
 
             
             # 7. Rotation & Sleep
-            live_state.last_update = datetime.now(timezone.utc)
+            # live_state.last_update = datetime.now(timezone.utc) # Moved to start of loop for accuracy
             
             # [v9.5] Memory Safety: Cap active signals to last 20 to prevent memory leak
             if len(live_state.active_signals) > APP_CONFIG["SIGNAL_ACTIVE_CAP"]:
