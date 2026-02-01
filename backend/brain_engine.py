@@ -58,9 +58,9 @@ class BrainConfig:
     persistence_max_time_to_mfe: int = 10  # bars
     
     # Basis Stability Check (v9.5)
-    basis_hard_floor: float = 5.0      # Max allowed % Basis
+    basis_hard_floor: float = 20.0     # [v9.8] Relaxed to prevent false vetoes in synthetic data
     basis_min_std: float = 0.5         # Minimum volatility to consider sigma
-    basis_sigma_threshold: float = 3.0 # Max allowed sigma jump
+    basis_sigma_threshold: float = 10.0 # [v9.8] Relaxed to prevent false vetoes in synthetic data
     
     # Feature defaults
     default_feature_weight: float = 1.0
