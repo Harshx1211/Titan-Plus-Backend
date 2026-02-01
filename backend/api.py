@@ -514,6 +514,10 @@ def run_engine_loop():
                 macro_zones = []
             
             # Phase 14: Option Chain X-Ray (Partitioned)
+            chain_df = pd.DataFrame()
+            is_synthetic = False
+            is_basis_unstable = False
+
             try:
                 # Phase 27: Handling (df, synthetic) return
                 chain_df, is_synthetic = data_provider.get_option_chain(symbol)
@@ -533,9 +537,9 @@ def run_engine_loop():
                         pattern_results["score"] *= 1.2
                         live_state.market_message = f"GEX/PAIN CONFLUENCE [{symbol}]: Institutional Gravity"
             except Exception as e:
-                logger.warning(f"ENGINE: Option chain failed for {symbol}: {e}", exc_info=True)
+                logger.warning(f"ENGINE: Option chain failed for {symbol}: {e}")
                 live_state.add_thought("CHAIN_ERROR", f"Option chain fetch failed for {symbol}.")
-                continue
+                # Don't continue; let it attempt a TRACE or BRAIN FORCE
                 chain_df, is_synthetic = pd.DataFrame(), True
 
             # Phase 11/30: Inter-Market Synergy (BankNifty vs Nifty)
@@ -629,6 +633,12 @@ def run_engine_loop():
                 
                 oi_res = oi_change - (oi_beta * price_vel_curr)
                 basis_res = raw_basis - (basis_beta * price_vel_curr)
+                
+                # Check for Basis Stability using Brain logic
+                basis_stats = brain.check_basis_stability(raw_basis)
+                is_basis_unstable = basis_stats["is_unstable"]
+                if is_basis_unstable:
+                    live_state.add_thought("BASIS_VETO", f"Basis Unstable for {symbol}: {basis_stats['reason']}")
                 
                 live_state.prev_oi[symbol] = market_data.oi
                 live_state.prev_spot = market_data.spot_price
