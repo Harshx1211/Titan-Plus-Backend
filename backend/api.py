@@ -290,7 +290,7 @@ async def get_state():
         resets_today=live_state.resets_today,
         gex_bias=live_state.gex_bias,
         sector_synergy=live_state.sector_synergy,
-        thought_logs=live_state.thought_logs[-10:], # Last 10 thoughts
+        thought_logs=live_state.thought_logs[-100:], # [v9.8] Increased for TRACE visibility
         is_learning=live_state.is_learning,
         market_open=True
     )
@@ -423,18 +423,25 @@ def run_engine_loop():
                 continue
 
             # 2. Triangulation (Sentinel v2 with VIX Adaptivity)
+            # This checks if the Spot and Future prices are moving together.
+            # If they diverge too much, it indicates a 'Data Trap' and we block trading.
             live_state.integrity = sentinel.check_integrity(
                 market_data.spot_price, 
                 market_data.future_price,
                 vix=live_state.vix
             )
+            if live_state.integrity != DivergenceType.NONE:
+                live_state.add_thought("SENTINEL", f"Spot-Future Divergence: {live_state.integrity.value}. Cooling down.")
 
             # Phase 25/26/27/28: Spot-Futures Basis Stability Validation (Unified)
             basis = abs(market_data.future_price - market_data.spot_price) / market_data.spot_price * 100
             
             # Brain now owns the Epistemic State
+            # Basis stability ensures we aren't trading in a 'Flash Crash' or 'Liquidity Hole'
             basis_gate = brain.check_basis_stability(basis)
             is_basis_unstable = basis_gate["is_unstable"]
+            if is_basis_unstable:
+                live_state.add_thought("STABILITY", f"Basis unstable: {basis_gate['reason']}. Skipping entry.")
             
             if is_basis_unstable:
                 live_state.market_message = f"BASIS META-VETO: {basis_gate['reason']} ({basis_gate.get('sigma_jump', 0):.1f}σ)"
@@ -493,6 +500,10 @@ def run_engine_loop():
                 macro_zones = pattern_engine.detect_macro_zones(macro_df)
                 
                 # 4. Pattern Recognition (Now with MTF Boost, Advanced Patterns, and Macro Zones)
+                # 3. Strategy Analysis (The 'Chart' Logic)
+                # PatternEngine looks for VWAP crossovers, Hammer candles, and CPR breakouts.
+                pattern_results = pattern_engine.analyze(hist_df, market_data)
+                live_state.add_thought("ANALYSIS", f"Chart Pattern Score: {pattern_results['score']:.2f}. Found: {', '.join(pattern_results.get('patterns', ['NONE']))}")
                 pattern_results = pattern_engine.get_signal_confirmation(
                     hist_df, 
                     macro_bias=macro_bias, 
@@ -558,7 +569,16 @@ def run_engine_loop():
                     if not is_aligned:
                         pattern_results["score"] *= 0.6
                         live_state.market_message = f"SECTOR DIVERGENCE: {symbol} vs {other_sym} Conflict"
-            except Exception:
+                
+                # 4. Trap Detection (The 'Pulse' Logic)
+                # Strategist checks if the current move is a 'Trap' or 'True Momentum'.
+                is_trap, trap_reason = strategist.is_trap(hist_df, market_data)
+                if is_trap:
+                    live_state.add_thought("TRAP_WARNING", f"Potential Trap Detected: {trap_reason}. Reducing Score.")
+                    pattern_results["score"] *= 0.5
+            except Exception as e:
+                logger.warning(f"SYNERGY: Block failed: {e}")
+                pass
                 pass
 
             # Phase 9/27/28: VIX & IV Skew Tracking (Unified)
@@ -659,6 +679,7 @@ def run_engine_loop():
             likely_intent = "BULLISH" if (pattern_results and pattern_results.get("score", 0) > 0.4 and curr_strength > 0) or price_vel_curr > 0.05 else (
                 "BEARISH" if (pattern_results and pattern_results.get("score", 0) > 0.4 and curr_strength < 0) or price_vel_curr < -0.05 else "BULLISH" # Default to Bullish Bias
             )
+            live_state.add_thought("INTENT", f"Bias: {likely_intent} (Strength: {curr_strength:.2f}, Velocity: {price_vel_curr:.2f})")
 
             decision_id, thoughts = call_brain_safely(
                 "DECIDE",
@@ -727,6 +748,7 @@ def run_engine_loop():
             elif pattern_results["score"] <= APP_CONFIG["PATTERN_SCORE_THRESHOLD_HIGH"] and confidence_boost > 0.50:
                 # [v9.8] Brain Override: Pure Statistical Entry
                 # If chart is quiet but Brain screams "GO", we execute.
+                live_state.add_thought("BRAIN_FORCE", f"Chart quiet ({pattern_results['score']:.2f}) but Brain high ({confidence_boost:.2f}). Triggering Force-Approval.")
                 live_state.market_message = f"BRAIN FORCE: Statistical Alpha ({confidence_boost:.2f})"
                 pattern_results["score"] = 0.95 # Force approval
                 pattern_results["patterns"] = pattern_results.get("patterns", []) + ["BRAIN_PULL"]
@@ -826,7 +848,8 @@ def run_engine_loop():
                         logger.warning(f"SIGNAL VETO: DATA_SYNTHETIC for {symbol}. Blocking execution.")
                         live_state.add_thought("VETO", f"Data Synthetic for {symbol}")
                         live_state.market_message = f"DATA_OUTAGE: Synthetic Veto Active for {symbol}"
-                    else:
+                        # Phase 10: Option Selection (The 'Execution' Logic)
+                        # We don't just trade the index; we find the most liquid and profitable Option strike.
                         live_state.add_thought("TRACE", f"Gate 3 (Option Scanning): Finding strike for {signal_type}...")
                         opt_trade = option_engine.find_executable_option(
                             symbol, 
