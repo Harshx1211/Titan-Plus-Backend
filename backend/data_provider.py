@@ -424,11 +424,11 @@ class DataProvider:
             base_price = 81500.0 if symbol == "SENSEX" else 24500.0
             data = {
                 'timestamp': pd.date_range(end=datetime.now(), periods=100, freq='h' if interval == "60minute" else '5min'),
-                'open': [base_price] * 100,
-                'high': [base_price + 50] * 100,
-                'low': [base_price - 50] * 100,
-                'close': [base_price] * 100,
-                'volume': [1000] * 100
+                'open': [base_price + random.uniform(-10, 10) for _ in range(100)],
+                'high': [base_price + 20 for _ in range(100)],
+                'low': [base_price - 20 for _ in range(100)],
+                'close': [base_price + (i * 0.5) + random.uniform(-5, 5) for i in range(100)], # [v9.8] Simulated Trend
+                'volume': [random.randint(500, 2000) for _ in range(100)]
             }
             df = pd.DataFrame(data)
             df.set_index('timestamp', inplace=True)
