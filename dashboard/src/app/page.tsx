@@ -72,6 +72,8 @@ interface SystemState {
   sector_synergy: number;
   active_signals: TradeSignal[];
   index_strengths?: Record<string, number>;
+  supports?: Record<string, number[]>;
+  resistances?: Record<string, number[]>;
   thought_logs: Array<{ timestamp: string; type: string; msg: string }>;
   is_learning: boolean;
 }
@@ -332,23 +334,52 @@ export default function TitanDashboard() {
 
         {/* Market Overview */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-4 flex items-center justify-between">
-            <div>
-              <span className="text-xs font-mono text-slate-400 uppercase tracking-wider block mb-1">NIFTY 50</span>
-              <span className="text-2xl font-bold text-white font-mono">
-                {state?.prices?.["NIFTY"] ? state.prices["NIFTY"].toLocaleString('en-IN') : '--'}
-              </span>
+          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-4 flex flex-col justify-between gap-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs font-mono text-slate-400 uppercase tracking-wider block mb-1">NIFTY 50</span>
+                <span className="text-2xl font-bold text-white font-mono">
+                  {state?.prices?.["NIFTY"] ? state.prices["NIFTY"].toLocaleString('en-IN') : '--'}
+                </span>
+              </div>
+              <Activity className="w-5 h-5 text-blue-400" />
             </div>
-            <Activity className="w-5 h-5 text-blue-400" />
+            {state?.supports?.["NIFTY"] && (
+              <div className="flex gap-3 text-[11px] font-mono mt-1 border-t border-slate-800 pt-2">
+                <div className="flex flex-col">
+                  <span className="text-emerald-500 text-[9px] uppercase">Support</span>
+                  <span className="text-emerald-400">{state.supports["NIFTY"][0]?.toLocaleString('en-IN') || '--'}</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-rose-500 text-[9px] uppercase">Resistance</span>
+                  <span className="text-rose-400">{state.resistances?.["NIFTY"]?.[0]?.toLocaleString('en-IN') || '--'}</span>
+                </div>
+              </div>
+            )}
           </div>
-          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-4 flex items-center justify-between">
-            <div>
-              <span className="text-xs font-mono text-slate-400 uppercase tracking-wider block mb-1">SENSEX</span>
-              <span className="text-2xl font-bold text-white font-mono">
-                {state?.prices?.["SENSEX"] ? state.prices["SENSEX"].toLocaleString('en-IN') : '--'}
-              </span>
+
+          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-4 flex flex-col justify-between gap-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs font-mono text-slate-400 uppercase tracking-wider block mb-1">SENSEX</span>
+                <span className="text-2xl font-bold text-white font-mono">
+                  {state?.prices?.["SENSEX"] ? state.prices["SENSEX"].toLocaleString('en-IN') : '--'}
+                </span>
+              </div>
+              <Activity className="w-5 h-5 text-purple-400" />
             </div>
-            <Activity className="w-5 h-5 text-purple-400" />
+            {state?.supports?.["SENSEX"] && (
+              <div className="flex gap-3 text-[11px] font-mono mt-1 border-t border-slate-800 pt-2">
+                <div className="flex flex-col">
+                  <span className="text-emerald-500 text-[9px] uppercase">Support</span>
+                  <span className="text-emerald-400">{state.supports["SENSEX"][0]?.toLocaleString('en-IN') || '--'}</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-rose-500 text-[9px] uppercase">Resistance</span>
+                  <span className="text-rose-400">{state.resistances?.["SENSEX"]?.[0]?.toLocaleString('en-IN') || '--'}</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

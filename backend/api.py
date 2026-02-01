@@ -23,6 +23,7 @@ from trap_hunter import TrapHunter
 from skirmisher_v2 import SkirmisherV2
 from telegram_notifier import TelegramNotifier
 from database import DatabaseManager
+from support_resistance import SupportResistanceEngine
 import asyncio
 import threading
 import os
@@ -65,7 +66,10 @@ class LiveState:
         self.prices = {"NIFTY": 25000.0, "SENSEX": 81500.0}
         self.max_pain = {"NIFTY": 0.0, "SENSEX": 0.0}
         self.option_battles = {"NIFTY": [], "SENSEX": []}
+        self.option_battles = {"NIFTY": [], "SENSEX": []}
         self.option_chains = {"NIFTY": [], "SENSEX": []}
+        self.supports = {"NIFTY": [], "SENSEX": []}
+        self.resistances = {"NIFTY": [], "SENSEX": []}
         
         # v8.1: Statistical Discipline
         self.resets_today = 0
@@ -107,6 +111,7 @@ session_auditor = SessionAuditor()
 sentinel = DataSentinel()
 strategist = MarketStrategist()
 skirmisher = SkirmisherV2()
+sr_engine = SupportResistanceEngine()
 brain = BrainEngine(stage=3) # Stage 3: Full Filter Mode
 pattern_engine = PatternEngine()
 risk_engine = RiskEngine()
@@ -177,6 +182,8 @@ class SystemState(BaseModel):
     option_battles: Dict[str, List[Dict]]
     option_chains: Dict[str, List[Dict]]
     iv_skew: Dict[str, float]
+    supports: Dict[str, List[float]]
+    resistances: Dict[str, List[float]]
     resets_today: int
     gex_bias: Dict[str, float]
     sector_synergy: float
@@ -257,7 +264,9 @@ async def get_state():
             sector_synergy=0.0,
             thought_logs=[],
             is_learning=False,
-            market_open=False
+            market_open=False,
+            supports={"NIFTY": [], "SENSEX": []},
+            resistances={"NIFTY": [], "SENSEX": []}
         )
     
     # Market is open - return live data
@@ -276,7 +285,10 @@ async def get_state():
         max_pain=live_state.max_pain,
         option_battles=live_state.option_battles,
         option_chains=live_state.option_chains,
+        option_chains=live_state.option_chains,
         iv_skew=live_state.iv_skew,
+        supports=live_state.supports,
+        resistances=live_state.resistances,
         resets_today=live_state.resets_today,
         gex_bias=live_state.gex_bias,
         sector_synergy=live_state.sector_synergy,
@@ -445,6 +457,16 @@ def run_engine_loop():
                 # Calculate simple strength
                 curr_strength = (market_data.spot_price - hist_df.open.iloc[0]) / hist_df.open.iloc[0] * 100
                 live_state.index_strengths[symbol] = curr_strength
+
+                # [v9.9.5] Support & Resistance Analysis (Every 5 mins or on first run)
+                now_minute = datetime.now().minute
+                if now_minute % 5 == 0 or not live_state.supports.get(symbol):
+                    try:
+                        sr_levels = sr_engine.find_pivot_levels(hist_df, lookback=10)
+                        live_state.supports[symbol] = [s['level'] for s in sr_levels['supports']]
+                        live_state.resistances[symbol] = [r['level'] for r in sr_levels['resistances']]
+                    except Exception as e:
+                        logger.warning(f"S/R Calc Failed for {symbol}: {e}")
 
                 # Macro Timeframe Alignment (1h)
                 macro_df = data_provider.get_history(symbol, interval="60minute")
