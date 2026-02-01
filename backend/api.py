@@ -1,4 +1,5 @@
 from fastapi import FastAPI, BackgroundTasks
+import random
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Optional, Tuple
@@ -1002,7 +1003,6 @@ def run_engine_loop():
                 live_state.active_signals = live_state.active_signals[-20:]
                 
             # [v9.5.7] Stealth Polling: 3s Base + 0-2s Jitter
-            import random
             sleep_time = APP_CONFIG["ENGINE_POLLING_BASE_SECONDS"] + random.uniform(0, APP_CONFIG["ENGINE_POLLING_JITTER_SECONDS"])
             time.sleep(sleep_time)
         except Exception as e:

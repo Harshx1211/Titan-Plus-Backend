@@ -1,4 +1,5 @@
 import logging
+import random
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import Optional, Dict
@@ -88,7 +89,6 @@ class DataProvider:
         # [v9.5.7] Stealth & Optimization
         self._expiry_cache = {} # {symbol: [expiries, timestamp]}
         self._consecutive_public_failures = 0
-        import random
         self._random = random.Random()
         
         # [v9.6.0] Shoonya Integration
@@ -349,7 +349,6 @@ class DataProvider:
             )
         except Exception as e:
             logger.warning(f"DATA: All fetch methods failed for {symbol}. Using structural fallback.")
-            import random
             # Last resort: Structural placeholders to keep UI alive
             base = 81500.0 if symbol == "SENSEX" else (52000.0 if symbol == "BANKNIFTY" else 24500.0)
             spot = base + random.uniform(-10, 10)
@@ -464,7 +463,6 @@ class DataProvider:
             pass
 
         # Fallback to randomized but plausible breadth
-        import random
         advances = random.randint(20, 35) if symbol == "NIFTY" else random.randint(12, 18)
         declines = (50 if symbol == "NIFTY" else 30) - advances
         return {"advances": advances, "declines": declines}
@@ -543,7 +541,6 @@ class DataProvider:
             spot = self.get_market_snapshot(symbol).spot_price
             base_strike = round(spot / 50) * 50
             strikes = [base_strike + i*50 for i in range(-5, 6)]
-            import random
             data = {
                 'strike': strikes,
                 'call_oi': [random.randint(5000, 50000) for _ in strikes],

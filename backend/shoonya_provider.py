@@ -1,4 +1,6 @@
 import logging
+import random
+import string
 import os
 import pyotp
 import time
@@ -21,8 +23,6 @@ class ShoonyaProvider:
         self.totp_secret = os.getenv("SHOONYA_TOTP_SECRET")
         
         # [v9.6.5] Unique Identity: Randomize IMEI suffix to prevent session collisions
-        import random
-        import string
         suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
         raw_imei = os.getenv("SHOONYA_IMEI") or os.getenv("SHOONYA_INEI") or 'ab234'
         self.imei = f"{raw_imei}_{suffix}"
