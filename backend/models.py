@@ -51,6 +51,11 @@ class TradeSignal(BaseModel):
     premium_target: Optional[float] = None   # Target @ 190
     strike: Optional[int] = None
     option_type: Optional[str] = None        # CE or PE
+    quantity: int = 1                        # [v9.8] Added missing quantity field
+    logic: Optional[str] = None              # [v9.8] Added missing logic field
+    selection_logic: Optional[str] = None    # [v9.8] Added to prevent Pydantic mismatch
+    days_to_expiry: Optional[int] = None     # [v9.8] Added to prevent Pydantic mismatch
+    rejection_reasons: List[str] = []        # [v9.8] Added to prevent Pydantic mismatch
     
     # Phase 20: Performance & Actionability (Audit v6)
     decision_id: Optional[str] = None         # Immutable Causal Link
@@ -59,6 +64,9 @@ class TradeSignal(BaseModel):
     time_to_mfe: float = 0.0  
     spread_at_entry: float = 0.0 
     logic_version: str = "v9.4.0"
+
+    class Config:
+        extra = "allow" # [v9.8] Safety gate: allow extra fields from engines
 
 class DecisionObject(BaseModel):
     """

@@ -253,12 +253,12 @@ class OptionEngine:
         target_pct = max(0.10, min(0.65, target_pct))
         
         return {
-            "option_symbol": f"{symbol} {selected_strike} {option_type}",
             "strike": selected_strike,
-            "option_type": option_type,
+            "option_symbol": f"{symbol} {selected_strike} {option_type}", # Standard format
             "premium_entry": float(base_premium),
-            "premium_sl": round(base_premium * 0.88, 1), 
-            "premium_target": round(base_premium * (1 + target_pct), 1),
+            "premium_sl": round(base_premium * 0.8, 2), # 20% Option SL Fallback
+            "premium_target": round(base_premium * 1.5, 2), # 50% Option Target Fallback
+            "option_type": option_type,
             "selection_logic": selection_logic,
             "days_to_expiry": days_to_expiry,
             "rejection_reasons": []
