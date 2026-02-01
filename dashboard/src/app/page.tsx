@@ -647,7 +647,8 @@ export default function TitanDashboard() {
                       <div className="flex items-start gap-2 mb-2">
                         <span className={`px-2 py-0.5 rounded text-xs font-mono uppercase tracking-wider ${thought.type === 'INFO' ? 'bg-cyan-500/10 text-cyan-400' :
                           thought.type === 'WARN' ? 'bg-amber-500/10 text-amber-400' :
-                            'bg-rose-500/10 text-rose-400'
+                            thought.type === 'TRACE' ? 'bg-purple-500/10 text-purple-400' :
+                              'bg-rose-500/10 text-rose-400'
                           }`}>
                           {thought.type}
                         </span>
