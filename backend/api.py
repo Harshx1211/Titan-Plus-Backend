@@ -798,6 +798,7 @@ def run_engine_loop():
                     live_state.add_thought("LULL", "Score halved due to mid-day lull.")
 
             # 6. Signal Generation
+            live_state.add_thought("TRACE", f"Gate 1 (Score check): {pattern_results['score']:.2f} vs {APP_CONFIG['PATTERN_SCORE_THRESHOLD_HIGH']:.2f}")
             if pattern_results["score"] > APP_CONFIG["PATTERN_SCORE_THRESHOLD_HIGH"]:
                 detected_patterns = pattern_results.get("patterns", [])
                 # [v9.8] Robust Intent Matching
@@ -806,6 +807,8 @@ def run_engine_loop():
                 )
                 
                 # Guardrail: Avoid duplicate active signals
+                active_count = sum(1 for s in live_state.active_signals if s.is_live)
+                live_state.add_thought("TRACE", f"Gate 2 (Duplicate check): {active_count} active signals found.")
                 if not any(s.symbol == symbol and s.is_live for s in live_state.active_signals):
                     # Phase 25/27: Hard Veto Gates
                     if is_basis_unstable:
@@ -816,6 +819,7 @@ def run_engine_loop():
                         live_state.add_thought("VETO", f"Data Synthetic for {symbol}")
                         live_state.market_message = f"DATA_OUTAGE: Synthetic Veto Active for {symbol}"
                     else:
+                        live_state.add_thought("TRACE", f"Gate 3 (Option Scanning): Finding strike for {signal_type}...")
                         opt_trade = option_engine.find_executable_option(
                             symbol, 
                             market_data.spot_price, 
@@ -836,6 +840,7 @@ def run_engine_loop():
                                  # For now, just warn.
                                  logger.warning(f"OPTION VETO: {symbol} rejected due to {reasons}")
                         else:
+                            live_state.add_thought("TRACE", f"Gate 4 (SUCCESS): Executing {symbol} trade!")
                             # [v9.7] Risk-Adjusted Sizing
                             suggested_size = risk_engine.get_suggested_size(
                                 confidence=applied_boost,
