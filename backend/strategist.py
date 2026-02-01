@@ -1,6 +1,6 @@
 import pandas as pd
 import pandas_ta as ta
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 import logging
 from models import Regime
