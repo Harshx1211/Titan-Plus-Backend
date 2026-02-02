@@ -1,6 +1,5 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../../tailwind.config.ts";
 
 :root {
   --background: 2, 2, 4;
@@ -150,10 +149,7 @@ html {
 
   /* Button styles with better touch targets */
   .btn-primary {
-    @apply px-6 py-3 bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-white font-bold rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl active:scale-95 min-h-[44px]
-    /* Minimum touch target size */
-    touch-manipulation;
-    /* Improves mobile responsiveness */
+    @apply px-6 py-3 bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-white font-bold rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl active:scale-95 min-h-[44px] touch-manipulation;
   }
 
   .btn-secondary {
