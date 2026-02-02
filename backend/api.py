@@ -74,7 +74,7 @@ class LiveState:
         
         # v8.1: Statistical Discipline
         self.resets_today = 0
-        self.last_reset_time = datetime.now()
+        self.last_reset_time = datetime.now(timezone.utc)  # FIX: Use timezone-aware
         self.beta_history = {"OI": [], "BASIS": []}
         self.iv_skew = {"NIFTY": 1.0, "SENSEX": 1.0, "BANKNIFTY": 1.0}
         self.gex_bias = {"NIFTY": 0.0, "SENSEX": 0.0}
@@ -769,7 +769,11 @@ def run_engine_loop():
                 price_delta = (market_data.spot_price - sig.entry_price) if "BULLISH" in sig.reasoning else (sig.entry_price - market_data.spot_price)
                 if price_delta > sig.mfe:
                     sig.mfe = price_delta
-                    sig.time_to_mfe = (datetime.now() - sig.timestamp).total_seconds()
+                    # Ensure signal timestamp is timezone-aware
+                    if sig.timestamp.tzinfo is None:
+                        sig.timestamp = sig.timestamp.replace(tzinfo=timezone.utc)
+                    # FIX: Both datetime objects are now timezone-aware
+                    sig.time_to_mfe = (datetime.now(timezone.utc) - sig.timestamp).total_seconds()
                 
                 price_adverse = (sig.entry_price - market_data.spot_price) if "BULLISH" in sig.reasoning else (market_data.spot_price - sig.entry_price)
                 if price_adverse > sig.mae: sig.mae = price_adverse
@@ -819,7 +823,10 @@ def run_engine_loop():
                         risk_engine.log_trade(is_win)
                     
                     # Log to Truth Ledger (for Dashboard UI)
-                    db.log_outcome(brain_decision_id, "WIN" if is_win else "LOSS", persistence=is_structural)
+                    try:
+                        db.log_outcome(brain_decision_id, "WIN" if is_win else "LOSS", persistence=is_structural)
+                    except Exception as e:
+                        logger.error(f"Failed to log outcome to DB: {e}")
 
             # Phase 9: Time-Based Institutional Filter (Relocated v9.8)
             now_time = datetime.now().time()
@@ -889,9 +896,9 @@ def run_engine_loop():
                                 confidence=SignalConfidence.HIGH if pattern_results["score"] > 0.9 else SignalConfidence.MEDIUM,
                                 regime=live_state.current_regime,
                                 reasoning=f"{signal_type} | {', '.join(detected_patterns)}",
-                                timestamp=datetime.now(timezone.utc),
+                                timestamp=datetime.now(timezone.utc),  # FIX: Timezone-aware
                                 decision_id=decision_id,
-                                logic_version="v8.5.0",
+                                logic_version="v8.5.1",
                                 spread_at_entry=abs(market_data.future_price - market_data.spot_price),
                                 quantity=suggested_size, # Applied Risk logic
                                 **opt_trade
@@ -936,12 +943,12 @@ def run_engine_loop():
                              confidence=SignalConfidence.MEDIUM,
                              regime=Regime.SIDEWAYS, # Traps usually in sideways/confused interaction
                              reasoning=f"SIDECAR: {sidecar_decision['reason']}",
-                             timestamp=datetime.now(timezone.utc),
-                             decision_id=trade_id,
-                             logic_version="v9.1_SIDECAR",
-                             spread_at_entry=0.0,
-                             option_symbol=f"SIDECAR_{symbol}" # Placeholder
-                         ))
+                            timestamp=datetime.now(timezone.utc),  # FIX: Timezone-aware
+                            decision_id=trade_id,
+                            logic_version="v9.1_SIDECAR",
+                            spread_at_entry=0.0,
+                            option_symbol=f"SIDECAR_{symbol}" # Placeholder
+                        ))
                          logger.warning(f"SIDECAR EXECUTE: {sidecar_decision['reason']}")
                 
                 # [v9.7] The Skirmisher V2 (Institutional Upgrade)
@@ -984,11 +991,11 @@ def run_engine_loop():
                                  confidence=SignalConfidence.LOW,
                                  regime=live_state.current_regime,
                                  reasoning=f"⚠️ V2 SCALP: {scalp['reason']} (Qual: {scalp['quality']})",
-                                 timestamp=datetime.now(timezone.utc),
-                                 decision_id=trade_id,
-                                 logic_version="v2.0_SKIRMISHER_INSTITUTIONAL",
-                                 spread_at_entry=0.0,
-                                 option_symbol=f"SCALP_{symbol}" 
+                                timestamp=datetime.now(timezone.utc),  # FIX: Timezone-aware
+                                decision_id=trade_id,
+                                logic_version="v2.0_SKIRMISHER_INSTITUTIONAL",
+                                spread_at_entry=0.0,
+                                option_symbol=f"SCALP_{symbol}" 
                             ))
                             logger.warning(f"SKIRMISHER V2 EXECUTE: {scalp['reason']}")
                         else:
