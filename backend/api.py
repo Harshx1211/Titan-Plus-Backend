@@ -413,16 +413,32 @@ def run_engine_loop():
                 live_state.market_message = f"DORMANT: Market Closed ({current_time.strftime('%H:%M')} IST)"
                 live_state.current_regime = Regime.UNCERTAIN
                 
+                # [v9.6] Ambient Intelligence: Add a "Watching" thought occasionally
+                if random.random() < 0.05: # ~3 times an hour
+                    live_state.add_thought("MONITOR", "Market closed. Watching global cues and preparing for next session.")
+                
                 # 2. Automated Overnight Learning
                 if current_time >= evolution_trigger_time and evolution_done_date != today_str:
                     logger.info(f"INTELLIGENCE: Triggering automated post-market evolution for {today_str}...")
+                    live_state.add_thought("LEARN", f"Starting Overnight Evolution for {today_str}...")
+                    live_state.is_learning = True
                     try:
                         results = evolver.evolve_session(today_str)
                         evolution_done_date = today_str
-                        logger.info(f"INTELLIGENCE: Evolution complete. Governor Status: {results.get('governor_status')}")
-                        telegram_notifier.send_message(f"🧠 *Overnight Intelligence*: Evolution complete for {today_str}.\nStatus: {results.get('governor_status')}")
+                        live_state.is_learning = False
+                        
+                        # Pipe learning results into thoughts
+                        status = results.get('governor_status', 'SUCCESS')
+                        live_state.add_thought("LEARN", f"Evolution Complete: {status}. Brain Refined.")
+                        if 'accuracy_delta' in results:
+                            live_state.add_thought("LEARN", f"Model accuracy shifted by {results['accuracy_delta']}%")
+                            
+                        logger.info(f"INTELLIGENCE: Evolution complete. Governor Status: {status}")
+                        telegram_notifier.send_message(f"🧠 *Overnight Intelligence*: Evolution complete for {today_str}.\nStatus: {status}")
                     except Exception as e:
+                        live_state.is_learning = False
                         logger.error(f"INTELLIGENCE: Evolution failed: {e}")
+                        live_state.add_thought("ERROR", f"Overnight Evolution failed: {str(e)}")
                 
                 # 3. Aggressive Sleep during off-hours (1 minute polling)
                 time.sleep(60)
