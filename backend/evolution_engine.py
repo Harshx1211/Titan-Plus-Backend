@@ -62,8 +62,8 @@ class EvolutionEngine:
 
         logger.info(f"EVOLUTION: Starting Advisory Audit for {date_str}...")
         
-        # 1. Fetch History
-        history = self.db.get_history(limit=500)
+        # 1. Fetch History (Snapshots)
+        history = self.db.get_snapshots(limit=500)
         if not history: return
         
         df = pd.DataFrame(history)
@@ -71,6 +71,11 @@ class EvolutionEngine:
         session_df = df[df['timestamp'].dt.strftime('%Y-%m-%d') == date_str]
         
         if session_df.empty: return
+        
+        # [Safety] If 'decision' column is missing (old records or empty fetch), bypass
+        if 'decision' not in session_df.columns:
+            logger.warning(f"EVOLUTION: 'decision' column missing in session data. Check Supabase schema.")
+            return
 
         # 2. Extract Blocks & Approvals
         blocks = session_df[session_df['decision'] == 'BLOCK']

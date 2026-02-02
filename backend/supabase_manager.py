@@ -271,7 +271,7 @@ class SupabaseManager:
             logger.error(f"SUPABASE: Failed to queue snapshot: {e}")
 
     def get_history(self, limit: int = 50) -> List[Dict]:
-        """Fetches latest signals from cloud."""
+        """Fetches latest signals from signal_ledger."""
         try:
             if not self.supabase:
                 return []
@@ -279,6 +279,17 @@ class SupabaseManager:
             return response.data if response.data else []
         except Exception as e:
             logger.error(f"SUPABASE: Failed to fetch history: {e}")
+            return []
+
+    def get_snapshots(self, limit: int = 500) -> List[Dict]:
+        """Fetches latest brain snapshots for evolution."""
+        try:
+            if not self.supabase:
+                return []
+            response = self.supabase.table("brain_snapshots").select("*").order("timestamp", desc=True).limit(limit).execute()
+            return response.data if response.data else []
+        except Exception as e:
+            logger.error(f"SUPABASE: Failed to fetch snapshots: {e}")
             return []
 
 if __name__ == "__main__":
