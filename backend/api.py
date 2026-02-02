@@ -438,7 +438,7 @@ def run_engine_loop():
                             logger.info(f"INTELLIGENCE: Evolution skipped: {reason}")
                             
                         if results and results.get("governor_status"):
-                            telegram_notifier.send_message(f"🧠 *Overnight Intelligence*: Evolution process finished for {today_str}.\nStatus: {results.get('governor_status')}")
+                            telegram_notifier.send_alert(f"🧠 *Overnight Intelligence*: Evolution process finished for {today_str}.\nStatus: {results.get('governor_status')}")
                     except Exception as e:
                         live_state.is_learning = False
                         logger.error(f"INTELLIGENCE: Evolution failed: {e}")
