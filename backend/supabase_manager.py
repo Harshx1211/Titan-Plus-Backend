@@ -228,8 +228,10 @@ class SupabaseManager:
             wins = len(df[df['value'] == 'WIN'])
             total = len(df)
             
+            ratio = wins / total if total > 0 else 0.0
             return {
-                "win_rate": round((wins / total) * 100, 2) if total > 0 else 0.0,
+                "win_rate": round(ratio, 4),
+                "accuracy": round(ratio, 4), 
                 "total_trades": total,
                 "wins": wins,
                 "losses": total - wins,
