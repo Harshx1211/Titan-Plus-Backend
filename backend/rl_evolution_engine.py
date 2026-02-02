@@ -19,6 +19,10 @@ try:
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
+    # Mocking nn.Module to prevent NameError at class definition time
+    class MockModule: pass
+    class MockNN: Module = MockModule
+    nn = MockNN
 
 from brain_engine_ml import BrainEngineML
 

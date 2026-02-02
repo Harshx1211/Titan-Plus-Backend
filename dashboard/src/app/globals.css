@@ -1,30 +1,22 @@
-/* Phase 9: Rolls-Royce Institutional Core */
-:root {
-  --background: #020204;
-  --foreground: #f8fafc;
-  --panel: rgba(15, 23, 42, 0.4);
-  --glass: rgba(15, 23, 42, 0.4);
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --accent-primary: #0ea5e9;
-  /* Sky-500 */
-  --accent-secondary: #10b981;
-  /* Emerald-500 */
-  --accent-highlight: #8b5cf6;
-  /* Violet-500 */
-  --font-mono: 'JetBrains Mono', 'Roboto Mono', monospace;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-@theme {
-  --color-tactical-bg: #020204;
-  --color-tactical-panel: rgba(15, 23, 42, 0.4);
-  --color-tactical-border: rgba(255, 255, 255, 0.08);
+:root {
+  --background: 2, 2, 4;
+  /* #020204 */
+  --foreground: 248, 250, 252;
+  /* #f8fafc */
+  --glass: 15, 23, 42;
+  --glass-border: 255, 255, 255;
+  --font-mono: 'JetBrains Mono', 'Roboto Mono', monospace;
 }
 
 body {
   margin: 0;
   padding: 0;
-  background-color: #010103 !important;
-  color: #e2e8f0 !important;
+  background-color: rgb(var(--background));
+  color: rgb(var(--foreground));
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   overflow-x: hidden;
   min-height: 100vh;
@@ -32,15 +24,14 @@ body {
 }
 
 @layer components {
-
-  /* Tactical Panel: Clean Institutional */
   .glass-card {
-    background: var(--glass) !important;
-    backdrop-filter: blur(12px) saturate(180%);
-    -webkit-backdrop-filter: blur(12px) saturate(180%);
-    border: 1px solid var(--glass-border);
-    border-radius: 1rem;
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    background: rgba(var(--glass), 0.4) !important;
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border: 1px solid rgba(var(--glass-border), 0.08);
+    border-radius: 1.25rem;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+    transition: all 0.3s ease;
   }
 
   .neural-pulse {
@@ -51,26 +42,22 @@ body {
 
     0%,
     100% {
-      box-shadow: 0 0 20px rgba(139, 92, 246, 0.2);
-      border-color: rgba(139, 92, 246, 0.2);
+      box-shadow: 0 0 20px rgba(139, 92, 246, 0.15);
+      border-color: rgba(139, 92, 246, 0.15);
     }
 
     50% {
-      box-shadow: 0 0 40px rgba(139, 92, 246, 0.5);
-      border-color: rgba(139, 92, 246, 0.5);
+      box-shadow: 0 0 40px rgba(139, 92, 246, 0.4);
+      border-color: rgba(139, 92, 246, 0.4);
     }
   }
 
   .glow-cyan {
-    text-shadow: 0 0 10px rgba(14, 165, 233, 0.5);
-  }
-
-  .glow-emerald {
-    text-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+    text-shadow: 0 0 15px rgba(14, 165, 233, 0.4);
   }
 
   .glow-violet {
-    text-shadow: 0 0 10px rgba(139, 92, 246, 0.5);
+    text-shadow: 0 0 15px rgba(139, 92, 246, 0.4);
   }
 
   .animate-slow-pulse {
@@ -86,13 +73,33 @@ body {
     }
 
     50% {
-      opacity: 0.6;
-      transform: scale(0.98);
+      opacity: 0.7;
+      transform: scale(0.99);
     }
   }
 }
 
 main {
-  background-color: #010103 !important;
+  background-color: rgb(var(--background));
   min-height: 100vh;
+  position: relative;
+  z-index: 1;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(var(--background), 0.1);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(var(--glass-border), 0.1);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--glass-border), 0.2);
 }
