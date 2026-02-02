@@ -78,9 +78,6 @@ class BrainConfig:
     reputation_ceiling: float = 1.5
     authority_floor: float = 0.3
     authority_ceiling: float = 1.0
-    basis_hard_floor: float = 0.02
-    basis_min_std: float = 0.01
-    basis_sigma_threshold: float = 3.0
 
 @dataclass
 class BrainMetrics:
