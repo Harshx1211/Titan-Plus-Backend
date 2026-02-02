@@ -160,11 +160,12 @@ class OptionEngine:
                 if row.empty: continue
                 
                 row = row.iloc[0]
-                ltp = row.get(f'{option_type.lower()}_ltp', 0)
-                oi = row.get(f'{option_type.lower()}_oi', 0)
-                vol = row.get(f'{option_type.lower()}_vol', 0)
-                bid = row.get(f'{option_type.lower()}_bid', 0)
-                ask = row.get(f'{option_type.lower()}_ask', 0)
+                prefix = "call" if option_type == "CE" else "put"
+                ltp = row.get(f'{prefix}_ltp', 0)
+                oi = row.get(f'{prefix}_oi', 0)
+                vol = row.get(f'{prefix}_vol', 0)
+                bid = row.get(f'{prefix}_bid', 0)
+                ask = row.get(f'{prefix}_ask', 0)
                 
                 # Mid-Price Spread Normalization (v8.5)
                 mid_price = (ask + bid) / 2
