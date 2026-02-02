@@ -95,8 +95,10 @@ class SupabaseManager:
 
     def _filter_data(self, table: str, data: Dict) -> Dict:
         """Removes keys from data that are not present in the database schema."""
-        if not self.table_columns.get(table):
-            return data # If detection failed, send all and let worker handle errors
+        if table not in self.table_columns or not self.table_columns[table]:
+            # If detection hasn't happened yet, fall back to critical columns only
+            critical = ["id", "timestamp", "symbol", "state", "value", "features", "outcome"]
+            return {k: v for k, v in data.items() if k in critical}
             
         allowed = self.table_columns[table]
         filtered = {k: v for k, v in data.items() if k in allowed}
