@@ -67,21 +67,23 @@ class EvolutionEngine:
         history = self.db.get_snapshots(limit=500)
         if not history: return
         
-        df = pd.DataFrame(history)
+        # [v9.6.2] FOOLPROOF DATA CLEANING
+        cleaned_history = []
+        for h in history:
+            row = h.copy()
+            feat = row.get('features')
+            if isinstance(feat, str):
+                try: row['features'] = json.loads(feat.replace("'", '"'))
+                except: row['features'] = {}
+            elif not isinstance(feat, dict):
+                row['features'] = {}
+            cleaned_history.append(row)
+
+        df = pd.DataFrame(cleaned_history)
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         session_df = df[df['timestamp'].dt.strftime('%Y-%m-%d') == date_str]
         
         if session_df.empty: return
-        
-        # [v9.6.1] Robust Feature Parsing
-        def _safe_parse(val):
-            if isinstance(val, str):
-                try: return json.loads(val)
-                except: return {}
-            return val if isinstance(val, dict) else {}
-            
-        if 'features' in session_df.columns:
-            session_df['features'] = session_df['features'].apply(_safe_parse)
         
         # [Safety] If 'decision' column is missing (old records or empty fetch), bypass
         if 'decision' not in session_df.columns:
