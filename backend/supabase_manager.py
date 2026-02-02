@@ -250,7 +250,7 @@ class SupabaseManager:
                 "symbol": signal_data.get("symbol", "INDEX"),
                 "regime": signal_data.get("regime", "UNCERTAIN"),
                 "efficacy": signal_data.get("efficacy", 0),
-                "features": json.dumps(signal_data.get("features", { })),
+                "features": signal_data.get("features", { }),
                 "outcome": outcome,
                 "stage": stage,
                 "decision": signal_data.get("decision", "BLOCK")
