@@ -510,6 +510,7 @@ def run_engine_loop():
                     macro_bias=macro_bias, 
                     macro_zones=macro_zones
                 )
+                logger.info(f"ENGINE: {symbol} Pattern Score: {pattern_results['score']:.2f} (Patterns: {', '.join(pattern_results.get('patterns', ['NONE']))})")
                 live_state.add_thought("ANALYSIS", f"Chart Pattern Score: {pattern_results['score']:.2f}. Found: {', '.join(pattern_results.get('patterns', ['NONE']))}")
             except Exception as e:
                 logger.warning(f"ENGINE: Analysis failed for {symbol}: {e}", exc_info=True)
@@ -519,6 +520,7 @@ def run_engine_loop():
             if not pattern_results["patterns"]:
                 # [v9.7] Visibility: Log that we searched but found nothing
                 if now_minute % 5 == 0:
+                    logger.info(f"ENGINE: Analysis quiet for {symbol}. Moving price action within range.")
                     live_state.add_thought("SEARCH", f"Scanning {symbol}... No patterns found.")
                 pattern_results = {"score": 0.0, "patterns": []}
                 macro_bias = 0
@@ -695,6 +697,8 @@ def run_engine_loop():
             
             # v9.5.4: Use standardized de-duped logger
             for t in thoughts:
+                if "VETO" in t or "APPROVE" in t:
+                    logger.info(f"BRAIN: {symbol} - {t}")
                 live_state.add_thought("INFERENCE", t)
 
             # v8.1: Shape-Shifting Sentinel (Fix Audit v8.1 #2)

@@ -423,11 +423,11 @@ class DataProvider:
             base_price = 81500.0 if symbol == "SENSEX" else 24500.0
             data = {
                 'timestamp': pd.date_range(end=datetime.now(), periods=100, freq='h' if interval == "60minute" else '5min'),
-                'open': [base_price + random.uniform(-10, 10) for _ in range(100)],
+                'open': [base_price + random.uniform(-10, 10) for _ in range(95)] + [base_price + 10, base_price + 5, base_price + 5, base_price + 2, base_price - 5],
                 'high': [base_price + 20 for _ in range(100)],
                 'low': [base_price - 20 for _ in range(100)],
-                'close': [base_price + (i * 0.5) + random.uniform(-5, 5) for i in range(100)], # [v9.8] Simulated Trend
-                'volume': [random.randint(500, 2000) for _ in range(100)]
+                'close': [base_price + (i * 0.5) + random.uniform(-5, 5) for i in range(95)] + [base_price + 8, base_price + 3, base_price + 7, base_price + 8, base_price + 15], # [v9.8] Crafted Bullish Engulfing
+                'volume': [random.randint(500, 2000) for _ in range(95)] + [3000, 3500, 4000, 4500, 8000] # Rising volume on breakout
             }
             df = pd.DataFrame(data)
             df.set_index('timestamp', inplace=True)
