@@ -427,18 +427,22 @@ def run_engine_loop():
                         evolution_done_date = today_str
                         live_state.is_learning = False
                         
-                        # Pipe learning results into thoughts
-                        status = results.get('governor_status', 'SUCCESS')
-                        live_state.add_thought("LEARN", f"Evolution Complete: {status}. Brain Refined.")
-                        if 'accuracy_delta' in results:
-                            live_state.add_thought("LEARN", f"Model accuracy shifted by {results['accuracy_delta']}%")
+                        if results and results.get("status") == "SUCCESS":
+                            status = results.get('governor_status', 'SUCCESS')
+                            live_state.add_thought("LEARN", f"Evolution Complete: {status}. Brain Refined.")
+                            if 'metrics' in results and 'win_rate' in results['metrics']:
+                                live_state.add_thought("LEARN", f"Session Review: {results['metrics']['win_rate']:.1f}% Win Rate analyzed.")
+                        else:
+                            reason = results.get("reason", "No data") if results else "Empty Response"
+                            live_state.add_thought("LEARN", f"Evolution Skipped: {reason}")
+                            logger.info(f"INTELLIGENCE: Evolution skipped: {reason}")
                             
-                        logger.info(f"INTELLIGENCE: Evolution complete. Governor Status: {status}")
-                        telegram_notifier.send_message(f"🧠 *Overnight Intelligence*: Evolution complete for {today_str}.\nStatus: {status}")
+                        if results and results.get("governor_status"):
+                            telegram_notifier.send_message(f"🧠 *Overnight Intelligence*: Evolution process finished for {today_str}.\nStatus: {results.get('governor_status')}")
                     except Exception as e:
                         live_state.is_learning = False
                         logger.error(f"INTELLIGENCE: Evolution failed: {e}")
-                        live_state.add_thought("ERROR", f"Overnight Evolution failed: {str(e)}")
+                        live_state.add_thought("ERROR", f"Overnight Evolution primary fail: {str(e)}")
                 
                 # 3. Aggressive Sleep during off-hours (1 minute polling)
                 time.sleep(60)

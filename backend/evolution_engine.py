@@ -65,7 +65,7 @@ class EvolutionEngine:
         
         # 1. Fetch History (Snapshots)
         history = self.db.get_snapshots(limit=500)
-        if not history: return
+        if not history: return {"status": "SKIPPED", "reason": "No snapshots found in DB."}
         
         # [v9.6.2] FOOLPROOF DATA CLEANING
         cleaned_history = []
@@ -83,12 +83,14 @@ class EvolutionEngine:
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         session_df = df[df['timestamp'].dt.strftime('%Y-%m-%d') == date_str]
         
-        if session_df.empty: return
+        if session_df.empty: 
+            logger.info(f"EVOLUTION: No snapshot data found for {date_str}. Skipping.")
+            return {"status": "SKIPPED", "reason": f"No signals found for {date_str}", "governor_status": "IDLE"}
         
         # [Safety] If 'decision' column is missing (old records or empty fetch), bypass
         if 'decision' not in session_df.columns:
             logger.warning(f"EVOLUTION: 'decision' column missing in session data. Check Supabase schema.")
-            return
+            return {"status": "SKIPPED", "reason": "Missing 'decision' column.", "governor_status": "VETOED"}
 
         # 2. Extract Blocks & Approvals
         blocks = session_df[session_df['decision'] == 'BLOCK']
@@ -103,7 +105,6 @@ class EvolutionEngine:
                 features = row.get('features', {})
                 if features:
                     min_feat = min(features, key=features.get)
-                    # Penalize the feature that caused the block
                     if min_feat in rep_adjustments:
                         rep_adjustments[min_feat] -= 0.02
 
@@ -113,16 +114,13 @@ class EvolutionEngine:
                 features = row.get('features', {})
                 if features:
                     max_feat = max(features, key=features.get)
-                    # Penalize the feature that lied
                     if max_feat in rep_adjustments:
                         rep_adjustments[max_feat] -= 0.05
         
-        # Analyze Good Approvals (Wins) - Conditional Credit
-        # Only credit if context matches (e.g. Gamma near expiry)
+        # Analyze Good Approvals (Wins)
         for _, row in approvals.iterrows():
             if row.get('efficacy') == 1:
                 features = row.get('features', {})
-                # Simple credit for now, will refine context in v9.1
                 for f in features:
                     if f in rep_adjustments:
                          rep_adjustments[f] += 0.01
@@ -130,44 +128,31 @@ class EvolutionEngine:
         # 4. Apply Reputation Updates (Inertial & Bounded)
         for feat, adj in rep_adjustments.items():
             current_rep = self.brain.feature_reputation.get(feat, 1.0)
-            
-            # Apply Decay (Return to Mean)
             current_rep = 1.0 + (current_rep - 1.0) * self.reputation_decay
-            
-            # Apply Adjustment
-            new_rep = current_rep + adj
-            
-            # Hard Bounds [0.5, 1.5]
-            new_rep = max(0.5, min(1.5, new_rep))
+            new_rep = max(0.5, min(1.5, current_rep + adj))
             self.brain.feature_reputation[feat] = new_rep
-            
             logger.info(f"EVOLUTION: {feat} Reputation -> {new_rep:.2f}")
 
         # 5. Governor Audit for Thresholds
-        # Calculate metrics for the Governor
         total_trades = len(approvals)
         wins = len(approvals[approvals['efficacy'] == 1])
         win_rate = (wins / total_trades * 100) if total_trades > 0 else 50.0
         
-        # Simple missed alpha calc
         missed = len(blocks[blocks['efficacy'] == 0]) 
         total_opps = missed + wins
         missed_alpha_pct = (missed / total_opps * 100) if total_opps > 0 else 0.0
         
         metrics = {"win_rate": win_rate, "missed_alpha": missed_alpha_pct}
-        
-        # Check if we need to TIGHTEN thresholds (One-Way)
-        # Note: In a real implementation, we'd update specific regime thresholds
-        # For this prototype, we just log the Governor's decree.
         new_threshold = self.governor.audit_threshold_proposal(0.75, metrics)
         if new_threshold > 0.75:
              logger.warning(f"GOVERNOR DECREE: System needs tightening to {new_threshold}")
-             self.brain.update_threshold(new_threshold) # [v9.7] Active Enforcement
+             self.brain.update_threshold(new_threshold)
 
         # Save State
         self.brain.save_state()
         
         return {
+            "status": "SUCCESS",
             "reputation_updates": self.brain.feature_reputation,
             "governor_status": self.governor.lock_status,
             "metrics": metrics
