@@ -3,7 +3,7 @@ import pandas as pd
 import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
-from supabase_manager import SupabaseManager
+from infrastructure import SupabaseManager
 from brain_engine import BrainEngine
 
 logging.basicConfig(level=logging.INFO)

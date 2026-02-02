@@ -1,26 +1,23 @@
-@import "tailwindcss";
-@source "../**/*.{ts,tsx}";
-
-/* Phase 43: Institutional Slate Core */
+/* Phase 9: Rolls-Royce Institutional Core */
 :root {
-  --background: #010103;
-  --foreground: #e2e8f0;
-  --panel: rgba(10, 11, 16, 0.85);
-  /* Institutional Slate */
-  --border: rgba(30, 41, 59, 0.5);
-  /* Slate-800 muted */
-  --label: #64748b;
-  /* Slate-500 */
-  --accent-cyan: #06b6d4;
-  --accent-emerald: #10b981;
-  --accent-rose: #f43f5e;
+  --background: #020204;
+  --foreground: #f8fafc;
+  --panel: rgba(15, 23, 42, 0.4);
+  --glass: rgba(15, 23, 42, 0.4);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --accent-primary: #0ea5e9;
+  /* Sky-500 */
+  --accent-secondary: #10b981;
+  /* Emerald-500 */
+  --accent-highlight: #8b5cf6;
+  /* Violet-500 */
   --font-mono: 'JetBrains Mono', 'Roboto Mono', monospace;
 }
 
 @theme {
-  --color-tactical-bg: #010103;
-  --color-tactical-panel: rgba(10, 11, 16, 0.85);
-  --color-tactical-border: rgba(30, 41, 59, 0.5);
+  --color-tactical-bg: #020204;
+  --color-tactical-panel: rgba(15, 23, 42, 0.4);
+  --color-tactical-border: rgba(255, 255, 255, 0.08);
 }
 
 body {
@@ -37,17 +34,47 @@ body {
 @layer components {
 
   /* Tactical Panel: Clean Institutional */
-  .tactical-panel {
-    background: var(--panel) !important;
-    height: 6px;
-    border-radius: 50%;
-    background-color: currentColor;
-    box-shadow: 0 0 10px currentColor;
-    transition: all 0.5s ease;
+  .glass-card {
+    background: var(--glass) !important;
+    backdrop-filter: blur(12px) saturate(180%);
+    -webkit-backdrop-filter: blur(12px) saturate(180%);
+    border: 1px solid var(--glass-border);
+    border-radius: 1rem;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  }
+
+  .neural-pulse {
+    animation: neural-pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes neural-pulse {
+
+    0%,
+    100% {
+      box-shadow: 0 0 20px rgba(139, 92, 246, 0.2);
+      border-color: rgba(139, 92, 246, 0.2);
+    }
+
+    50% {
+      box-shadow: 0 0 40px rgba(139, 92, 246, 0.5);
+      border-color: rgba(139, 92, 246, 0.5);
+    }
+  }
+
+  .glow-cyan {
+    text-shadow: 0 0 10px rgba(14, 165, 233, 0.5);
+  }
+
+  .glow-emerald {
+    text-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+  }
+
+  .glow-violet {
+    text-shadow: 0 0 10px rgba(139, 92, 246, 0.5);
   }
 
   .animate-slow-pulse {
-    animation: slow-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    animation: slow-pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
 
   @keyframes slow-pulse {
@@ -59,8 +86,8 @@ body {
     }
 
     50% {
-      opacity: 0.4;
-      transform: scale(0.9);
+      opacity: 0.6;
+      transform: scale(0.98);
     }
   }
 }

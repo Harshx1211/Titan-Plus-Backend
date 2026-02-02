@@ -10,8 +10,7 @@ from collections import deque
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
-from enum import Enum
-from supabase_manager import SupabaseManager
+from infrastructure import SupabaseManager
 from models import TradeSignal, SignalConfidence, DecisionObject, Regime
 
 # Configure logging

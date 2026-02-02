@@ -4,27 +4,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Optional, Tuple
 import uvicorn
-from config import APP_CONFIG
 import pandas as pd
 import logging
 import time
 from datetime import datetime, timezone
 import pandas_ta as ta
 from models import TradeSignal, Regime, SignalConfidence, DivergenceType
-from sentinel import DataSentinel
-from strategist import MarketStrategist
-from risk_engine import RiskEngine
-from brain_engine import BrainEngine
-from evolution_engine import EvolutionEngine
-from pattern_engine import PatternEngine
-from option_engine import OptionEngine
-from session_auditor import SessionAuditor
-from data_provider import DataProvider
-from trap_hunter import TrapHunter
+from infrastructure import APP_CONFIG, SupabaseManager, DatabaseManager, TelegramNotifier
+from providers import DataProvider
+from engines import DataSentinel, RiskEngine, PatternEngine, TrapHunter, SessionAuditor
 from skirmisher_v2 import SkirmisherV2
-from telegram_notifier import TelegramNotifier
-from database import DatabaseManager
+from brain_engine_ml import BrainEngineML
+from rl_evolution_engine import RLEvolutionEngine
+from strategist import MarketStrategist
 from support_resistance import SupportResistanceEngine
+from option_engine import OptionEngine
+from shadow_mode import ShadowMode
 import asyncio
 import threading
 import os
@@ -118,10 +113,13 @@ sentinel = DataSentinel()
 strategist = MarketStrategist()
 skirmisher = SkirmisherV2()
 sr_engine = SupportResistanceEngine()
-brain = BrainEngine(stage=3) # Stage 3: Full Filter Mode
+brain = BrainEngineML(stage=3) # ML-Powered Brain Core (Final Activation)
+evolver = RLEvolutionEngine(brain) # RL-Powered Evolution
 pattern_engine = PatternEngine()
 risk_engine = RiskEngine()
 trap_hunter = TrapHunter() # [v9.1] Sidecar Module
+shadow_mode_enabled = os.getenv("SHADOW_MODE", "false").lower() == "true"
+shadow_engine = ShadowMode() if shadow_mode_enabled else None
 # Helper: Safe Brain Interface (Phase 28 Compatibility)
 def call_brain_safely(action: str, **kwargs):
     """
@@ -139,6 +137,10 @@ def call_brain_safely(action: str, **kwargs):
                 iv_skew=kwargs.get("iv_skew", 1.0)
             )
         elif action == "BOOST":
+            # [v9.8] Shadow Mode Integration
+            if shadow_mode_enabled and shadow_engine:
+                shadow_engine.compare_predictions(kwargs.get("features"), kwargs.get("regime"))
+            
             return brain.get_confidence_boost(
                 features=kwargs.get("features"),
                 regime_val=kwargs.get("regime").value if hasattr(kwargs.get("regime"), 'value') else kwargs.get("regime"),
@@ -161,9 +163,8 @@ def call_brain_safely(action: str, **kwargs):
             )
     return None, []
 
-# evolution_engine = EvolutionEngine(brain)  # Initialized later if needed
-evolution_engine = EvolutionEngine(brain)
-option_engine = OptionEngine()
+# evolver = RLEvolutionEngine(brain)  # Initialized earlier
+option_engine = OptionEngine() # Restored Institutional Selection
 db = DatabaseManager()
 telegram_notifier = TelegramNotifier()
 data_provider = DataProvider()
@@ -488,6 +489,19 @@ def run_engine_loop():
                 time.sleep(2)
                 continue
 
+            # [v9.8.5] Latency Veto: Protect against stale data (Max 10s)
+            data_age = (datetime.now(timezone.utc) - market_data.timestamp.replace(tzinfo=timezone.utc)).total_seconds()
+            if data_age > 10:
+                live_state.add_thought("LATENCY_VETO", f"Data stale: {data_age:.1f}s. Vetoing.")
+                continue
+
+            # [v9.8.5] Spread Check: Veto if liquidity is too thin (>0.05% of spot)
+            current_spread = abs(market_data.future_price - market_data.spot_price)
+            spread_max = market_data.spot_price * 0.0005
+            if current_spread > spread_max:
+                live_state.add_thought("SPREAD_VETO", f"Spread Spike: {current_spread:.2f} > {spread_max:.2f}. Vetoing.")
+                continue
+
             # 2. Triangulation (Sentinel v2 with VIX Adaptivity)
             # This checks if the Spot and Future prices are moving together.
             # If they diverge too much, it indicates a 'Data Trap' and we block trading.
@@ -573,7 +587,8 @@ def run_engine_loop():
                 pattern_results = pattern_engine.get_signal_confirmation(
                     hist_df, 
                     macro_bias=macro_bias, 
-                    macro_zones=macro_zones
+                    macro_zones=macro_zones,
+                    atr=atr_val
                 )
                 logger.info(f"ENGINE: {symbol} Pattern Score: {pattern_results['score']:.2f} (Patterns: {', '.join(pattern_results.get('patterns', ['NONE']))})")
                 live_state.add_thought("ANALYSIS", f"Chart Pattern Score: {pattern_results['score']:.2f}. Found: {', '.join(pattern_results.get('patterns', ['NONE']))}")
@@ -766,6 +781,12 @@ def run_engine_loop():
                     logger.info(f"BRAIN: {symbol} - {t}")
                 live_state.add_thought("INFERENCE", t)
 
+            # [v9.8.1 ML] High-Frequency Data Collection
+            # Log all technical triggers to trade_snapshots (Approve or Block)
+            # This provides the AI with negative samples (rejected trades).
+            if pattern_results and pattern_results.get("score", 0) > 0.3:
+                brain.log_snapshot(decision_id, outcome=None) 
+
             # v8.1: Shape-Shifting Sentinel (Fix Audit v8.1 #2)
             # Monitor Mean, Std, and Kurtosis. Rate-limited to 1 reset/session.
             if len(brain.feature_history.get("OI_RES", [])) > 100 and live_state.resets_today < 1:
@@ -808,7 +829,7 @@ def run_engine_loop():
             # If momentum is dominant, we ignore Max Pain in patterns.
             is_dominant = strategist.is_momentum_dominant(hist_df)
             if is_dominant:
-                live_state.market_message = "MOMENTUM DOMINANT: Ignoring Mean Reversion"
+                live_state.market_message = "MOMENTUM DOMINANCE: Suspending Mean-Reversion Protocol"
 
             # THE v8 DOUBLE-HANDSHAKE (v9.8: Decoupled from Passive for responsiveness)
             if pattern_results["score"] > APP_CONFIG["PATTERN_SCORE_THRESHOLD_HIGH"] and applied_boost > APP_CONFIG["PATTERN_SCORE_THRESHOLD_HIGH"]:
@@ -819,8 +840,8 @@ def run_engine_loop():
             elif pattern_results["score"] <= APP_CONFIG["PATTERN_SCORE_THRESHOLD_HIGH"] and confidence_boost > 0.50:
                 # [v9.8] Brain Override: Pure Statistical Entry
                 # If chart is quiet but Brain screams "GO", we execute.
-                live_state.add_thought("BRAIN_FORCE", f"Chart quiet ({pattern_results['score']:.2f}) but Brain high ({confidence_boost:.2f}). Triggering Force-Approval.")
-                live_state.market_message = f"BRAIN FORCE: Statistical Alpha ({confidence_boost:.2f})"
+                live_state.add_thought("BRAIN_FORCE", f"Signal Calibration: Low Volatility Interaction ({pattern_results['score']:.2f}). Epistemic Confidence: High Statistical Probability ({confidence_boost:.2f}).")
+                live_state.market_message = f"SYSTEMIC ALPHA OVERRIDE: Probabilistic Confidence ({confidence_boost:.2f})"
                 pattern_results["score"] = 0.95 # Force approval
                 pattern_results["patterns"] = pattern_results.get("patterns", []) + ["BRAIN_PULL"]
                 
@@ -849,9 +870,20 @@ def run_engine_loop():
                 atr_threshold = max(APP_CONFIG["ATR_MAE_MIN_THRESHOLD"], APP_CONFIG["ATR_MAE_MULTIPLIER"] * atr_val)
                 integrity_decay = (sig.mae > atr_threshold) and (sig.mfe < 0.5 * atr_threshold)
                 
+                # [v9.8.5] Trailing Stop Loss (TSL)
+                # Move SL to Break-Even (entry_price) once 50% of Target is achieved
+                if not sig.is_tsl_active and price_delta >= (0.5 * sig.target):
+                    sig.is_tsl_active = True
+                    # Set SL to entry price to lock in capital safety
+                    old_sl = sig.stop_loss
+                    sig.stop_loss = 0.0 # Effectively Break-Even in point-delta terms
+                    msg = f"🛡️ TSL ACTIVE: {sig.option_symbol} SL moved to Break-Even (Delta: {price_delta:.1f})"
+                    live_state.add_thought("RISK", msg)
+                    telegram_notifier.send_alert(msg)
+
                 # Check for Exit
-                is_target = price_delta >= APP_CONFIG["SIGNAL_TARGET_POINTS"]
-                is_sl = price_adverse >= APP_CONFIG["SIGNAL_STOP_LOSS_POINTS"]
+                is_target = price_delta >= sig.target
+                is_sl = price_adverse >= sig.stop_loss if not sig.is_tsl_active else (price_delta < 0) # Exit if it dips below entry
                 is_decay = integrity_decay and price_adverse > APP_CONFIG["DECAY_PRICE_ADVERSE_THRESHOLD"]
                 
                 if is_target or is_sl or is_decay:
@@ -874,7 +906,7 @@ def run_engine_loop():
                         performance={
                             "mfe": sig.mfe,
                             "mae": sig.mae,
-                            "spread": 0.5, # Placeholder
+                            "spread": abs(market_data.future_price - market_data.spot_price),
                             "time_to_mfe": sig.time_to_mfe
                         },
                         freeze_authority=is_passive
@@ -885,7 +917,11 @@ def run_engine_loop():
                     if "SIDECAR" in sig.logic_version:
                         trap_hunter.update_outcome(brain_decision_id, pnl_sim)
                     else:
-                        risk_engine.log_trade(is_win)
+                        risk_engine.log_trade(is_win, pnl=pnl_sim)
+                    
+                    # [v9.8.5] Telegram Exit Update
+                    exit_msg = f"{'✅' if is_win else '❌'} EXIT: {sig.option_symbol} closed. Reason: {reason}. PnL Delta: {pnl_sim:.1f}"
+                    telegram_notifier.send_alert(exit_msg)
                     
                     # Log to Truth Ledger (for Dashboard UI)
                     try:
@@ -900,10 +936,10 @@ def run_engine_loop():
             is_lull = lull_start <= now_time <= lull_end
             if is_lull:
                 if "BRAIN_PULL" in pattern_results.get("patterns", []):
-                    live_state.add_thought("LULL_BYPASS", "Institutional Lull: Bypassing for Brain Force.")
+                    live_state.add_thought("LULL_BYPASS", "Institutional Lull: Bypassing for Probabilistic Alpha.")
                 else:
                     pattern_results["score"] *= 0.5
-                    live_state.add_thought("LULL", "Score halved due to mid-day lull.")
+                    live_state.add_thought("LULL", "Low Liquidity Protocol: Institutional Lull Active (Score decaying).")
 
             # 6. Signal Generation
             live_state.add_thought("TRACE", f"Gate 1 (Score check): {pattern_results['score']:.2f} vs {APP_CONFIG['PATTERN_SCORE_THRESHOLD_HIGH']:.2f}")
@@ -919,9 +955,23 @@ def run_engine_loop():
                 live_state.add_thought("TRACE", f"Gate 2 (Duplicate check): {active_count} active signals found.")
                 if not any(s.symbol == symbol and s.is_live for s in live_state.active_signals):
                     # Phase 25/27: Hard Veto Gates
-                    if is_basis_unstable:
+                    # [v9.8.5] Daily Circuit Breaker
+                    if risk_engine.is_blown_today():
+                        live_state.add_thought("RISK_VETO", "Daily drawdown limit hit. Trading HALTED.")
+                        logger.warning("SIGNAL Veto: Daily drawdown limit hit.")
+                    # [v9.8.5] Correlation Guard (One trade at a time)
+                    elif any(s.is_live for s in live_state.active_signals):
+                        live_state.add_thought("VETO", "Signal already live. Skipping duplicate risk.")
+                    elif is_basis_unstable:
                         logger.warning(f"SIGNAL VETO: Basis Dispersion unstable for {symbol}.")
                         live_state.add_thought("VETO", f"Basis Unstable for {symbol}")
+                    # [v9.8.1] S/R Hard Veto: No buying into resistance, No selling into support
+                    elif signal_type == "BULLISH" and any(abs(market_data.spot_price - r) < 25 for r in live_state.resistances.get(symbol, [])):
+                        live_state.add_thought("S/R_VETO", "Institutional Liquidity Guard: Major Resistance Wall Detected. Entry BLOCKED.")
+                        logger.warning(f"SIGNAL VETO: {symbol} too close to resistance.")
+                    elif signal_type == "BEARISH" and any(abs(market_data.spot_price - s) < 25 for s in live_state.supports.get(symbol, [])):
+                        live_state.add_thought("S/R_VETO", "Institutional Liquidity Guard: Major Support Level Detected. Entry BLOCKED.")
+                        logger.warning(f"SIGNAL VETO: {symbol} too close to support.")
                     else:
                         # Phase 10: Option Selection (The 'Execution' Logic)
                         # We don't just trade the index; we find the most liquid and profitable Option strike.
@@ -953,11 +1003,15 @@ def run_engine_loop():
                                 base_size=APP_CONFIG.get("BASE_LOTS", 1)
                             )
                             
+                            # [v9.8.1] Dynamic Targets based on ATR
+                            target_pts = max(APP_CONFIG["SIGNAL_TARGET_POINTS"], round(1.5 * atr_val))
+                            sl_pts = max(APP_CONFIG["SIGNAL_STOP_LOSS_POINTS"], round(1.0 * atr_val))
+
                             new_signal = TradeSignal(
                                 symbol=symbol,
                                 entry_price=market_data.spot_price,
-                                stop_loss=APP_CONFIG["SIGNAL_STOP_LOSS_POINTS"], 
-                                target=APP_CONFIG["SIGNAL_TARGET_POINTS"],
+                                stop_loss=sl_pts, 
+                                target=target_pts,
                                 confidence=SignalConfidence.HIGH if pattern_results["score"] > 0.9 else SignalConfidence.MEDIUM,
                                 regime=live_state.current_regime,
                                 reasoning=f"{signal_type} | {', '.join(detected_patterns)}",
