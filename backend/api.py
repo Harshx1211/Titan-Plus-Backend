@@ -28,6 +28,7 @@ from support_resistance import SupportResistanceEngine
 import asyncio
 import threading
 import os
+import pytz
 from pytz import timezone as pytz_timezone
 
 # Configure logging
@@ -104,7 +105,11 @@ class LiveState:
         if len(self.thought_logs) > 40:
             self.thought_logs.pop(0)
 
+# State & Monitoring
+IST = pytz.timezone('Asia/Kolkata')
 live_state = LiveState()
+evolver = None # Initialized after Brain
+evolution_done_date = None
 session_auditor = SessionAuditor()
 
 # Engines
@@ -382,8 +387,47 @@ def run_engine_loop():
     logger.info("ENGINE: Starting background loop...")
     start_time = time.time() # Guardrail #1: Initialized once
     
+    global evolution_done_date, evolver
+    
+    # Initialize Evolver
+    if evolver is None:
+        evolver = EvolutionEngine(brain)
+
     while True:
         try:
+            # Phase 0: Operational Hygiene (Market Hours & Evolution)
+            now_ist = datetime.now(IST)
+            current_time = now_ist.time()
+            today_str = now_ist.strftime("%Y-%m-%d")
+            
+            market_start = datetime.strptime(f"{APP_CONFIG['MARKET_START_HOUR']}:{APP_CONFIG['MARKET_START_MINUTE']:02d}", "%H:%M").time()
+            market_end = datetime.strptime(f"{APP_CONFIG['MARKET_END_HOUR']}:{APP_CONFIG['MARKET_END_MINUTE']:02d}", "%H:%M").time()
+            
+            # Post-Market Intelligence Trigger (3:35 PM IST)
+            evolution_trigger_time = datetime.strptime("15:35", "%H:%M").time()
+            
+            is_market_open = market_start <= current_time <= market_end
+            
+            if not is_market_open:
+                # 1. Dashboard Status
+                live_state.market_message = f"DORMANT: Market Closed ({current_time.strftime('%H:%M')} IST)"
+                live_state.current_regime = Regime.UNCERTAIN
+                
+                # 2. Automated Overnight Learning
+                if current_time >= evolution_trigger_time and evolution_done_date != today_str:
+                    logger.info(f"INTELLIGENCE: Triggering automated post-market evolution for {today_str}...")
+                    try:
+                        results = evolver.evolve_session(today_str)
+                        evolution_done_date = today_str
+                        logger.info(f"INTELLIGENCE: Evolution complete. Governor Status: {results.get('governor_status')}")
+                        telegram_notifier.send_message(f"🧠 *Overnight Intelligence*: Evolution complete for {today_str}.\nStatus: {results.get('governor_status')}")
+                    except Exception as e:
+                        logger.error(f"INTELLIGENCE: Evolution failed: {e}")
+                
+                # 3. Aggressive Sleep during off-hours (1 minute polling)
+                time.sleep(60)
+                continue
+
             # Rotate through symbols
             symbol = live_state.symbols[live_state.current_symbol_idx]
             live_state.current_symbol_idx = (live_state.current_symbol_idx + 1) % len(live_state.symbols)
