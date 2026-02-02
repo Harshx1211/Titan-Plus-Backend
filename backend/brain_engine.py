@@ -305,9 +305,9 @@ class BrainEngine:
         
         # Assuming basis_hard_floor and basis_min_std, basis_sigma_threshold are defined in config
         # [v9.5] Fix: Use safe defaults in getattr in case config is stale
-        basis_hard_floor = getattr(self.config, 'basis_hard_floor', 5.0)
+        basis_hard_floor = getattr(self.config, 'basis_hard_floor', 20.0)
         basis_min_std = getattr(self.config, 'basis_min_std', 0.5)
-        basis_sigma_threshold = getattr(self.config, 'basis_sigma_threshold', 3.0)
+        basis_sigma_threshold = getattr(self.config, 'basis_sigma_threshold', 10.0)
 
         abs_diff = abs(current_basis - mean)
         is_abs_unstable = abs_diff > basis_hard_floor
@@ -324,7 +324,7 @@ class BrainEngine:
         is_unstable = (is_abs_unstable or is_sigma_unstable) and current_basis < 99.0
         
         if is_unstable:
-            logger.warning(f"BRAIN: Basis unstable ({abs_diff:.3f}, {sigma_jump:.1f}σ)")
+            logger.warning(f"BRAIN: Basis unstable! Diff={abs_diff:.3f} > {basis_hard_floor:.1f} OR Sigma={sigma_jump:.1f} > {basis_sigma_threshold:.1f}")
 
         return {
             "is_unstable": is_unstable,
