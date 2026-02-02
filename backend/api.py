@@ -850,10 +850,7 @@ def run_engine_loop():
                     if is_basis_unstable:
                         logger.warning(f"SIGNAL VETO: Basis Dispersion unstable for {symbol}.")
                         live_state.add_thought("VETO", f"Basis Unstable for {symbol}")
-                    elif is_synthetic and False: # [v9.8] DEBUG: Bypassing synthetic veto
-                        logger.warning(f"SIGNAL VETO: DATA_SYNTHETIC for {symbol}. Blocking execution.")
-                        live_state.add_thought("VETO", f"Data Synthetic for {symbol}")
-                        live_state.market_message = f"DATA_OUTAGE: Synthetic Veto Active for {symbol}"
+                    else:
                         # Phase 10: Option Selection (The 'Execution' Logic)
                         # We don't just trade the index; we find the most liquid and profitable Option strike.
                         live_state.add_thought("TRACE", f"Gate 3 (Option Scanning): Finding strike for {signal_type}...")
