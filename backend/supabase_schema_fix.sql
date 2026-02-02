@@ -4,23 +4,19 @@
 -- Run this in your Supabase SQL Editor to add missing columns
 -- This is OPTIONAL - the code will work without these columns
 
--- 1. Add 'decision' column to brain_snapshots table
--- This stores whether the brain APPROVED or BLOCKED a trade
+-- 1. Add missing columns to brain_snapshots table
 ALTER TABLE brain_snapshots 
-ADD COLUMN IF NOT EXISTS decision VARCHAR(20) DEFAULT 'UNKNOWN';
+ADD COLUMN IF NOT EXISTS decision VARCHAR(20) DEFAULT 'UNKNOWN',
+ADD COLUMN IF NOT EXISTS efficacy INTEGER DEFAULT 0;
 
--- Add an index for faster queries
-CREATE INDEX IF NOT EXISTS idx_brain_snapshots_decision 
-ON brain_snapshots(decision);
-
--- 2. Add 'persistence' column to signal_ledger table  
--- This tracks whether a signal was structurally sound (MFE > MAE)
+-- 2. Add missing columns to signal_ledger table  
 ALTER TABLE signal_ledger 
-ADD COLUMN IF NOT EXISTS persistence BOOLEAN DEFAULT false;
+ADD COLUMN IF NOT EXISTS persistence BOOLEAN DEFAULT false,
+ADD COLUMN IF NOT EXISTS seq_id BIGINT;
 
--- Add an index for faster queries
-CREATE INDEX IF NOT EXISTS idx_signal_ledger_persistence 
-ON signal_ledger(persistence);
+-- Add indexes for faster queries
+CREATE INDEX IF NOT EXISTS idx_brain_snapshots_decision ON brain_snapshots(decision);
+CREATE INDEX IF NOT EXISTS idx_signal_ledger_persistence ON signal_ledger(persistence);
 
 -- 3. Verify the changes
 SELECT 

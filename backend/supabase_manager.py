@@ -38,6 +38,8 @@ class SupabaseManager:
         # Track which columns exist in the schema
         self.has_decision_column = False
         self.has_persistence_column = False
+        self.has_efficacy_column = False
+        self.has_seq_id_column = False
         self.schema_checked = False
         
         if not url or not key:
@@ -65,29 +67,21 @@ class SupabaseManager:
         if not self.supabase or self.schema_checked:
             return
             
-        try:
-            # Try to query with decision column
-            test_query = self.supabase.table("brain_snapshots").select("decision").limit(1).execute()
-            self.has_decision_column = True
-            logger.info("SUPABASE: 'decision' column found in brain_snapshots")
-        except Exception as e:
-            if "PGRST204" in str(e) or "decision" in str(e).lower():
-                logger.warning("SUPABASE: 'decision' column NOT found in brain_snapshots - will skip")
-                self.has_decision_column = False
-            else:
-                logger.debug(f"SUPABASE: Schema check error (non-critical): {e}")
-        
-        try:
-            # Try to query with persistence column
-            test_query = self.supabase.table("signal_ledger").select("persistence").limit(1).execute()
-            self.has_persistence_column = True
-            logger.info("SUPABASE: 'persistence' column found in signal_ledger")
-        except Exception as e:
-            if "PGRST204" in str(e) or "persistence" in str(e).lower():
-                logger.warning("SUPABASE: 'persistence' column NOT found in signal_ledger - will skip")
-                self.has_persistence_column = False
-            else:
-                logger.debug(f"SUPABASE: Schema check error (non-critical): {e}")
+        # Helper to check column existence
+        def check_col(table, col):
+            try:
+                self.supabase.table(table).select(col).limit(1).execute()
+                return True
+            except Exception as e:
+                if "PGRST204" in str(e) or col in str(e).lower():
+                    logger.warning(f"SUPABASE: '{col}' column NOT found in {table} - will skip")
+                    return False
+                return False
+
+        self.has_decision_column = check_col("brain_snapshots", "decision")
+        self.has_efficacy_column = check_col("brain_snapshots", "efficacy")
+        self.has_persistence_column = check_col("signal_ledger", "persistence")
+        self.has_seq_id_column = check_col("signal_ledger", "seq_id")
         
         self.schema_checked = True
 
@@ -107,64 +101,29 @@ class SupabaseManager:
                     self.queue.task_done()
                     continue
 
+                # Adaptive removal based on detected schema
+                if "seq_id" in data and not self.has_seq_id_column:
+                    data.pop("seq_id", None)
+                if "decision" in data and not self.has_decision_column:
+                    data.pop("decision", None)
+                if "persistence" in data and not self.has_persistence_column:
+                    data.pop("persistence", None)
+                if "efficacy" in data and not self.has_efficacy_column:
+                    data.pop("efficacy", None)
+
                 if task_type == "intent":
-                    try:
-                        self.supabase.table("signal_ledger").insert(data).execute()
-                    except Exception as e:
-                        if "PGRST204" in str(e):
-                            # Column doesn't exist - remove it and retry
-                            logger.debug(f"SUPABASE: Adapting intent insert due to schema mismatch")
-                            if "decision" in data:
-                                data.pop("decision", None)
-                            if "persistence" in data and not self.has_persistence_column:
-                                data.pop("persistence", None)
-                            try:
-                                self.supabase.table("signal_ledger").insert(data).execute()
-                            except Exception as e2:
-                                logger.error(f"SUPABASE WORKER: Intent insert failed after adaptation: {e2}")
-                        else:
-                            raise
-                            
+                    self.supabase.table("signal_ledger").insert(data).execute()
                 elif task_type == "outcome":
-                    try:
-                        self.supabase.table("signal_ledger").insert(data).execute()
-                    except Exception as e:
-                        if "PGRST204" in str(e) or "persistence" in str(e):
-                            # Remove persistence column if it doesn't exist
-                            logger.debug(f"SUPABASE: Adapting outcome insert due to schema mismatch")
-                            if "persistence" in data:
-                                data.pop("persistence", None)
-                            try:
-                                self.supabase.table("signal_ledger").insert(data).execute()
-                            except Exception as e2:
-                                logger.error(f"SUPABASE WORKER: Outcome insert failed after adaptation: {e2}")
-                        else:
-                            raise
-                            
+                    self.supabase.table("signal_ledger").insert(data).execute()
                 elif task_type == "snapshot":
-                    try:
-                        self.supabase.table("brain_snapshots").insert(data).execute()
-                    except Exception as e:
-                        if "PGRST204" in str(e) or "decision" in str(e):
-                            # Remove decision column if it doesn't exist
-                            logger.debug(f"SUPABASE: Adapting snapshot insert due to schema mismatch")
-                            if "decision" in data:
-                                data.pop("decision", None)
-                            try:
-                                self.supabase.table("brain_snapshots").insert(data).execute()
-                            except Exception as e2:
-                                logger.error(f"SUPABASE WORKER: Snapshot insert failed after adaptation: {e2}")
-                        else:
-                            raise
+                    self.supabase.table("brain_snapshots").insert(data).execute()
                 
                 self.queue.task_done()
                 
             except queue.Empty:
-                # Normal timeout - continue loop
                 continue
             except Exception as e:
                 logger.error(f"SUPABASE WORKER ERROR: {e}")
-                # Don't sleep on every error - only on repeated failures
                 time.sleep(1)
 
     def log_intent(self, signal_data: Dict):
