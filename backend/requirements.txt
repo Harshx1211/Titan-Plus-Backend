@@ -1,4 +1,4 @@
-pandas>=2.2.2
+pandas>=2.3.2
 pandas-ta==0.4.71b0
 python-dotenv>=1.0.0
 requests>=2.31.0
@@ -16,5 +16,5 @@ gunicorn
 pytz>=2023.3
 xgboost>=2.1.0
 scikit-learn>=1.5.0
-numpy<2.0.0
+numpy>=2.2.6,<3.0.0
 # torch removed (handled in Dockerfile for CPU-only optimization)
