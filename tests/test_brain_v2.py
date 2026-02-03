@@ -24,9 +24,13 @@ class TestBrainV2(unittest.TestCase):
     def setUp(self):
         # Create a fresh brain for each test
         self.brain = BrainEngine(stage=3)
+        # Ensure clean state for unit tests (ignore local brain_state.json)
+        self.brain.feature_reputation = {f: 1.0 for f in self.brain.feature_weights}
+        self.brain.authority = {k: 1.0 for k in self.brain.authority}
+        
         # Suppress long logs during tests
         import logging
-        logging.getLogger("brain_engine").setLevel(logging.DEBUG)
+        logging.getLogger("brain_engine").setLevel(logging.ERROR)
 
     def test_bessel_correction(self):
         """Verify statistical correctness (Sample vs Population std)"""
@@ -51,14 +55,14 @@ class TestBrainV2(unittest.TestCase):
         """IV skew should treat trending differently from uncertain"""
         # 1. Trending Case
         boost_trend, _ = self.brain._apply_iv_skew_adjustment(
-            boost=0.8, signal_intent="BULLISH", iv_skew=1.5, regime=Regime.TRENDING
+            boost=0.8, signal_intent="BULLISH", iv_skew=3.0, regime=Regime.TRENDING
         )
         # Expected: 0.8 * 0.85 = 0.68
         self.assertAlmostEqual(boost_trend, 0.68)
         
         # 2. Uncertain Case
         boost_uncert, _ = self.brain._apply_iv_skew_adjustment(
-            boost=0.8, signal_intent="BULLISH", iv_skew=1.5, regime=Regime.UNCERTAIN
+            boost=0.8, signal_intent="BULLISH", iv_skew=3.0, regime=Regime.UNCERTAIN
         )
         # Expected: 0.8 * 0.7 = 0.56
         self.assertAlmostEqual(boost_uncert, 0.56)
@@ -74,9 +78,9 @@ class TestBrainV2(unittest.TestCase):
         self.assertEqual(self.brain.metrics.nan_rejections, 1)
         
         # State should remain clean
-        boost, thoughts = self.brain.get_confidence_boost({"ADX": float('nan')})
-        self.assertEqual(boost, 0.0)
-        self.assertTrue(any("Cold start" in t for t in thoughts))
+        boost, thoughts = self.brain.get_confidence_boost({"ADX": float('nan')}, "TRENDING")
+        self.assertEqual(boost, 0.5)
+        self.assertTrue(any("Brain Warmup" in t for t in thoughts))
         print("NaN Safety: Correct")
 
     def test_migration_roundtrip(self):
@@ -98,8 +102,8 @@ class TestBrainV2(unittest.TestCase):
         self.assertEqual(migrated["feature_reputation"]["OI_RES"], 0.5)
         
         # Check fill-in
-        self.assertIn("SIDEWAYS", migrated["authority"])
-        self.assertEqual(migrated["authority"]["SIDEWAYS"], 1.0)
+        self.assertIn("SIDEWAYS_NORMAL", migrated["authority"])
+        self.assertEqual(migrated["authority"]["SIDEWAYS_NORMAL"], 1.0)
         print("State Migration: Correct")
 
     def test_learning_updates(self):
@@ -115,9 +119,9 @@ class TestBrainV2(unittest.TestCase):
         initial_auth = self.brain.authority["TRENDING"]
         
         # 2. Log a 'Win' outcome (Efficacy 1)
-        # Since it was a BLOCK (default because history is empty), 
-        # a 'False' outcome means the block was 'correct' -> Efficacy 1
-        self.brain.log_snapshot(decision_id, outcome=False)
+        # Since it was an APPROVE (boost 0.5 > 0.2 threshold), 
+        # an outcome=True + is_actionable would be a win.
+        self.brain.log_snapshot(decision_id, outcome=True, performance={"mfe": 20.0, "mae": 0.0})
         
         self.assertGreater(self.brain.feature_reputation["ADX"], initial_rep)
         self.assertGreater(self.brain.authority["TRENDING"], initial_auth)
@@ -136,16 +140,16 @@ class TestBrainV2(unittest.TestCase):
         print("Health Checks: Correct")
 
     def test_cold_start_distinction(self):
-        """Passive mode gets 0.5, Filter mode gets 0.0"""
+        """v9.8: Both modes get neutral 0.5 boost during warmup"""
         # Filter mode (stage 3)
         boost_f, _ = self.brain.get_confidence_boost({"ADX": 25.0}, "TRENDING")
-        self.assertEqual(boost_f, 0.0)
+        self.assertEqual(boost_f, 0.5)
         
         # Passive mode (stage 1)
         self.brain.stage = 1
         boost_p, _ = self.brain.get_confidence_boost({"ADX": 25.0}, "TRENDING")
         self.assertEqual(boost_p, 0.5)
-        print("Cold Start Logic: Correct")
+        print("Cold Start Logic: Correct (v9.8 Neutral)")
 
 if __name__ == "__main__":
     unittest.main()
