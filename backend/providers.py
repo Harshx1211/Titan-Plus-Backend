@@ -213,4 +213,8 @@ class DataProvider:
             return df
         df = pd.DataFrame(raw)
         df.rename(columns={'into': 'open', 'inth': 'high', 'intl': 'low', 'intc': 'close', 'v': 'volume'}, inplace=True)
+        # Type casting for pandas-ta stability
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
         return df
