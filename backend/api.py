@@ -49,7 +49,7 @@ class LiveState:
         self.index_strengths: Dict[str, float] = {"NIFTY": 0.0, "SENSEX": 0.0}
         
         # Partitioned Symbol Data (v8.1 Multi-Asset)
-        self.prices = {"NIFTY": 25000.0, "SENSEX": 81500.0}
+        self.prices = {"NIFTY": 24150.0, "SENSEX": 79150.0}
         self.max_pain = {"NIFTY": 0.0, "SENSEX": 0.0}
         self.option_battles = {"NIFTY": [], "SENSEX": []}
 
@@ -209,7 +209,7 @@ def is_market_open():
     ist = pytz_timezone('Asia/Kolkata')
     now = datetime.now(ist)
     
-    # Market hours: Monday-Friday, 9:15 AM - 3:30 PM IST
+    # Market hours: Monday-Friday, 9:00 AM - 3:30 PM IST
     # [HOTFIX] Special Budget Day Session (Feb 1st is Sunday)
     # if now.weekday() >= 5:  # Saturday = 5, Sunday = 6
     #     return False
@@ -545,13 +545,25 @@ def run_engine_loop():
                 # 3. Aggressive Sleep during off-hours (1 minute polling)
                 live_state.last_update = datetime.now(timezone.utc) # Keep heartbeat alive
                 
-                # [v9.9.8] Seed persistence data once every 10 mins during off-hours
-                if current_time.minute % 10 == 0 and current_time.second < 10:
+                # [v9.9.8] Seed persistence data once every hour during off-hours
+                if current_time.minute == 0 and current_time.second < 10:
                     for sym in live_state.symbols:
                         try:
                             m_data = data_provider.get_market_snapshot(sym)
                             if m_data:
-                                brain.log_snapshot(str(uuid.uuid4())[:8], outcome=None, performance={"mfe": 0, "mae": 0})
+                                db.cloud_db.log_snapshot(
+                                    signal_data={
+                                        "features": {
+                                            "SPOT_PRICE": m_data.spot_price,
+                                            "FUTURE_PRICE": m_data.future_price,
+                                            "symbol": sym,
+                                            "ADX": 25.0, "PCR": 1.0
+                                        },
+                                        "decision": "OFF_MARKET_SEED",
+                                        "regime": "UNCERTAIN"
+                                    },
+                                    outcome=None
+                                )
                                 logger.info(f"STATE: Persisted off-market price for {sym}")
                         except: pass
 
@@ -589,8 +601,8 @@ def run_engine_loop():
                 live_state.add_thought("DATA_ERROR", f"Snapshot failed for {symbol}. Source issues?")
                 continue
                 # Use hardcoded fallback to keep ticker alive even if everything fails
-                if symbol == "NIFTY" and live_state.prices["NIFTY"] == 0: live_state.prices["NIFTY"] = 24500.0
-                if symbol == "SENSEX" and live_state.prices["SENSEX"] == 0: live_state.prices["SENSEX"] = 81500.0
+                if symbol == "NIFTY" and live_state.prices["NIFTY"] == 0: live_state.prices["NIFTY"] = 24150.0
+                if symbol == "SENSEX" and live_state.prices["SENSEX"] == 0: live_state.prices["SENSEX"] = 79150.0
                 market_data = None
 
             if not market_data:
