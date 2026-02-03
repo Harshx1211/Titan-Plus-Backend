@@ -44,7 +44,7 @@ APP_CONFIG = {
     "SKIRMISHER_STOP_LOSS_POINTS": float(os.getenv("SKIRMISHER_STOP_LOSS_POINTS", "15.0")),
     "SKIRMISHER_TARGET_POINTS": float(os.getenv("SKIRMISHER_TARGET_POINTS", "30.0")),
     "MARKET_START_HOUR": int(os.getenv("MARKET_START_HOUR", "9")),
-    "MARKET_START_MINUTE": int(os.getenv("MARKET_START_MINUTE", "15")),
+    "MARKET_START_MINUTE": int(os.getenv("MARKET_START_MINUTE", "0")),
     "MARKET_END_HOUR": int(os.getenv("MARKET_END_HOUR", "15")),
     "MARKET_END_MINUTE": int(os.getenv("MARKET_END_MINUTE", "30")),
     "ENGINE_ERROR_SLEEP_TIME": int(os.getenv("ENGINE_ERROR_SLEEP_TIME", "5")),
@@ -231,6 +231,23 @@ class SupabaseManager:
             res = self.supabase.table("trade_snapshots").select("*").order("timestamp", desc=True).limit(limit).execute()
             return res.data or []
         except: return []
+
+    def get_last_known_prices(self) -> Dict[str, float]:
+        """Recovers the most recent prices from trade snapshots."""
+        prices = {}
+        try:
+            snapshots = self.get_snapshots(limit=200)
+            for snap in snapshots:
+                feat = snap.get("features", {})
+                # Look for symbols in snapshots (v9.8 logs symbol in features usually)
+                symbol = feat.get("symbol")
+                if not symbol: continue
+                if symbol not in prices and "SPOT_PRICE" in feat:
+                    prices[symbol] = float(feat["SPOT_PRICE"])
+                if len(prices) >= 2: break # Found both NIFTY and SENSEX
+        except Exception as e:
+            logging.getLogger("infrastructure").error(f"SUPABASE: Price recovery failed: {e}")
+        return prices
 
 # ============================================================================
 # 4. Database Bridge (Legacy Support)

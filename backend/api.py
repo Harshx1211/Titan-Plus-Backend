@@ -98,7 +98,7 @@ APP_CONFIG = {
     "ENGINE_POLLING_JITTER_SECONDS": 2,
     "ENGINE_ERROR_SLEEP_TIME": 5,
     "MARKET_START_HOUR": 9,
-    "MARKET_START_MINUTE": 15,
+    "MARKET_START_MINUTE": 0,
     "MARKET_END_HOUR": 15,
     "MARKET_END_MINUTE": 30
 }
@@ -475,6 +475,16 @@ def run_engine_loop():
             from shadow_mode import ShadowMode
             shadow_engine = ShadowMode()
             
+        # [v9.9.8] State Recovery: Load last active prices if market is closed/fresh restart
+        try:
+            last_prices = db.cloud_db.get_last_known_prices()
+            for sym, price in last_prices.items():
+                if sym in live_state.prices:
+                    live_state.prices[sym] = price
+                    logger.info(f"STATE: Recovered last active price for {sym}: {price}")
+        except Exception as e:
+            logger.warning(f"STATE: Price recovery failed: {e}")
+
         logger.info("ENGINE: All strategy engines initialized. Starting analysis loop.")
         evolution_done_date = None
     except Exception as init_err:
@@ -838,7 +848,10 @@ def run_engine_loop():
                     "OI_RES": oi_res,
                     "PCR": market_data.pcr,
                     "BASIS_RES": basis_res,
-                    "ADX": adx_val
+                    "ADX": adx_val,
+                    "SPOT_PRICE": market_data.spot_price,
+                    "FUTURE_PRICE": market_data.future_price,
+                    "symbol": symbol
                 }
                 
             except Exception as e:
