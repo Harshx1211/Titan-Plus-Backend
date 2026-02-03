@@ -127,9 +127,21 @@ class RLEvolutionEngine:
 
     def load_state(self):
         if self.rl_enabled and os.path.exists(self.state_file):
-            checkpoint = torch.load(self.state_file)
-            self.policy_net.load_state_dict(checkpoint['policy_net'])
-            self.epsilon, self.steps = checkpoint['epsilon'], checkpoint['steps']
+            try:
+                # Basic check for empty files
+                if os.path.getsize(self.state_file) == 0:
+                    raise EOFError("State file is empty")
+                    
+                checkpoint = torch.load(self.state_file, weights_only=True)
+                self.policy_net.load_state_dict(checkpoint['policy_net'])
+                self.epsilon, self.steps = checkpoint['epsilon'], checkpoint['steps']
+                logger.info(f"RL: Loaded state from {self.state_file}")
+            except Exception as e:
+                logger.error(f"RL: Failed to load state ({e}). Corrupted file? Starting fresh.")
+                try:
+                    os.remove(self.state_file)
+                except:
+                    pass
 
 if __name__ == "__main__":
     brain = BrainEngineML()
