@@ -89,7 +89,19 @@ class LiveState:
         if len(self.thought_logs) > 40:
             self.thought_logs.pop(0)
 
-# State & Monitoring
+# Config & Global Placeholders
+# [v9.9.7] Essential defaults for LiveState before background thread fills it
+APP_CONFIG = {
+    "VIX_DEFAULT": 15.0,
+    "SIGNAL_ACTIVE_CAP": 20,
+    "ENGINE_POLLING_BASE_SECONDS": 5,
+    "ENGINE_POLLING_JITTER_SECONDS": 2,
+    "ENGINE_ERROR_SLEEP_TIME": 5
+}
+evolution_done_date = None
+
+shadow_mode_enabled = os.getenv("SHADOW_MODE", "false").lower() == "true"
+
 # State & Monitoring
 IST = pytz.timezone('Asia/Kolkata')
 live_state = LiveState()
@@ -110,12 +122,6 @@ db = None
 telegram_notifier = None
 data_provider = None
 shadow_engine = None
-
-# Config placeholder
-APP_CONFIG = {}
-evolution_done_date = None
-
-shadow_mode_enabled = os.getenv("SHADOW_MODE", "false").lower() == "true"
 # Helper: Safe Brain Interface
 def call_brain_safely(action: str, **kwargs):
     if brain is None:
