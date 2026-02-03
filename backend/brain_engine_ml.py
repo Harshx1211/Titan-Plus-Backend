@@ -13,8 +13,9 @@ from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
 
 # ML Libraries
-import xgboost as xgb
-from sklearn.preprocessing import StandardScaler
+# ML Libraries removed from global scope
+# import xgboost as xgb
+# from sklearn.preprocessing import StandardScaler
 
 from infrastructure import SupabaseManager, APP_CONFIG
 from models import TradeSignal, SignalConfidence, DecisionObject, Regime
@@ -80,6 +81,7 @@ class BrainEngineML:
         self._last_regime = None
         
         # ML Components
+        from sklearn.preprocessing import StandardScaler
         self.model = None
         self.scaler = StandardScaler()
         self.is_trained = False
@@ -140,6 +142,7 @@ class BrainEngineML:
 
     def _initialize_model(self):
         """Initialize new XGBoost model"""
+        import xgboost as xgb
         self.model = xgb.XGBClassifier(
             max_depth=6,
             learning_rate=0.1,

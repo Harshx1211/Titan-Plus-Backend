@@ -1,4 +1,4 @@
-# Using Python 3.12 slim as base image (Required for latest pandas-ta)
+# Build Identifier: v9.9.6-MEMORY-STABLE
 FROM python:3.12-slim
 
 # Set working directory

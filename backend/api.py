@@ -411,20 +411,30 @@ def run_engine_loop():
     logger.info("ENGINE: Initializing background services...")
     
     try:
+        import gc
         # Cascade initialization (Sequenced to prevent resource lock)
         db = DatabaseManager()
+        time.sleep(1) # [v9.9.6] Staggered start
         telegram_notifier = TelegramNotifier()
+        time.sleep(1)
         data_provider = DataProvider()
+        time.sleep(1)
         
         if data_provider.use_groww:
             live_state.data_source = "GROWW_API"
             
         sentinel = DataSentinel()
         strategist = MarketStrategist()
+        time.sleep(1)
         skirmisher = SkirmisherV2()
         sr_engine = SupportResistanceEngine()
+        time.sleep(1)
         brain = BrainEngineML(stage=3)
+        gc.collect() # [v9.9.6] Cleanup after heavy Brain load
+        time.sleep(1)
         evolver = RLEvolutionEngine(brain)
+        gc.collect() # [v9.9.6] Cleanup after heavy RL load
+        time.sleep(1)
         pattern_engine = PatternEngine()
         risk_engine = RiskEngine()
         trap_hunter = TrapHunter()

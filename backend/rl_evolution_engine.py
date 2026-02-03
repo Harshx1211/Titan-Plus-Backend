@@ -12,44 +12,54 @@ import os
 from datetime import datetime
 from collections import deque
 
-try:
-    import torch
-    import torch.nn as nn
-    import torch.optim as optim
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
-    # Mocking nn.Module to prevent NameError at class definition time
-    class MockModule: pass
-    class MockNN: Module = MockModule
-    nn = MockNN
+# torch removed from global scope to prevent OOM on weak pods
+TORCH_AVAILABLE = None 
+
+def check_torch():
+    global TORCH_AVAILABLE
+    if TORCH_AVAILABLE is not None:
+        return TORCH_AVAILABLE
+    try:
+        import torch
+        TORCH_AVAILABLE = True
+    except ImportError:
+        TORCH_AVAILABLE = False
+    return TORCH_AVAILABLE
 
 from brain_engine_ml import BrainEngineML
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("rl_evolution")
 
-class QNetwork(nn.Module):
-    def __init__(self, state_size=15, action_size=2, hidden_size=128):
-        super(QNetwork, self).__init__()
-        self.fc1 = nn.Linear(state_size, hidden_size)
-        self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.fc3 = nn.Linear(hidden_size, action_size)
-        
-    def forward(self, x):
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        return self.fc3(x)
+# Mock for type hints if torch not present
+class MockModule: pass
 
 class RLEvolutionEngine:
     def __init__(self, brain: BrainEngineML):
         self.brain = brain
-        self.rl_enabled = TORCH_AVAILABLE
+        self.rl_enabled = check_torch()
         
-        if not TORCH_AVAILABLE:
+        if not self.rl_enabled:
             logger.warning("RL: PyTorch not available, using basic reputation learning")
             return
             
+        import torch
+        import torch.nn as nn
+        import torch.optim as optim
+        
+        # Define the network locally to ensure torch is loaded
+        class QNetwork(nn.Module):
+            def __init__(self, state_size=15, action_size=2, hidden_size=128):
+                super(QNetwork, self).__init__()
+                self.fc1 = nn.Linear(state_size, hidden_size)
+                self.fc2 = nn.Linear(hidden_size, hidden_size)
+                self.fc3 = nn.Linear(hidden_size, action_size)
+                
+            def forward(self, x):
+                x = torch.relu(self.fc1(x))
+                x = torch.relu(self.fc2(x))
+                return self.fc3(x)
+
         self.state_size = 15
         self.action_size = 2
         self.gamma, self.epsilon = 0.95, 1.0
@@ -92,6 +102,7 @@ class RLEvolutionEngine:
             return 2.0 if (not outcome or mfe < 10) else -5.0
 
     def replay(self):
+        import torch
         if len(self.memory) < self.batch_size: return
         batch = random.sample(self.memory, self.batch_size)
         states = torch.FloatTensor(np.array([exp[0] for exp in batch]))
@@ -123,10 +134,12 @@ class RLEvolutionEngine:
 
     def save_state(self):
         if self.rl_enabled:
+            import torch
             torch.save({'policy_net': self.policy_net.state_dict(), 'epsilon': self.epsilon, 'steps': self.steps}, self.state_file)
 
     def load_state(self):
         if self.rl_enabled and os.path.exists(self.state_file):
+            import torch
             try:
                 # Basic check for empty files
                 if os.path.getsize(self.state_file) == 0:
