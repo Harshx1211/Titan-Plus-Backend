@@ -563,9 +563,17 @@ export default function TitanDashboard() {
                     <Brain className="w-4 h-4 sm:w-6 sm:h-6 text-violet-400 relative z-10" />
                   </div>
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <h2 className="text-xs sm:text-sm font-black text-white uppercase tracking-widest tracking-tighter truncate">Neural Stream</h2>
                   <p className="text-[7px] sm:text-[8px] font-mono text-slate-500 uppercase tracking-wider sm:tracking-[0.2em] font-black hidden sm:block truncate">Epistemic Flow</p>
+                </div>
+
+                {/* Neural Heartbeat Indicator */}
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/20 shadow-inner group transition-all hover:bg-violet-500/20">
+                  <div className="w-1.5 h-1.5 rounded-full bg-violet-500 animate-[ping_1.5s_infinite] shadow-[0_0_8px_rgba(139,92,246,0.5)]" />
+                  <span className="text-[8px] font-mono text-violet-400 uppercase font-black tracking-widest animate-pulse">
+                    Live Beat
+                  </span>
                 </div>
               </div>
 

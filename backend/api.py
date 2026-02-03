@@ -543,7 +543,9 @@ def run_engine_loop():
             current_spread = abs(market_data.future_price - market_data.spot_price)
             spread_max = market_data.spot_price * 0.0005
             if current_spread > spread_max:
-                live_state.add_thought("SPREAD_VETO", f"Spread Spike: {current_spread:.2f} > {spread_max:.2f}. Vetoing.")
+                if "SPREAD" not in live_state.market_message:
+                    live_state.add_thought("SPREAD_VETO", f"Spread Spike: {current_spread:.2f} > {spread_max:.2f}. Vetoing.")
+                    live_state.market_message = f"SPREAD VETO: {symbol} Basis Stability Alert"
                 continue
 
             # 2. Triangulation (Sentinel v2 with VIX Adaptivity)
