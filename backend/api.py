@@ -49,7 +49,7 @@ class LiveState:
         self.index_strengths: Dict[str, float] = {"NIFTY": 0.0, "SENSEX": 0.0}
         
         # Partitioned Symbol Data (v8.1 Multi-Asset)
-        self.prices = {"NIFTY": 24150.0, "SENSEX": 79150.0}
+        self.prices = {"NIFTY": 25727.0, "SENSEX": 83739.0}
         self.max_pain = {"NIFTY": 0.0, "SENSEX": 0.0}
         self.option_battles = {"NIFTY": [], "SENSEX": []}
 
@@ -601,8 +601,8 @@ def run_engine_loop():
                 live_state.add_thought("DATA_ERROR", f"Snapshot failed for {symbol}. Source issues?")
                 continue
                 # Use hardcoded fallback to keep ticker alive even if everything fails
-                if symbol == "NIFTY" and live_state.prices["NIFTY"] == 0: live_state.prices["NIFTY"] = 24150.0
-                if symbol == "SENSEX" and live_state.prices["SENSEX"] == 0: live_state.prices["SENSEX"] = 79150.0
+                if symbol == "NIFTY" and live_state.prices["NIFTY"] == 0: live_state.prices["NIFTY"] = 25727.0
+                if symbol == "SENSEX" and live_state.prices["SENSEX"] == 0: live_state.prices["SENSEX"] = 83739.0
                 market_data = None
 
             if not market_data:

@@ -158,8 +158,8 @@ class DataProvider:
             return MarketData(symbol=symbol, spot_price=data['lp'], future_price=data['future_lp'] or (data['lp']+5.0),
                             oi=0, pcr=0.95, timestamp=datetime.now(), source="SHOONYA")
         
-        # [v9.9.8] Realistic Fallbacks for Feb 2026
-        prices = {"NIFTY": 24150.0, "SENSEX": 79150.0, "BANKNIFTY": 51200.0}
+        # [v9.9.8] Realistic Fallbacks for Feb 3rd 2026 (Closing Data)
+        prices = {"NIFTY": 25727.0, "SENSEX": 83739.0, "BANKNIFTY": 51200.0}
         base = prices.get(symbol, 25000.0)
         return MarketData(symbol=symbol, spot_price=base, future_price=base+5.0, oi=0, pcr=0.95, timestamp=datetime.now(), source="FALLBACK")
 
