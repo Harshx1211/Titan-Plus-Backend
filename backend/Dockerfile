@@ -1,5 +1,6 @@
 # Using Python 3.11 slim as base image
-FROM python:3.11-slim
+# Build Identifier: v9.9.4-FINAL-RESOLUTION
+FROM python:3.12-slim
 
 # Set working directory
 WORKDIR /app
