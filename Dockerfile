@@ -1,5 +1,5 @@
-# Using Python 3.11 slim as base image (more stable for ML deps)
-FROM python:3.11-slim
+# Using Python 3.12 slim as base image (Required for latest pandas-ta)
+FROM python:3.12-slim
 
 # Set working directory
 WORKDIR /app
