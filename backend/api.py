@@ -120,16 +120,11 @@ trap_hunter = None
 
 shadow_mode_enabled = os.getenv("SHADOW_MODE", "false").lower() == "true"
 shadow_engine = None
-# Helper: Safe Brain Interface (Phase 28 Compatibility)
+# Helper: Safe Brain Interface
 def call_brain_safely(action: str, **kwargs):
-    """
-    Wrapper to handle v1 vs v2 signature differences.
-    v2 requires signal_intent, iv_skew, etc.
-    """
     if brain is None:
-        logger.error("BRAIN: System core not initialized yet")
         return None, []
-
+    
     try:
         if action == "DECIDE":
             return brain.generate_decision(
@@ -141,7 +136,6 @@ def call_brain_safely(action: str, **kwargs):
                 iv_skew=kwargs.get("iv_skew", 1.0)
             )
         elif action == "BOOST":
-            # [v9.8] Shadow Mode Integration
             if shadow_mode_enabled and shadow_engine:
                 shadow_engine.compare_predictions(kwargs.get("features"), kwargs.get("regime"))
             
@@ -151,8 +145,8 @@ def call_brain_safely(action: str, **kwargs):
                 signal_intent=kwargs.get("signal_intent"),
                 iv_skew=kwargs.get("iv_skew", 1.0)
             )
-    except TypeError as e:
-        logger.warning(f"BRAIN: V2 call failed, falling back to v1 signature: {e}")
+    except TypeError:
+        # Fallback to V1 signatures
         try:
             if action == "DECIDE":
                 return brain.generate_decision(
@@ -166,8 +160,8 @@ def call_brain_safely(action: str, **kwargs):
                     features=kwargs.get("features"),
                     regime_val=kwargs.get("regime").value if hasattr(kwargs.get("regime"), 'value') else kwargs.get("regime")
                 )
-        except Exception as ex:
-            logger.error(f"BRAIN: Fallback call failed: {ex}")
+        except Exception as e:
+            logger.error(f"BRAIN: V1 fallback failed: {e}")
             
     return None, []
 
@@ -394,17 +388,42 @@ async def reset_system():
 
 def run_engine_loop():
     """
-    The background loop that fetches data and runs the Titan Plus logic.
+    The background loop that handles lazy initialization AND the analysis loop.
+    This ensures the API starts instantly while heavy work happens in the background.
     """
+    global sentinel, strategist, skirmisher, sr_engine, brain, evolver, pattern_engine, risk_engine, trap_hunter, shadow_engine
+    global option_engine, db, telegram_notifier, data_provider, evolution_done_date
+    
     logger = logging.getLogger("api_engine")
-    logger.info("ENGINE: Starting background loop...")
-    start_time = time.time() # Guardrail #1: Initialized once
+    logger.info("ENGINE: Initializing background services...")
     
-    global evolution_done_date, evolver
-    
-    # Initialize Evolver
-    if evolver is None:
-        evolver = EvolutionEngine(brain)
+    try:
+        # Cascade initialization (Sequenced to prevent resource lock)
+        db = DatabaseManager()
+        telegram_notifier = TelegramNotifier()
+        data_provider = DataProvider()
+        
+        if data_provider.use_groww:
+            live_state.data_source = "GROWW_API"
+            
+        sentinel = DataSentinel()
+        strategist = MarketStrategist()
+        skirmisher = SkirmisherV2()
+        sr_engine = SupportResistanceEngine()
+        brain = BrainEngineML(stage=3)
+        evolver = RLEvolutionEngine(brain)
+        pattern_engine = PatternEngine()
+        risk_engine = RiskEngine()
+        trap_hunter = TrapHunter()
+        option_engine = OptionEngine()
+        
+        if shadow_mode_enabled:
+            shadow_engine = ShadowMode()
+            
+        logger.info("ENGINE: All strategy engines initialized. Starting analysis loop.")
+    except Exception as init_err:
+        logger.error(f"ENGINE INIT ERROR: {init_err}", exc_info=True)
+        return
 
     while True:
         try:
@@ -1151,38 +1170,11 @@ def run_engine_loop():
 
 @app.on_event("startup")
 async def startup_event():
-    global sentinel, strategist, skirmisher, sr_engine, brain, evolver, pattern_engine, risk_engine, trap_hunter, shadow_engine
-    global option_engine, db, telegram_notifier, data_provider
-    
-    logger.info("API: Initializing strategy engines...")
-    
-    # Cascade initialization
-    db = DatabaseManager()
-    telegram_notifier = TelegramNotifier()
-    data_provider = DataProvider()
-    
-    if data_provider.use_groww:
-        live_state.data_source = "GROWW_API"
-        
-    sentinel = DataSentinel()
-    strategist = MarketStrategist()
-    skirmisher = SkirmisherV2()
-    sr_engine = SupportResistanceEngine()
-    brain = BrainEngineML(stage=3)
-    evolver = RLEvolutionEngine(brain)
-    pattern_engine = PatternEngine()
-    risk_engine = RiskEngine()
-    trap_hunter = TrapHunter()
-    option_engine = OptionEngine()
-    
-    if shadow_mode_enabled:
-        shadow_engine = ShadowMode()
-
-    logger.info("API: Engines initialized. Starting background loop.")
-    
-    # Start engine in a separate thread to not block the API
-    engine_thread = threading.Thread(target=run_engine_loop, daemon=True)
-    engine_thread.start()
+    logger.info("API: Launching background initialization thread...")
+    # Immediately spawn background thread and return
+    # This ensures the API binds to its port in milliseconds
+    thread = threading.Thread(target=run_engine_loop, daemon=True)
+    thread.start()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8004))
