@@ -169,7 +169,7 @@ export default function TitanDashboard() {
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://titan-plus-backend.onrender.com';
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://harshx1323-trading-bot.hf.space';
 
   useEffect(() => {
     const fetchData = async () => {

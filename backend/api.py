@@ -283,7 +283,7 @@ async def get_state():
     # Market is open - return live data
     return SystemState(
         regime=live_state.current_regime,
-        is_in_recovery=risk_engine.is_in_recovery(),
+        is_in_recovery=risk_engine.is_in_recovery() if risk_engine else False,
         data_latency=(datetime.now(timezone.utc) - live_state.last_update).total_seconds() * 1000 if is_market_open() else 0.0,
         integrity_status=live_state.integrity,
         active_signals=live_state.active_signals,
@@ -311,22 +311,30 @@ async def get_state():
 @app.post("/signals/intent")
 async def post_intent(signal: TradeSignal, patterns: List[str] = []):
     """Logs a new signal intent into the Truth Ledger."""
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database engine initializing")
     db.log_intent(signal, patterns)
     return {"status": "intent_logged"}
 
 @app.post("/signals/outcome")
 async def post_outcome(signal_id: str, outcome: str):
     """Appends an outcome to an existing signal intent."""
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database engine initializing")
     db.log_outcome(signal_id, outcome)
     return {"status": "outcome_logged"}
 
 @app.get("/history")
 async def get_history():
     """Returns the Truth Ledger (Immutable Records) from Supabase."""
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database engine initializing")
     return db.cloud_db.get_history()
 
 @app.get("/accuracy")
 async def get_accuracy():
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database engine initializing")
     return db.get_accuracy_report()
 
 @app.get("/audit")
@@ -354,10 +362,13 @@ async def execute_trade(signal_id: str):
 @app.post("/evolve")
 async def trigger_evolution(date: Optional[str] = None):
     """Triggers the Overnight Learning (Evolution) process."""
+    if evolver is None:
+        raise HTTPException(status_code=503, detail="Evolution engine initializing")
+    
     live_state.is_learning = True
     live_state.add_thought("LEARN", f"Starting Overnight Evolutionary Audit for {date or 'today'}...")
     try:
-        result = evolution_engine.evolve_session(date)
+        result = evolver.evolve_session(date)
 
         # Add specific learning results to thoughts
         for feat, rep in result.get("reputation_updates", {}).items():
@@ -375,6 +386,8 @@ async def trigger_evolution(date: Optional[str] = None):
 @app.post("/reset")
 async def reset_system():
     """Emergency Reset: Clears recovery mode and active signals."""
+    if risk_engine is None:
+        raise HTTPException(status_code=503, detail="Risk engine initializing")
     try:
         risk_engine.reset()
         live_state.active_signals = []
