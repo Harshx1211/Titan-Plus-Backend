@@ -1,5 +1,5 @@
 # Using Python 3.11 slim as base image
-# Build Identifier: v9.9.4-FINAL-RESOLUTION
+# Build Identifier: v9.9.8-AUDIT-REMEDIATED
 FROM python:3.12-slim
 
 # Set working directory

@@ -1,5 +1,9 @@
 import unittest
-from risk_engine import RiskEngine
+import sys
+import os
+# Add parent directory to path to allow importing from 'engines'
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from engines import RiskEngine
 
 class TestRiskEngine(unittest.TestCase):
     def setUp(self):

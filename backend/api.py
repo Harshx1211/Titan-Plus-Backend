@@ -22,12 +22,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from models import Regime, DivergenceType, TradeSignal, SignalConfidence
+import uvicorn
 
 app = FastAPI(title="The Oracle - Titan Plus Institutional")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=os.getenv("ALLOWED_ORIGINS", "*").split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,31 +41,31 @@ class LiveState:
         self.integrity = DivergenceType.NONE
         self.active_signals = []
         self.last_update = datetime.now(timezone.utc)
-        self.symbols = ["NIFTY", "SENSEX"]
+        self.symbols = ["NIFTY", "BANKNIFTY", "SENSEX"]
         self.current_symbol_idx = 0
         self.vix = APP_CONFIG["VIX_DEFAULT"]
         self.breadth = {"advances": 0, "declines": 0}
         self.market_message = "System Stable"
         self.data_source = "PUBLIC_SCRAPER"
-        self.index_strengths: Dict[str, float] = {"NIFTY": 0.0, "SENSEX": 0.0}
+        self.index_strengths: Dict[str, float] = {"NIFTY": 0.0, "BANKNIFTY": 0.0, "SENSEX": 0.0}
         
         # Partitioned Symbol Data (v8.1 Multi-Asset)
-        self.prices = {"NIFTY": 25727.0, "SENSEX": 83739.0}
-        self.max_pain = {"NIFTY": 0.0, "SENSEX": 0.0}
-        self.option_battles = {"NIFTY": [], "SENSEX": []}
+        self.prices = {"NIFTY": 25727.0, "BANKNIFTY": 50000.0, "SENSEX": 83739.0}
+        self.max_pain = {"NIFTY": 0.0, "BANKNIFTY": 0.0, "SENSEX": 0.0}
+        self.option_battles = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
 
-        self.option_chains = {"NIFTY": [], "SENSEX": []}
-        self.supports = {"NIFTY": [], "SENSEX": []}
-        self.resistances = {"NIFTY": [], "SENSEX": []}
+        self.option_chains = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
+        self.supports = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
+        self.resistances = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
         
         # v8.1: Statistical Discipline
         self.resets_today = 0
         self.last_reset_time = datetime.now(timezone.utc)  # FIX: Use timezone-aware
         self.beta_history = {"OI": [], "BASIS": []}
         self.iv_skew = {"NIFTY": 1.0, "SENSEX": 1.0, "BANKNIFTY": 1.0}
-        self.gex_bias = {"NIFTY": 0.0, "SENSEX": 0.0}
+        self.gex_bias = {"NIFTY": 0.0, "BANKNIFTY": 0.0, "SENSEX": 0.0}
         self.sector_synergy = 1.0 
-        self.prev_oi = {"NIFTY": 0, "SENSEX": 0}
+        self.prev_oi = {"NIFTY": 0, "BANKNIFTY": 0, "SENSEX": 0}
         self.prev_spot = 0.0
         
         # [v9.4] Epistemic Transparency: Digital Stream of Consciousness
@@ -105,6 +106,7 @@ APP_CONFIG = {
 evolution_done_date = None
 
 shadow_mode_enabled = os.getenv("SHADOW_MODE", "false").lower() == "true"
+admin_token = os.getenv("ADMIN_TOKEN", "titan_admin_123") # Simple auth
 
 # State & Monitoring
 IST = pytz.timezone('Asia/Kolkata')
@@ -139,7 +141,8 @@ def call_brain_safely(action: str, **kwargs):
                 is_commit=kwargs.get("is_commit", False),
                 pattern_score=kwargs.get("pattern_score", 0.0),
                 signal_intent=kwargs.get("signal_intent"),
-                iv_skew=kwargs.get("iv_skew", 1.0)
+                iv_skew=kwargs.get("iv_skew", 1.0),
+                grandmaster_data=kwargs.get("grandmaster_data") # [v3.0] Pass GM Data
             )
         elif action == "BOOST":
             if shadow_mode_enabled and shadow_engine:
@@ -170,12 +173,6 @@ def call_brain_safely(action: str, **kwargs):
             logger.error(f"BRAIN: V1 fallback failed: {e}")
             
     return None, []
-
-# Engines (Initialized in startup_event)
-option_engine = None
-db = None
-telegram_notifier = None
-data_provider = None
 
 class SystemState(BaseModel):
     regime: Regime
@@ -258,35 +255,6 @@ async def health_check():
 
 @app.get("/state", response_model=SystemState)
 async def get_state():
-    # Market is open - return live data (DEBUG: Bypassing market check for state transparency)
-    if False: # Temporarily disabled
-        return SystemState(
-            regime=Regime.UNCERTAIN,
-            is_in_recovery=False,
-            data_latency=0.0,
-            integrity_status=DivergenceType.NONE,
-            active_signals=[],
-            last_update=live_state.last_update,
-            vix=0.0,  
-            breadth={"advances": 0, "declines": 0},
-            market_message="MARKET_CLOSED",
-            data_source=live_state.data_source,
-            prices=live_state.prices, 
-            max_pain={"NIFTY": 0.0, "SENSEX": 0.0},
-            option_battles={"NIFTY": [], "SENSEX": []},
-            option_chains={"NIFTY": [], "SENSEX": []},
-            iv_skew={"NIFTY": 0.0, "SENSEX": 0.0, "BANKNIFTY": 0.0},
-            resets_today=0,
-            gex_bias={"NIFTY": 0.0, "SENSEX": 0.0},
-            sector_synergy=0.0,
-            thought_logs=[],
-            is_learning=False,
-            market_open=False,
-            supports={"NIFTY": [], "SENSEX": []},
-            resistances={"NIFTY": [], "SENSEX": []}
-        )
-    
-    # Market is open - return live data
     return SystemState(
         regime=live_state.current_regime,
         is_in_recovery=risk_engine.is_in_recovery() if risk_engine else False,
@@ -311,7 +279,7 @@ async def get_state():
         sector_synergy=live_state.sector_synergy,
         thought_logs=live_state.thought_logs[-100:], # [v9.8] Increased for TRACE visibility
         is_learning=live_state.is_learning,
-        market_open=True
+        market_open=is_market_open()
     )
 
 @app.post("/signals/intent")
@@ -346,6 +314,8 @@ async def get_accuracy():
 @app.get("/audit")
 async def get_session_audit(date: Optional[str] = None):
     """Returns the Institutional Session Audit report."""
+    if session_auditor is None:
+        raise HTTPException(status_code=503, detail="Session Auditor initializing")
     return session_auditor.generate_daily_report(date)
 
 @app.post("/feedback")
@@ -354,7 +324,9 @@ async def post_feedback(signal_id: int, outcome: str, override: bool = False):
     return {"status": "success"}
 
 @app.post("/execute_trade")
-async def execute_trade(signal_id: str):
+async def execute_trade(signal_id: str, token: str = None):
+    if token != admin_token:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     logger.info(f"API: Trade execution requested for Signal ID: {signal_id}")
     try:
         # In a real system, this would involve integration with a broker API
@@ -366,8 +338,10 @@ async def execute_trade(signal_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to execute trade: {e}")
 
 @app.post("/evolve")
-async def trigger_evolution(date: Optional[str] = None):
+async def trigger_evolution(date: Optional[str] = None, token: str = None):
     """Triggers the Overnight Learning (Evolution) process."""
+    if token != admin_token:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     if evolver is None:
         raise HTTPException(status_code=503, detail="Evolution engine initializing")
     
@@ -390,8 +364,10 @@ async def trigger_evolution(date: Optional[str] = None):
         live_state.is_learning = False
 
 @app.post("/reset")
-async def reset_system():
+async def reset_system(token: str = None):
     """Emergency Reset: Clears recovery mode and active signals."""
+    if token != admin_token:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     if risk_engine is None:
         raise HTTPException(status_code=503, detail="Risk engine initializing")
     try:
@@ -487,6 +463,10 @@ def run_engine_loop():
 
         logger.info("ENGINE: All strategy engines initialized. Starting analysis loop.")
         evolution_done_date = None
+        
+        # [AUDIT FIX] Initialize timing for passive checks
+        start_time = time.time()
+        
     except Exception as init_err:
         logger.error(f"ENGINE INIT ERROR: {init_err}", exc_info=True)
         return
@@ -599,11 +579,8 @@ def run_engine_loop():
             except Exception as e:
                 logger.warning(f"ENGINE: Snapshot fetch failed for {symbol}: {e}", exc_info=True)
                 live_state.add_thought("DATA_ERROR", f"Snapshot failed for {symbol}. Source issues?")
-                continue
-                # Use hardcoded fallback to keep ticker alive even if everything fails
-                if symbol == "NIFTY" and live_state.prices["NIFTY"] == 0: live_state.prices["NIFTY"] = 25727.0
-                if symbol == "SENSEX" and live_state.prices["SENSEX"] == 0: live_state.prices["SENSEX"] = 83739.0
                 market_data = None
+
 
             if not market_data:
                 time.sleep(2)
@@ -725,7 +702,7 @@ def run_engine_loop():
                     logger.info(f"ENGINE: Analysis quiet for {symbol}. Moving price action within range.")
                     live_state.add_thought("SEARCH", f"Scanning {symbol}... No patterns found.")
                 pattern_results = {"score": 0.0, "patterns": []}
-                macro_bias = 0
+                macro_bias = 0.0
                 macro_zones = []
             
             # Phase 14: Option Chain X-Ray (Partitioned)
@@ -874,6 +851,7 @@ def run_engine_loop():
                     "ADX": adx_val,
                     "SPOT_PRICE": market_data.spot_price,
                     "FUTURE_PRICE": market_data.future_price,
+                    "MACRO_BIAS": macro_bias,
                     "symbol": symbol
                 }
                 
@@ -890,10 +868,30 @@ def run_engine_loop():
             )
             live_state.add_thought("INTENT", f"Bias: {likely_intent} (Strength: {curr_strength:.2f}, Velocity: {price_vel_curr:.2f})")
 
+            # [v3.0] Grandmaster Logic Injection (Phase 3)
+            grandmaster_data = {}
+            try:
+                if brain and not hist_df.empty and not chain_df.empty:
+                    # Construct Macro Snapshot (using proxies if needed)
+                    macro_snap = {
+                        "VIX": live_state.vix,
+                        "DXY": 103.5, # Placeholder or fetch if available
+                        "FII_NET": 0.0,
+                        "CRUDE": 75.0,
+                        "USDINR": 84.0
+                    }
+                    grandmaster_data = brain.analyze_institutional_logic(hist_df, chain_df, macro_snap)
+                    if grandmaster_data.get('nuclear_decision'):
+                        score = grandmaster_data['nuclear_decision'].get('total_score', 0)
+                        live_state.add_thought("GRANDMASTER", f"Institutional Score: {score:.2f}")
+            except Exception as e:
+                logger.error(f"Grandmaster Injection Failed: {e}")
+
             decision_id, thoughts = call_brain_safely(
                 "DECIDE",
                 features=brain_features, 
                 regime=live_state.current_regime, 
+                grandmaster_data=grandmaster_data,
                 is_commit=False,
                 pattern_score=pattern_results["score"],
                 signal_intent=likely_intent,
@@ -1050,7 +1048,7 @@ def run_engine_loop():
                     
                     # Log to Truth Ledger (for Dashboard UI)
                     try:
-                        db.log_outcome(brain_decision_id, "WIN" if is_win else "LOSS", persistence=is_structural)
+                        db.log_outcome(brain_decision_id, "WIN" if is_win else "LOSS")
                     except Exception as e:
                         logger.error(f"Failed to log outcome to DB: {e}")
 

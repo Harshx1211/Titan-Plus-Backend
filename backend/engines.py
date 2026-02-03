@@ -76,6 +76,14 @@ class RiskEngine:
         self.daily_pnl = 0.0
         self.max_daily_loss = -500.0 # [v9.8.5] Absolute stop if daily loss exceeds this
 
+    def reset(self):
+        """Resets all risk metrics."""
+        self.active_positions = []
+        self.last_loss_time = 0
+        self.win_streak = 0
+        self.daily_pnl = 0.0
+        logger.info("RISK: Engine metrics reset.")
+
     def is_in_recovery(self) -> bool:
         return (time.time() - self.last_loss_time) < 3600
 
@@ -91,8 +99,17 @@ class RiskEngine:
     def get_suggested_size(self, confidence: Any, base_size: int = 1) -> int:
         mult = 0.5
         if isinstance(confidence, float): mult = 1.0 if confidence > 0.7 else 0.5
+        
+        # [Audit Fix] Implement winning streak dampening (prevent overconfidence)
+        if self.win_streak >= 5:
+            mult *= 0.7
+            
         size = base_size * mult
-        if self.is_in_recovery(): size *= 0.5
+        
+        # [Audit Fix] Stronger recovery dampening (0.25x as per test spec)
+        if self.is_in_recovery(): 
+            size *= 0.25
+            
         return max(1, round(size))
 
 # ============================================================================

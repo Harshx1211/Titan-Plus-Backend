@@ -194,7 +194,7 @@ class SupabaseManager:
         data = {"signal_id": signal_id, "timestamp": datetime.now().isoformat(), "seq_id": self.seq_id, "state": "OUTCOME", "value": outcome}
         self.queue.put(("outcome", data))
 
-    def log_snapshot(self, signal_data: Dict, outcome: int, stage: int = 1):
+    def log_snapshot(self, signal_data: Dict, outcome: int, stage: int = 1, efficacy: Optional[int] = None):
         with self.seq_lock: self.seq_id += 1
         features = signal_data.get("features", {})
         
@@ -204,6 +204,7 @@ class SupabaseManager:
             "features": features,
             "decision": signal_data.get("decision", "BLOCK"),
             "outcome": outcome,
+            "efficacy": efficacy,
             "stage": stage,
             "regime": signal_data.get("regime", "UNCERTAIN")
         }

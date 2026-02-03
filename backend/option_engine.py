@@ -60,7 +60,7 @@ class OptionEngine:
     def calculate_max_pain(self, chain_df: pd.DataFrame) -> float:
         """
         Calculates the strike price where option buyers feel the most 'pain' 
-        (i.0. the strike where total loss for option buyers is minimized).
+        (i.e. the strike where total loss for option buyers is minimized).
         Required columns in chain_df: ['strike', 'call_oi', 'put_oi']
         """
         if chain_df.empty:
@@ -164,8 +164,9 @@ class OptionEngine:
                 ltp = row.get(f'{prefix}_ltp', 0)
                 oi = row.get(f'{prefix}_oi', 0)
                 vol = row.get(f'{prefix}_vol', 0)
-                bid = row.get(f'{prefix}_bid', 0)
-                ask = row.get(f'{prefix}_ask', 0)
+                # [Q22 Fix] Safe Access for Bid/Ask (Fallback to LTP)
+                bid = row.get(f'{prefix}_bid', ltp)
+                ask = row.get(f'{prefix}_ask', ltp)
                 
                 # Mid-Price Spread Normalization (v8.5)
                 mid_price = (ask + bid) / 2

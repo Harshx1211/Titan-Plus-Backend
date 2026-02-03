@@ -20,6 +20,9 @@ from dataclasses import dataclass, field
 from infrastructure import SupabaseManager, APP_CONFIG
 from models import TradeSignal, SignalConfidence, DecisionObject, Regime
 
+# [v3.0] Grandmaster Engine Integration
+from grandmaster import SMCAnalyzer, GammaEngine, MacroRegime, NuclearScorecard
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -122,6 +125,17 @@ class BrainEngineML:
         # Load state and model
         self.load_state()
         self.load_model()
+        
+        # [v3.0] Initialize Grandmaster Engines
+        try:
+            self.smc_engine = SMCAnalyzer(swing_length=5)
+            self.gamma_engine = GammaEngine(contracts_per_lot=50 if "NIFTY" in APP_CONFIG.get("SYMBOL", "NIFTY") else 15)
+            self.macro_engine = MacroRegime()
+            self.nuclear_engine = NuclearScorecard(nuclear_threshold=0.85, standard_threshold=0.70)
+            logger.info("Grandmaster Engine (Phase 3) Initialized Successfully.")
+        except Exception as e:
+            logger.error(f"Failed to initialize Grandmaster Engine: {e}")
+            self.smc_engine = None
 
     def load_model(self):
         """Load trained XGBoost model"""
@@ -303,6 +317,44 @@ class BrainEngineML:
         decision_id = str(uuid.uuid4())[:8]
         boost, thoughts = self.get_confidence_boost_ml(features, regime.value)
         
+        # [v3.0] Grandmaster Logic Injection
+        gm_thoughts = []
+        gm_score = 0.0
+        
+        # We expect 'grandmaster_data' to be passed in kwargs by the API
+        gm_data = kwargs.get('grandmaster_data', {})
+        
+        if self.nuclear_engine and gm_data:
+            try:
+                # Re-construct context (API pass raw data, we could re-run or just trust API)
+                # Ideally, API should pass the 'decision' dict from Grandmaster
+                # For now, let's assume API passes the 'nuclear_decision' object
+                nuclear_decision = gm_data.get('nuclear_decision')
+                
+                if nuclear_decision:
+                    gm_score = nuclear_decision.get('total_score', 0.0)
+                    gm_signal = nuclear_decision.get('entry_signal', False)
+                    gm_quality = nuclear_decision.get('signal_quality', 'WEAK')
+                    
+                    gm_thoughts.append(f"Grandmaster Score: {gm_score:.2f} ({gm_quality})")
+                    
+                    # [HYBRID LOGIC]
+                    # 1. The VETO: If ML says YES but Grandmaster says NO_TRADE/WEAK (<0.5), we hesitate
+                    if boost > 0.6 and gm_score < 0.5:
+                        boost -= 0.15 # Penalty for institutional disagreement
+                        gm_thoughts.append("WARN: Institutional Veto (Score < 0.5)")
+                        
+                    # 2. The BOOSTER: If Grandmaster is NUCLEAR (>0.85), we force high confidence
+                    elif gm_score > 0.85:
+                        boost = max(boost, 0.95) # Apply institutional authority
+                        gm_thoughts.append("BOOST: Nuclear Institutional Confirmation")
+            
+            except Exception as e:
+                logger.error(f"Grandmaster logic failed: {e}")
+
+        # Merge thoughts
+        thoughts.extend(gm_thoughts)
+        
         # Merge pattern score into thoughts for logging
         pattern_score = kwargs.get("pattern_score", 0.0)
         thoughts.append(f"Chart Score: {pattern_score:.2f}")
@@ -367,7 +419,8 @@ class BrainEngineML:
                     "regime": decision_obj.regime.value
                 },
                 outcome=1 if outcome is True else (0 if outcome is False else None),
-                stage=self.stage
+                stage=self.stage,
+                efficacy=efficacy
             )
             self.save_state()
             
@@ -412,6 +465,40 @@ class BrainEngineML:
             self.config.threshold_sideways_strong = min(0.95, new_val + 0.05)
             self.config.threshold_trending = max(self.config.threshold_trending, new_val)
             logger.warning(f"BRAIN: GOVERNOR tightening threshold {old_val} -> {new_val}")
+
+    def analyze_institutional_logic(self, ohlcv_df: pd.DataFrame, option_chain: pd.DataFrame, macro_data: Dict) -> Dict:
+        """
+        Orchestrate the full Grandmaster Phase 3 Analysis.
+        Returns a dictionary containing all module outputs and the final nuclear decision.
+        """
+        if not self.smc_engine:
+            return {}
+            
+        try:
+            # 1. SMC Analysis (Price Action)
+            smc_result = self.smc_engine.analyze(ohlcv_df)
+            
+            # 2. Gamma Analysis (Flow)
+            # We assume 'spot' is the last close in ohlcv
+            current_spot = ohlcv_df['close'].iloc[-1] if not ohlcv_df.empty else 0
+            greeks_result = self.gamma_engine.analyze(option_chain, current_spot)
+            
+            # 3. Macro Analysis (Regime)
+            macro_score = self.macro_engine.analyze(macro_data)
+            
+            # 4. Nuclear Decision (The Judge)
+            nuclear_decision = self.nuclear_engine.evaluate(smc_result, greeks_result, macro_score)
+            
+            return {
+                'smc': smc_result,
+                'greeks': greeks_result,
+                'macro': {'score': macro_score},
+                'nuclear_decision': nuclear_decision,
+                'timestamp': datetime.now().isoformat()
+            }
+        except Exception as e:
+            logger.error(f"Grandmaster Analysis Failed: {e}")
+            return {}
 
 if __name__ == "__main__":
     brain = BrainEngineML()

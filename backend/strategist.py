@@ -187,33 +187,34 @@ class MarketStrategist:
                 
         return False, "STABLE"
 
-    def get_macro_bias(self, df_macro: pd.DataFrame) -> str:
+    def get_macro_bias(self, df_macro: pd.DataFrame) -> float:
         """
         Calculates the trend bias on a higher timeframe.
+        Returns: 1.0 (Bullish), -1.0 (Bearish), 0.0 (Neutral)
         """
         if df_macro is None or len(df_macro) < 50:
-            return "NEUTRAL"
+            return 0.0
             
         # Calculate EMAs
         ema20 = df_macro.ta.ema(length=20)
         ema50 = df_macro.ta.ema(length=50)
         
         if ema20 is None or ema50 is None or len(ema20) == 0 or len(ema50) == 0:
-            return "NEUTRAL"
+            return 0.0
             
         curr_price = df_macro['close'].iloc[-1]
         e20 = ema20.iloc[-1]
         e50 = ema50.iloc[-1]
         
         if pd.isna(curr_price) or pd.isna(e20) or pd.isna(e50):
-            return "NEUTRAL"
+            return 0.0
         
         if curr_price > e20 > e50:
-            return "BULLISH"
+            return 1.0
         elif curr_price < e20 < e50:
-            return "BEARISH"
+            return -1.0
         else:
-            return "NEUTRAL"
+            return 0.0
 
     def get_regime_stability(self) -> float:
         """

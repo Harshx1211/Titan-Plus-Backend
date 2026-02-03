@@ -345,14 +345,21 @@ class SkirmisherV2:
         }
         
         try:
-            with open(self.ledger_file, "r+") as f:
-                ledger = json.load(f)
-                ledger.append(trade)
-                f.seek(0)
+            # [Q25 Fix] Atomic Write to prevent corruption
+            ledger = []
+            if os.path.exists(self.ledger_file):
+                try:
+                    with open(self.ledger_file, "r") as f:
+                        ledger = json.load(f)
+                except: ledger = []
+            
+            ledger.append(trade)
+            temp_file = f"{self.ledger_file}.tmp"
+            with open(temp_file, "w") as f:
                 json.dump(ledger, f, indent=4)
-        except:
-            with open(self.ledger_file, "w") as f:
-                json.dump([trade], f, indent=4)
+            os.replace(temp_file, self.ledger_file)
+        except Exception as e:
+            logger.error(f"SKIRMISHER V2: Failed to log execution: {e}")
         
         logger.info(f"SKIRMISHER V2: Tactical Scalp Executed: {trade_id}")
         return trade_id
@@ -382,5 +389,11 @@ class SkirmisherV2:
         return {}
 
     def _save_state(self):
-        with open(self.state_file, "w") as f:
-            json.dump(self.state, f, indent=4)
+        # [Q25 Fix] Atomic Write for state
+        try:
+            temp_file = f"{self.state_file}.tmp"
+            with open(temp_file, "w") as f:
+                json.dump(self.state, f, indent=4)
+            os.replace(temp_file, self.state_file)
+        except Exception as e:
+            logger.error(f"SKIRMISHER V2: State save failed: {e}")

@@ -147,6 +147,11 @@ class SupportResistanceEngine:
         price_min = df['low'].min()
         price_max = df['high'].max()
         price_range = price_max - price_min
+        
+        # [R13 Fix] Prevent Division by Zero
+        if price_range <= 0:
+            return {"poc": 0, "value_area_high": 0, "value_area_low": 0}
+
         bin_size = price_range / bins
         
         # Calculate volume at each price level
