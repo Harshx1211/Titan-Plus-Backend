@@ -401,6 +401,18 @@ class BrainEngineML:
             "fallbacks": self.metrics.statistical_fallbacks
         }
 
+    def update_threshold(self, new_val: float):
+        """
+        [v9.7] One-Way Tightening.
+        Allows the Evolution Governor to increase system strictness.
+        """
+        old_val = self.config.threshold_sideways
+        if new_val > old_val:
+            self.config.threshold_sideways = new_val
+            self.config.threshold_sideways_strong = min(0.95, new_val + 0.05)
+            self.config.threshold_trending = max(self.config.threshold_trending, new_val)
+            logger.warning(f"BRAIN: GOVERNOR tightening threshold {old_val} -> {new_val}")
+
 if __name__ == "__main__":
     brain = BrainEngineML()
     print(brain.health_check())

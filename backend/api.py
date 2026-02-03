@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 from pytz import timezone as pytz_timezone
 
 # Configure logging
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from models import Regime, DivergenceType, TradeSignal, SignalConfidence
@@ -96,7 +96,11 @@ APP_CONFIG = {
     "SIGNAL_ACTIVE_CAP": 20,
     "ENGINE_POLLING_BASE_SECONDS": 5,
     "ENGINE_POLLING_JITTER_SECONDS": 2,
-    "ENGINE_ERROR_SLEEP_TIME": 5
+    "ENGINE_ERROR_SLEEP_TIME": 5,
+    "MARKET_START_HOUR": 9,
+    "MARKET_START_MINUTE": 15,
+    "MARKET_END_HOUR": 15,
+    "MARKET_END_MINUTE": 30
 }
 evolution_done_date = None
 
@@ -429,7 +433,7 @@ def run_engine_loop():
         from engines import DataSentinel, RiskEngine, PatternEngine, TrapHunter, SessionAuditor
         from skirmisher_v2 import SkirmisherV2
         from brain_engine_ml import BrainEngineML
-        from rl_evolution_engine import RLEvolutionEngine
+        from evolution_engine import EvolutionEngine
         from strategist import MarketStrategist
         from support_resistance import SupportResistanceEngine
         from option_engine import OptionEngine
@@ -457,7 +461,7 @@ def run_engine_loop():
         time.sleep(2) # Give more room for RL
         
         # Heavy ML Component 2
-        evolver = RLEvolutionEngine(brain)
+        evolver = EvolutionEngine(brain)
         session_auditor = SessionAuditor()
         gc.collect()
         time.sleep(1)
