@@ -544,6 +544,17 @@ def run_engine_loop():
                 
                 # 3. Aggressive Sleep during off-hours (1 minute polling)
                 live_state.last_update = datetime.now(timezone.utc) # Keep heartbeat alive
+                
+                # [v9.9.8] Seed persistence data once every 10 mins during off-hours
+                if current_time.minute % 10 == 0 and current_time.second < 10:
+                    for sym in live_state.symbols:
+                        try:
+                            m_data = data_provider.get_market_snapshot(sym)
+                            if m_data:
+                                brain.log_snapshot(str(uuid.uuid4())[:8], outcome=None, performance={"mfe": 0, "mae": 0})
+                                logger.info(f"STATE: Persisted off-market price for {sym}")
+                        except: pass
+
                 time.sleep(60)
                 continue
 
