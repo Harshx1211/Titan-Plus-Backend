@@ -1,38 +1,27 @@
-from fastapi import FastAPI, BackgroundTasks
-import random
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Dict, Optional, Tuple
-import uvicorn
-import pandas as pd
-import logging
-import time
-from datetime import datetime, timezone
-import pandas_ta as ta
-from models import TradeSignal, Regime, SignalConfidence, DivergenceType
-from infrastructure import APP_CONFIG, SupabaseManager, DatabaseManager, TelegramNotifier
-from providers import DataProvider
-from engines import DataSentinel, RiskEngine, PatternEngine, TrapHunter, SessionAuditor
-from skirmisher_v2 import SkirmisherV2
-from brain_engine_ml import BrainEngineML
-from rl_evolution_engine import RLEvolutionEngine
-from strategist import MarketStrategist
-from support_resistance import SupportResistanceEngine
-from option_engine import OptionEngine
-from shadow_mode import ShadowMode
+# Standard lightweight imports
+import os
 import asyncio
 import threading
-import os
+import logging
+import time
 import pytz
-from pytz import timezone as pytz_timezone
+import random
+from datetime import datetime, timezone
+from typing import List, Dict, Optional, Tuple
 
-# Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# [v9.5] Silence verbose third-party logs to keep Render console clean
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("postgrest").setLevel(logging.WARNING)
+# Delay heavy library imports
+# import pandas as pd
+# import pandas_ta as ta
+from pytz import timezone as pytz_timezone
+
+# Configure logging
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from models import Regime, DivergenceType, TradeSignal, SignalConfidence
 
 app = FastAPI(title="The Oracle - Titan Plus Institutional")
 
@@ -101,13 +90,11 @@ class LiveState:
             self.thought_logs.pop(0)
 
 # State & Monitoring
+# State & Monitoring
 IST = pytz.timezone('Asia/Kolkata')
 live_state = LiveState()
-evolver = None # Initialized after Brain
-evolution_done_date = None
-session_auditor = SessionAuditor()
 
-# Engines (Initialized in startup_event to prevent Render port-binding timeouts)
+# Engines (Global placeholders initialized lazily in background thread)
 sentinel = None
 strategist = None
 skirmisher = None
@@ -117,9 +104,18 @@ evolver = None
 pattern_engine = None
 risk_engine = None
 trap_hunter = None
+option_engine = None
+session_auditor = None
+db = None
+telegram_notifier = None
+data_provider = None
+shadow_engine = None
+
+# Config placeholder
+APP_CONFIG = {}
+evolution_done_date = None
 
 shadow_mode_enabled = os.getenv("SHADOW_MODE", "false").lower() == "true"
-shadow_engine = None
 # Helper: Safe Brain Interface
 def call_brain_safely(action: str, **kwargs):
     if brain is None:
@@ -401,20 +397,40 @@ async def reset_system():
 
 def run_engine_loop():
     """
-    The background loop that handles lazy initialization AND the analysis loop.
+    The background loop that handles extreme lazy initialization AND the analysis loop.
     This ensures the API starts instantly while heavy work happens in the background.
     """
     global sentinel, strategist, skirmisher, sr_engine, brain, evolver, pattern_engine, risk_engine, trap_hunter, shadow_engine
-    global option_engine, db, telegram_notifier, data_provider, evolution_done_date
+    global option_engine, db, telegram_notifier, data_provider, session_auditor, APP_CONFIG, evolution_done_date
     
-    logger = logging.getLogger("api_engine")
-    logger.info("ENGINE: Initializing background services...")
+    logger.info("ENGINE: Initializing background services (Lazy Phase)...")
     
     try:
         import gc
-        # Cascade initialization (Sequenced to prevent resource lock)
+        import random
+        import pandas as pd
+        import pandas_ta as ta
+        
+        # [v9.9.6] Restrict CPU threads to prevent scheduler kills
+        try:
+            import torch
+            torch.set_num_threads(1)
+        except: pass
+        
+        # Strategy & Infrastructure Imports (STAGGERED)
+        from infrastructure import APP_CONFIG, SupabaseManager, DatabaseManager, TelegramNotifier
+        from providers import DataProvider
+        from engines import DataSentinel, RiskEngine, PatternEngine, TrapHunter, SessionAuditor
+        from skirmisher_v2 import SkirmisherV2
+        from brain_engine_ml import BrainEngineML
+        from rl_evolution_engine import RLEvolutionEngine
+        from strategist import MarketStrategist
+        from support_resistance import SupportResistanceEngine
+        from option_engine import OptionEngine
+        
+        # Sequence initialization with GC to prevent peak RAM spikes
         db = DatabaseManager()
-        time.sleep(1) # [v9.9.6] Staggered start
+        time.sleep(1)
         telegram_notifier = TelegramNotifier()
         time.sleep(1)
         data_provider = DataProvider()
@@ -425,25 +441,32 @@ def run_engine_loop():
             
         sentinel = DataSentinel()
         strategist = MarketStrategist()
-        time.sleep(1)
         skirmisher = SkirmisherV2()
         sr_engine = SupportResistanceEngine()
         time.sleep(1)
+        
+        # Heavy ML Component 1
         brain = BrainEngineML(stage=3)
-        gc.collect() # [v9.9.6] Cleanup after heavy Brain load
-        time.sleep(1)
+        gc.collect() 
+        time.sleep(2) # Give more room for RL
+        
+        # Heavy ML Component 2
         evolver = RLEvolutionEngine(brain)
-        gc.collect() # [v9.9.6] Cleanup after heavy RL load
+        session_auditor = SessionAuditor()
+        gc.collect()
         time.sleep(1)
+        
         pattern_engine = PatternEngine()
         risk_engine = RiskEngine()
         trap_hunter = TrapHunter()
         option_engine = OptionEngine()
         
         if shadow_mode_enabled:
+            from shadow_mode import ShadowMode
             shadow_engine = ShadowMode()
             
         logger.info("ENGINE: All strategy engines initialized. Starting analysis loop.")
+        evolution_done_date = None
     except Exception as init_err:
         logger.error(f"ENGINE INIT ERROR: {init_err}", exc_info=True)
         return

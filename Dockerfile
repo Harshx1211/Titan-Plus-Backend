@@ -30,6 +30,11 @@ RUN touch brain_state_ml.json brain_state.json rl_state.pt
 ENV PORT=7860
 EXPOSE 7860
 
+# [v9.9.6] Stability: Limit threads to prevent container eviction
+ENV OMP_NUM_THREADS=1
+ENV MKL_NUM_THREADS=1
+ENV OPENBLAS_NUM_THREADS=1
+
 # Run the FastAPI app using uvicorn
-# We use log-level info to help user debug on HF console
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "7860", "--log-level", "info"]
+# We use --workers 1 to minimize memory footprint
+CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "7860", "--log-level", "info", "--workers", "1"]

@@ -7,7 +7,7 @@ import json
 import requests
 from typing import Dict, List, Optional, Set, Tuple
 from datetime import datetime
-import pandas as pd
+# import pandas as pd (Moved to local scope)
 from supabase import create_client, Client
 from dotenv import load_dotenv
 from models import TradeSignal
@@ -211,6 +211,7 @@ class SupabaseManager:
 
     def get_accuracy_report(self) -> Dict:
         try:
+            import pandas as pd
             res = self.supabase.table("signal_ledger").select("value").eq("state", "OUTCOME").execute()
             df = pd.DataFrame(res.data) if res.data else pd.DataFrame()
             wins = len(df[df['value'] == 'WIN']) if not df.empty else 0
