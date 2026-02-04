@@ -164,12 +164,31 @@ class DataProvider:
         self.shoonya.login()
 
     def get_market_snapshot(self, symbol: str) -> MarketData:
+        # [v9.9.9] Shoonya Primacy Fix
         data = self.shoonya.get_market_data(symbol)
-        if data and data['lp'] > 0:
-            return MarketData(symbol=symbol, spot_price=data['lp'], future_price=data['future_lp'] or (data['lp']+5.0),
-                            oi=0, pcr=0.95, timestamp=datetime.now(), source="SHOONYA")
+        if data and data.get('lp', 0) > 0:
+            return MarketData(
+                symbol=symbol, spot_price=data['lp'], 
+                future_price=data.get('future_lp') or (data['lp']+5.0),
+                oi=0, pcr=0.95, timestamp=datetime.now(), source="SHOONYA"
+            )
         
-        # [v9.9.8] Realistic Fallbacks for Feb 3rd 2026 (Closing Data)
+        # Fallback 1: Groww (if Shoonya fails)
+        if self.use_groww and self.bot:
+            try:
+                # Groww get_quote implementation
+                exchange = "BSE" if symbol == "SENSEX" else "NSE"
+                segment = "CASH"
+                quote = self.bot.get_quote(trading_symbol=symbol, exchange=exchange, segment=segment)
+                if quote and 'ltp' in quote:
+                    lp = float(quote['ltp'])
+                    return MarketData(
+                        symbol=symbol, spot_price=lp, future_price=lp+5.0,
+                        oi=0, pcr=0.95, timestamp=datetime.now(), source="GROWW_API"
+                    )
+            except: pass
+
+        # Fallback 2: Realistic Hard-coded Fallbacks
         prices = {"NIFTY": 25727.0, "SENSEX": 83739.0, "BANKNIFTY": 51200.0}
         base = prices.get(symbol, 25000.0)
         return MarketData(symbol=symbol, spot_price=base, future_price=base+5.0, oi=0, pcr=0.95, timestamp=datetime.now(), source="FALLBACK")
@@ -189,11 +208,11 @@ class DataProvider:
         return results
 
     def get_status(self) -> Dict:
-        """Returns the status of the data source."""
-        if self.use_groww and self.bot:
-            return {"status": "ACTIVE", "name": "GROWW_API", "remaining": 0}
+        """Returns the status of the data source, prioritizing Shoonya."""
         if self.shoonya.authenticated:
             return {"status": "ACTIVE", "name": "SHOONYA", "remaining": 0}
+        if self.use_groww and self.bot:
+            return {"status": "ACTIVE", "name": "GROWW_API", "remaining": 0}
         return {"status": "FALLBACK", "name": "PLACEHOLDER", "remaining": 0}
 
     def get_history(self, symbol: str, interval: str = "5minute") -> pd.DataFrame:
@@ -251,9 +270,43 @@ class DataProvider:
         return {"advances": 25, "declines": 25} # Static neutral fallback
 
     def get_intraday_history(self, symbol: str, start_time: datetime, end_time: datetime, interval: int = 5) -> pd.DataFrame:
-        raw = self.shoonya.get_historical_data(symbol, interval, start_time, end_time)
+        raw = []
+        
+        # [v9.9.9] Priority 1: Shoonya (User Request)
+        if self.shoonya.authenticated:
+            raw = self.shoonya.get_historical_data(symbol, interval, start_time, end_time)
+            if raw:
+                # Found data in Shoonya, proceed
+                pass
+        
+        # Priority 2: Groww Fallback (if Shoonya is empty or unauth)
+        if not raw and self.use_groww and self.bot:
+            try:
+                # [v9.9.9] Groww History Fallback
+                groww_symbol = symbol
+                exchange = "BSE" if symbol == "SENSEX" else "NSE"
+                segment = "CASH" 
+                
+                s_str = start_time.strftime('%Y-%m-%d %H:%M:%S')
+                e_str = end_time.strftime('%Y-%m-%d %H:%M:%S')
+                interval_str = f"{interval}minute"
+                
+                resp = self.bot.get_historical_candles(
+                    exchange=exchange, segment=segment, groww_symbol=groww_symbol,
+                    start_time=s_str, end_time=e_str, candle_interval=interval_str
+                )
+                if resp and isinstance(resp, list):
+                    for c in resp:
+                        raw.append({
+                            'time': c['time'], 'into': c['open'], 'inth': c['high'],
+                            'intl': c['low'], 'intc': c['close'], 'v': c['volume']
+                        })
+            except Exception as e:
+                # Silently fail here as it's a fallback
+                pass
+
         if not raw:
-            # Fallback: Create mock history if market is open but provider fails
+            # Fallback: Create mock history if both providers fail
             dates = pd.date_range(end=datetime.now(), periods=100, freq=f'{interval}min')
             df = pd.DataFrame({
                 'datetime': dates,

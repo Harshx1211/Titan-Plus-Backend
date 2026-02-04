@@ -715,8 +715,8 @@ def run_engine_loop():
                         macro_snap = {"VIX": live_state.vix, "DXY": 103.5, "FII_NET": 0.0, "CRUDE": 75.0, "USDINR": 84.0}
                         grandmaster_data = brain.analyze_institutional_logic(hist_df, chain_df, macro_snap)
 
-                    likely_intent = "BULLISH" if (pattern_results.get("score", 0) > 0.4 and curr_strength > 0) or price_vel_curr > 0.05 else (
-                        "BEARISH" if (pattern_results.get("score", 0) > 0.4 and curr_strength < 0) or price_vel_curr < -0.05 else "BULLISH"
+                    likely_intent = "BULLISH" if (pattern_results.get("score", 0) > 0.45 and curr_strength > 0.1) or price_vel_curr > 0.08 else (
+                        "BEARISH" if (pattern_results.get("score", 0) > 0.45 and curr_strength < -0.1) or price_vel_curr < -0.08 else "BULLISH"
                     )
                     
                     decision_id, thoughts = call_brain_safely(
@@ -795,7 +795,8 @@ def run_engine_loop():
 
                     # 7. Management
                     for sig in live_state.active_signals:
-                        if not sig.is_live: continue
+                        if not sig.is_live or sig.symbol != symbol: continue
+                        
                         p_delta = (market_data.spot_price - sig.entry_price) if "BULLISH" in sig.reasoning else (sig.entry_price - market_data.spot_price)
                         p_adv = (sig.entry_price - market_data.spot_price) if "BULLISH" in sig.reasoning else (market_data.spot_price - sig.entry_price)
                         
@@ -809,7 +810,7 @@ def run_engine_loop():
                             sig.stop_loss = 0.0
                             telegram_notifier.send_alert(f"🛡️ TSL: {sig.symbol} at Break-Even.")
 
-                        is_target, is_sl = p_delta >= sig.target, p_adv >= sig.stop_loss if not sig.is_tsl_active else (p_delta < 0)
+                        is_target, is_sl = p_delta >= sig.target, p_adv >= (sig.stop_loss if not sig.is_tsl_active else 0.0)
                         if is_target or is_sl:
                             sig.is_live = False
                             is_win = p_delta > 0
