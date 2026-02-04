@@ -65,6 +65,7 @@ class TradeSignal(BaseModel):
     spread_at_entry: float = 0.0 
     logic_version: str = "v9.4.0"
     is_tsl_active: bool = False # [v9.8.5] Trailing SL Status
+    score: float = 0.0          # [v9.9.9] Analytical Score for comparison
 
     class Config:
         extra = "allow" # [v9.8] Safety gate: allow extra fields from engines

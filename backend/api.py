@@ -1073,89 +1073,107 @@ def run_engine_loop():
                     "BULLISH" if any(p in ["VWAP_CROSSOVER", "HAMMER", "BULLISH_ENGULFING", "CPR_BREAKOUT"] for p in detected_patterns) else "BEARISH"
                 )
                 
-                # Guardrail: Avoid duplicate active signals
-                active_count = sum(1 for s in live_state.active_signals if s.is_live)
-                live_state.add_thought("TRACE", f"Gate 2 (Duplicate check): {active_count} active signals found.")
-                if not any(s.symbol == symbol and s.is_live for s in live_state.active_signals):
-                    # Phase 25/27: Hard Veto Gates
-                    # [v9.8.5] Daily Circuit Breaker
-                    if risk_engine.is_blown_today():
-                        live_state.add_thought("RISK_VETO", "Daily drawdown limit hit. Trading HALTED.")
-                        logger.warning("SIGNAL Veto: Daily drawdown limit hit.")
-                    # [v9.8.5] Correlation Guard (One trade at a time)
-                    elif any(s.is_live for s in live_state.active_signals):
-                        live_state.add_thought("VETO", "Signal already live. Skipping duplicate risk.")
-                    elif is_basis_unstable:
-                        logger.warning(f"SIGNAL VETO: Basis Dispersion unstable for {symbol}.")
-                        live_state.add_thought("VETO", f"Basis Unstable for {symbol}")
-                    # [v9.8.1] S/R Hard Veto: No buying into resistance, No selling into support
-                    elif signal_type == "BULLISH" and any(abs(market_data.spot_price - r) < 25 for r in live_state.resistances.get(symbol, [])):
-                        live_state.add_thought("S/R_VETO", "Institutional Liquidity Guard: Major Resistance Wall Detected. Entry BLOCKED.")
-                        logger.warning(f"SIGNAL VETO: {symbol} too close to resistance.")
-                    elif signal_type == "BEARISH" and any(abs(market_data.spot_price - s) < 25 for s in live_state.supports.get(symbol, [])):
-                        live_state.add_thought("S/R_VETO", "Institutional Liquidity Guard: Major Support Level Detected. Entry BLOCKED.")
-                        logger.warning(f"SIGNAL VETO: {symbol} too close to support.")
+                # [v9.9.9] Global Single-Trade Dominance Logic
+                live_signal = next((s for s in live_state.active_signals if s.is_live), None)
+                new_score = pattern_results["score"]
+                is_takeover = False
+                
+                if live_signal:
+                    # Logic: Allow a takeover if the new signal is significantly better (15% better)
+                    if new_score > (live_signal.score * 1.15):
+                        is_takeover = True
                     else:
-                        # Phase 10: Option Selection (The 'Execution' Logic)
-                        # We don't just trade the index; we find the most liquid and profitable Option strike.
-                        live_state.add_thought("TRACE", f"Gate 3 (Option Scanning): Finding strike for {signal_type}...")
-                        opt_trade = option_engine.find_executable_option(
-                            symbol, 
-                            market_data.spot_price, 
-                            signal_type,
-                            macro_zones=macro_zones,
-                            is_momentum_dominant=is_dominant,
-                            days_to_expiry=5,
-                            chain_df=chain_df,
-                            is_synthetic=is_synthetic
+                        live_state.add_thought("TRACE", f"Gate 2 (VETO): Already live in {live_signal.symbol} (Score: {live_signal.score:.2f}). New {symbol} score ({new_score:.2f}) insufficient for takeover.")
+                        continue
+
+                # Phase 25/27: Hard Veto Gates
+                # [v9.8.5] Daily Circuit Breaker
+                if risk_engine.is_blown_today():
+                    live_state.add_thought("RISK_VETO", "Daily drawdown limit hit. Trading HALTED.")
+                    logger.warning("SIGNAL Veto: Daily drawdown limit hit.")
+                    continue
+                
+                if is_basis_unstable:
+                    logger.warning(f"SIGNAL VETO: Basis Dispersion unstable for {symbol}.")
+                    live_state.add_thought("VETO", f"Basis Unstable for {symbol}")
+                    continue
+
+                # [v9.9.9] Execution of Takeover Exit Plan
+                if is_takeover and live_signal:
+                    msg = f"🔄 TAKEOVER: Switching from {live_signal.symbol} ({live_signal.score:.2f}) to {symbol} (Score: {new_score:.2f})"
+                    live_state.add_thought("TAKEOVER", msg)
+                    live_signal.is_live = False
+                    telegram_notifier.send_alert(f"⚠️ EXIT (SWAP): Closing {live_signal.option_symbol} for superior setup in {symbol}.")
+
+                # [v9.8.1] S/R Hard Veto: No buying into resistance, No selling into support
+                if signal_type == "BULLISH" and any(abs(market_data.spot_price - r) < 25 for r in live_state.resistances.get(symbol, [])):
+                    live_state.add_thought("S/R_VETO", "Institutional Liquidity Guard: Major Resistance Wall Detected. Entry BLOCKED.")
+                    logger.warning(f"SIGNAL VETO: {symbol} too close to resistance.")
+                elif signal_type == "BEARISH" and any(abs(market_data.spot_price - s) < 25 for s in live_state.supports.get(symbol, [])):
+                    live_state.add_thought("S/R_VETO", "Institutional Liquidity Guard: Major Support Level Detected. Entry BLOCKED.")
+                    logger.warning(f"SIGNAL VETO: {symbol} too close to support.")
+                else:
+                    # Phase 10: Option Selection (The 'Execution' Logic)
+                    # We don't just trade the index; we find the most liquid and profitable Option strike.
+                    live_state.add_thought("TRACE", f"Gate 3 (Option Scanning): Finding strike for {signal_type}...")
+                    opt_trade = option_engine.find_executable_option(
+                        symbol, 
+                        market_data.spot_price, 
+                        signal_type,
+                        macro_zones=macro_zones,
+                        is_momentum_dominant=is_dominant,
+                        days_to_expiry=5,
+                        chain_df=chain_df,
+                        is_synthetic=is_synthetic
+                    )
+                    
+                    if opt_trade.get("rejection_reasons"):
+                         # [v9.8] DEBUG: Log why option failed
+                         reasons = ", ".join(opt_trade.get("rejection_reasons", []))
+                         live_state.add_thought("OPTION_REJECT", f"Execution Failed: {reasons}")
+                         if "LIQUIDITY" in reasons:
+                             # Fallback: Trying to find *any* option just to prove signal works?
+                             # For now, just warn.
+                             logger.warning(f"OPTION VETO: {symbol} rejected due to {reasons}")
+                    else:
+                        live_state.add_thought("TRACE", f"Gate 4 (SUCCESS): Executing {symbol} trade!")
+                        # [v9.7] Risk-Adjusted Sizing
+                        suggested_size = risk_engine.get_suggested_size(
+                            confidence=applied_boost,
+                            base_size=APP_CONFIG.get("BASE_LOTS", 1)
                         )
                         
-                        if opt_trade.get("rejection_reasons"):
-                             # [v9.8] DEBUG: Log why option failed
-                             reasons = ", ".join(opt_trade.get("rejection_reasons", []))
-                             live_state.add_thought("OPTION_REJECT", f"Execution Failed: {reasons}")
-                             if "LIQUIDITY" in reasons:
-                                 # Fallback: Trying to find *any* option just to prove signal works?
-                                 # For now, just warn.
-                                 logger.warning(f"OPTION VETO: {symbol} rejected due to {reasons}")
-                        else:
-                            live_state.add_thought("TRACE", f"Gate 4 (SUCCESS): Executing {symbol} trade!")
-                            # [v9.7] Risk-Adjusted Sizing
-                            suggested_size = risk_engine.get_suggested_size(
-                                confidence=applied_boost,
-                                base_size=APP_CONFIG.get("BASE_LOTS", 1)
-                            )
-                            
-                            # [v9.8.1] Dynamic Targets based on ATR
-                            target_pts = max(APP_CONFIG["SIGNAL_TARGET_POINTS"], round(1.5 * atr_val))
-                            sl_pts = max(APP_CONFIG["SIGNAL_STOP_LOSS_POINTS"], round(1.0 * atr_val))
+                        # [v9.8.1] Dynamic Targets based on ATR
+                        target_pts = max(APP_CONFIG["SIGNAL_TARGET_POINTS"], round(1.5 * atr_val))
+                        sl_pts = max(APP_CONFIG["SIGNAL_STOP_LOSS_POINTS"], round(1.0 * atr_val))
 
-                            new_signal = TradeSignal(
-                                symbol=symbol,
-                                entry_price=market_data.spot_price,
-                                stop_loss=sl_pts, 
-                                target=target_pts,
-                                confidence=SignalConfidence.HIGH if pattern_results["score"] > 0.9 else SignalConfidence.MEDIUM,
-                                regime=live_state.current_regime,
-                                reasoning=f"{signal_type} | {', '.join(detected_patterns)}",
-                                timestamp=datetime.now(timezone.utc),  # FIX: Timezone-aware
-                                decision_id=decision_id,
-                                logic_version="v8.5.1",
-                                spread_at_entry=abs(market_data.future_price - market_data.spot_price),
-                                quantity=suggested_size, # Applied Risk logic
-                                **opt_trade
+                        new_signal = TradeSignal(
+                            symbol=symbol,
+                            entry_price=market_data.spot_price,
+                            stop_loss=sl_pts, 
+                            target=target_pts,
+                            confidence=SignalConfidence.HIGH if pattern_results["score"] > 0.9 else SignalConfidence.MEDIUM,
+                            regime=live_state.current_regime,
+                            reasoning=f"{signal_type} | {', '.join(detected_patterns)}",
+                            timestamp=datetime.now(timezone.utc),  # FIX: Timezone-aware
+                            decision_id=decision_id,
+                            logic_version="v9.9.9_ONE_TRADE",
+                            spread_at_entry=abs(market_data.future_price - market_data.spot_price),
+                            quantity=suggested_size, # Applied Risk logic
+                            score=pattern_results["score"], # [v9.9.9] For comparison
+                            **opt_trade
+                        )
+                        live_state.active_signals.append(new_signal)
+                        logger.info(f"SIGNAL: {new_signal.option_symbol} bound to Decision {decision_id}. Size: {suggested_size}")
+                        
+                        # [TELEGRAM NOTIFICATION]
+                        try:
+                            telegram_notifier.send_signal(
+                                new_signal.dict(), 
+                                dashboard_url=APP_CONFIG.get("DASHBOARD_URL", "")
                             )
-                            live_state.active_signals.append(new_signal)
-                            logger.info(f"SIGNAL: {new_signal.option_symbol} bound to Decision {decision_id}. Size: {suggested_size}")
-                            
-                            # [TELEGRAM NOTIFICATION]
-                            try:
-                                telegram_notifier.send_signal(
-                                    new_signal.dict(), 
-                                    dashboard_url=APP_CONFIG.get("DASHBOARD_URL", "")
-                                )
-                            except Exception as e:
-                                logger.error(f"TELEGRAM: Failed to send signal: {e}")
+                        except Exception as e:
+                            logger.error(f"TELEGRAM: Failed to send signal: {e}")
             
             else:
                 # [v9.1] Sidecar Route for Vetoed Signals
@@ -1170,7 +1188,7 @@ def run_engine_loop():
                         df=hist_df
                     )
                     
-                    if sidecar_decision["action"] == "EXECUTE":
+                    if sidecar_decision["action"] == "EXECUTE" and not any(s.is_live for s in live_state.active_signals):
                          # Log Trap Hunter Execution
                          trade_id = trap_hunter.log_execution(
                              trade_type="BEARISH_REVERSAL" if signal_type == "BULLISH" else "BULLISH_REVERSAL",
@@ -1189,7 +1207,8 @@ def run_engine_loop():
                             decision_id=trade_id,
                             logic_version="v9.1_SIDECAR",
                             spread_at_entry=0.0,
-                            option_symbol=f"SIDECAR_{symbol}" # Placeholder
+                            option_symbol=f"SIDECAR_{symbol}", # Placeholder
+                            score=0.6 # [v9.9.9] Sidecar priority floor
                         ))
                          logger.warning(f"SIDECAR EXECUTE: {sidecar_decision['reason']}")
                 
@@ -1212,7 +1231,7 @@ def run_engine_loop():
                         iv_skew=actual_iv_skew
                     )
                     
-                    if scalp["action"] == "EXECUTE":
+                    if scalp["action"] == "SCALP" and not any(s.is_live for s in live_state.active_signals):
                         # 0. Brain Statistical Oversight
                         approved, thoughts = brain.evaluate_skirmisher_signal(
                             signal=scalp,
@@ -1237,7 +1256,8 @@ def run_engine_loop():
                                 decision_id=trade_id,
                                 logic_version="v2.0_SKIRMISHER_INSTITUTIONAL",
                                 spread_at_entry=0.0,
-                                option_symbol=f"SCALP_{symbol}" 
+                                option_symbol=f"SCALP_{symbol}",
+                             score=0.5 # [v9.9.9] Scalp priority floor
                             ))
                             logger.warning(f"SKIRMISHER V2 EXECUTE: {scalp['reason']}")
                         else:
