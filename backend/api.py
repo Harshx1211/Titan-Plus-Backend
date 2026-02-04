@@ -642,7 +642,7 @@ def run_engine_loop():
                     pattern_results = pattern_engine.get_signal_confirmation(
                         hist_df, macro_bias=macro_bias, macro_zones=macro_zones, atr=atr_val
                     )
-                    live_state.add_thought("ANALYSIS", f"[{symbol}] Pattern Score: {pattern_results['score']:.2f}. Found: {', '.join(pattern_results.get('patterns', ['NONE']))}")
+                    live_state.add_thought("ANALYSIS", f"[{symbol}] Pattern Score: {pattern_results['score']:.2f}. Found: {', '.join(pattern_results.get('patterns') or ['NONE'])}")
 
                     # Option Chain
                     chain_df, is_synthetic = data_provider.get_option_chain(symbol)
