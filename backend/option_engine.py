@@ -122,7 +122,7 @@ class OptionEngine:
         return "NEUTRAL"
 
     def find_executable_option(self, symbol: str, spot: float, signal_type: str, 
-                                macro_zones: List[float] = [], 
+                                precision_levels: Dict = {}, 
                                 is_momentum_dominant: bool = False,
                                 days_to_expiry: int = 5,
                                 max_spread_pct: float = 0.05,
@@ -219,28 +219,37 @@ class OptionEngine:
             target_pct *= 0.7
             selection_logic += "_EXP_SENSITIVE"
 
-        # 5. Zone-Aware Modification
-        if macro_zones:
+        # 5. Zone-Aware Modification (Precision Levels)
+        if precision_levels:
+            # Flatten all relevant zones (OBs, Fractals, Pivots)
+            res_zones = [ob['price'] for ob in precision_levels.get('order_blocks', []) if ob['type'] == 'RESISTANCE']
+            res_zones += [f['price'] for f in precision_levels.get('fractals', []) if f['type'] == 'RESISTANCE']
+            res_zones += [v for k,v in precision_levels.get('pivots', {}).items() if k.startswith('R')]
+
+            sup_zones = [ob['price'] for ob in precision_levels.get('order_blocks', []) if ob['type'] == 'SUPPORT']
+            sup_zones += [f['price'] for f in precision_levels.get('fractals', []) if f['type'] == 'SUPPORT']
+            sup_zones += [v for k,v in precision_levels.get('pivots', {}).items() if k.startswith('S')]
+
             if signal_type == "BULLISH":
-                next_zones = [z for z in macro_zones if z > spot]
+                next_zones = sorted([z for z in res_zones if z > spot])
                 if next_zones:
                     dist_to_zone = (next_zones[0] - spot) / spot
                     if dist_to_zone < 0.005: 
                         target_pct = 0.15
-                        selection_logic += "_ZONE_CAPPED"
+                        selection_logic += "_OB_CAPPED"
                     elif dist_to_zone > 0.015:
                         target_pct = 0.45
-                        selection_logic += "_ZONE_EXPANDED"
+                        selection_logic += "_OB_EXPANDED"
             else: # BEARISH
-                next_zones = [z for z in macro_zones if z < spot]
+                next_zones = sorted([z for z in sup_zones if z < spot], reverse=True)
                 if next_zones:
-                    dist_to_zone = (spot - next_zones[-1]) / spot
+                    dist_to_zone = (spot - next_zones[0]) / spot
                     if dist_to_zone < 0.005:
                         target_pct = 0.15
-                        selection_logic += "_ZONE_CAPPED"
+                        selection_logic += "_OB_CAPPED"
                     elif dist_to_zone > 0.015:
                         target_pct = 0.45
-                        selection_logic += "_ZONE_EXPANDED"
+                        selection_logic += "_OB_EXPANDED"
 
         # 6. Momentum Stretching
         if is_momentum_dominant:

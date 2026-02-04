@@ -21,7 +21,8 @@ from pytz import timezone as pytz_timezone
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from models import Regime, DivergenceType, TradeSignal, SignalConfidence
+# from models import Regime, DivergenceType, TradeSignal, SignalConfidence # DEPRECATED
+from models_v3 import Decision, Regime, Action, MarketStructure, TradeSignal, TradeSnapshot, DivergenceType, SignalConfidence
 import uvicorn
 
 app = FastAPI(title="The Oracle - Titan Plus Institutional")
@@ -37,8 +38,7 @@ app.add_middleware(
 # Persistent State Storage
 class LiveState:
     def __init__(self):
-        self.current_regime = Regime.UNCERTAIN
-        self.integrity = DivergenceType.NONE
+        self.current_regime = Regime.NEUTRAL
         self.active_signals = []
         self.last_update = datetime.now(timezone.utc)
         self.symbols = ["NIFTY", "BANKNIFTY", "SENSEX"]
@@ -122,6 +122,7 @@ brain = None
 evolver = None
 pattern_engine = None
 risk_engine = None
+tech_engine = None # [Phase 5]
 trap_hunter = None
 option_engine = None
 session_auditor = None
@@ -136,14 +137,12 @@ def call_brain_safely(action: str, **kwargs):
     
     try:
         if action == "DECIDE":
-            return brain.generate_decision(
+            # [v3.0] Enhanced Brain Interface
+            return brain.decide(
                 features=kwargs.get("features"),
-                regime=kwargs.get("regime"),
-                is_commit=kwargs.get("is_commit", False),
-                pattern_score=kwargs.get("pattern_score", 0.0),
-                signal_intent=kwargs.get("signal_intent"),
-                iv_skew=kwargs.get("iv_skew", 1.0),
-                grandmaster_data=kwargs.get("grandmaster_data") # [v3.0] Pass GM Data
+                market_data=kwargs.get("market_data"),
+                ohlcv_df=kwargs.get("ohlcv_df"),
+                regime=kwargs.get("regime")
             )
         elif action == "BOOST":
             if shadow_mode_enabled and shadow_engine:
@@ -408,12 +407,14 @@ def run_engine_loop():
         from infrastructure import APP_CONFIG, SupabaseManager, DatabaseManager, TelegramNotifier
         from providers import DataProvider
         from engines import DataSentinel, RiskEngine, PatternEngine, TrapHunter, SessionAuditor
-        from skirmisher_v2 import SkirmisherV2
-        from brain_engine_ml import BrainEngineML
+        # from skirmisher_v2 import SkirmisherV2
+        # from brain_engine_ml import BrainEngineML
+        from brain_engine_enhanced import EnhancedBrainEngine
         from evolution_engine import EvolutionEngine
         from strategist import MarketStrategist
         from support_resistance import SupportResistanceEngine
         from option_engine import OptionEngine
+        from technical_engine import TechnicalEngine # [Phase 5]
         
         # Sequence initialization with GC to prevent peak RAM spikes
         db = DatabaseManager()
@@ -428,12 +429,13 @@ def run_engine_loop():
             
         sentinel = DataSentinel()
         strategist = MarketStrategist()
-        skirmisher = SkirmisherV2()
+        # skirmisher = SkirmisherV2() # Deprecated in Phase 3
         sr_engine = SupportResistanceEngine()
         time.sleep(1)
         
         # Heavy ML Component 1
-        brain = BrainEngineML(stage=3)
+        # brain = BrainEngineML(stage=3)
+        brain = EnhancedBrainEngine(enable_rl=True, enable_smc=True)
         gc.collect() 
         time.sleep(2) # Give more room for RL
         
@@ -447,6 +449,7 @@ def run_engine_loop():
         risk_engine = RiskEngine()
         trap_hunter = TrapHunter()
         option_engine = OptionEngine()
+        tech_engine = TechnicalEngine() # [Phase 5]
         
         if shadow_mode_enabled:
             from shadow_mode import ShadowMode
@@ -608,14 +611,21 @@ def run_engine_loop():
                     if hist_df.empty:
                         continue
 
+                    # [v9.9.9] Technical Indicators Calculation
+                    # ADX
                     adx_df = hist_df.ta.adx()
                     if adx_df is not None and 'ADX_14' in adx_df.columns:
                         val = adx_df['ADX_14'].iloc[-1]
                         adx_val = 25.0 if pd.isna(val) or val != val else float(val)
                     else: adx_val = 25.0
                     
+                    # ATR
                     atr_df = hist_df.ta.atr()
                     atr_val = atr_df.iloc[-1] if atr_df is not None and not atr_df.empty else 0.0
+                    
+                    # RSI (Added in Audit Fix)
+                    rsi_series = hist_df.ta.rsi()
+                    rsi_val = rsi_series.iloc[-1] if rsi_series is not None and not rsi_series.empty else 50.0
 
                     live_state.current_regime = strategist.classify_regime(hist_df)
                     curr_strength = (market_data.spot_price - hist_df.open.iloc[0]) / hist_df.open.iloc[0] * 100
@@ -645,6 +655,20 @@ def run_engine_loop():
                     live_state.add_thought("ANALYSIS", f"[{symbol}] Pattern Score: {pattern_results['score']:.2f}. Found: {', '.join(pattern_results.get('patterns') or ['NONE'])}")
 
                     # Option Chain
+
+                    # [Phase 3.5] Killzone Logic
+                    now_time_obj = datetime.now(timezone(timedelta(hours=5, minutes=30))).time() # IST
+                    killzone_1_start = datetime.strptime("09:15", "%H:%M").time()
+                    killzone_1_end = datetime.strptime("10:00", "%H:%M").time()
+                    killzone_2_start = datetime.strptime("14:30", "%H:%M").time()
+                    killzone_2_end = datetime.strptime("15:00", "%H:%M").time()
+                    
+                    in_killzone = (killzone_1_start <= now_time_obj <= killzone_1_end) or (killzone_2_start <= now_time_obj <= killzone_2_end)
+                    if in_killzone:
+                        live_state.add_thought("RISK", f"Inside Volatility Killzone ({now_time_obj.strftime('%H:%M')}). Suppressing Signals.")
+                        pattern_results["score"] *= 0.25 # Severe penalty
+
+                    # Option Chain
                     chain_df, is_synthetic = data_provider.get_option_chain(symbol)
                     if not chain_df.empty:
                         live_state.max_pain[symbol] = option_engine.calculate_max_pain(chain_df)
@@ -667,7 +691,11 @@ def run_engine_loop():
                             other_delta = (other_data.spot_price - other_data.future_price + 45)
                             is_aligned = (my_delta > 0 and other_delta > 0) or (my_delta < 0 and other_delta < 0)
                             live_state.sector_synergy = 1.3 if is_aligned else 0.4
-                            if not is_aligned: pattern_results["score"] *= 0.6
+                            
+                            # [Phase 3.5] Strict Synergy Veto
+                            if not is_aligned: 
+                                live_state.add_thought("SYNERGY", f"Correlated Asset Divergence ({symbol} vs {other_sym}). BLOCKED.")
+                                pattern_results["score"] *= 0.1 # Hard block
 
                     is_trap, trap_reason = strategist.is_trap(hist_df, market_data)
                     if is_trap:
@@ -677,8 +705,14 @@ def run_engine_loop():
                     # VIX & Breadth
                     live_state.vix = data_provider.get_vix()
                     live_state.iv_skew[symbol] = data_provider.get_iv_skew(symbol)
-                    if live_state.vix > APP_CONFIG.get("HIGH_VOLATILITY_VIX", 20.0):
+                    
+                    # [Phase 3.5] Strict VIX Cap
+                    if live_state.vix > 25.0: # User requested 25 cap
+                        live_state.add_thought("RISK", f"High VIX ({live_state.vix:.2f} > 25). Market too dangerous.")
+                        pattern_results["score"] *= 0.1
+                    elif live_state.vix > APP_CONFIG.get("HIGH_VOLATILITY_VIX", 20.0):
                         pattern_results["score"] *= 0.8
+                        
                     live_state.breadth = data_provider.get_breadth(symbol)
                     
                     # 4. Feature Engineering
@@ -706,23 +740,25 @@ def run_engine_loop():
 
                     brain_features = {
                         "OI_RES": oi_res, "PCR": market_data.pcr, "BASIS_RES": basis_res, "ADX": adx_val,
+                        "RSI": rsi_val, "ATR": atr_val, # Added RSI/ATR
                         "SPOT_PRICE": market_data.spot_price, "FUTURE_PRICE": market_data.future_price,
-                        "MACRO_BIAS": macro_bias, "symbol": symbol
+                        "MACRO_BIAS": macro_bias, "symbol": symbol,
+                        "VIX": live_state.vix, # Added VIX
+                        "IV_SKEW": live_state.iv_skew.get(symbol, 1.0) # Added IV Skew
                     }
 
                     # 5. Brain Inference
-                    grandmaster_data = {}
-                    if brain and not hist_df.empty and not chain_df.empty:
-                        macro_snap = {"VIX": live_state.vix, "DXY": 103.5, "FII_NET": 0.0, "CRUDE": 75.0, "USDINR": 84.0}
-                        grandmaster_data = brain.analyze_institutional_logic(hist_df, chain_df, macro_snap)
+                    # Removed call to non-existent 'analyze_institutional_logic'
+                    # EnhancedBrainEngine handles SMC internally via ohlcv_df
 
                     likely_intent = "BULLISH" if (pattern_results.get("score", 0) > 0.45 and curr_strength > 0.1) or price_vel_curr > 0.08 else (
                         "BEARISH" if (pattern_results.get("score", 0) > 0.45 and curr_strength < -0.1) or price_vel_curr < -0.08 else "BULLISH"
                     )
                     
+                    # Pass ohlcv_df to enable SMC Engine
                     decision_id, thoughts = call_brain_safely(
                         "DECIDE", features=brain_features, regime=live_state.current_regime, 
-                        grandmaster_data=grandmaster_data, is_commit=False, pattern_score=pattern_results["score"],
+                        ohlcv_df=hist_df, is_commit=False, pattern_score=pattern_results["score"],
                         signal_intent=likely_intent, iv_skew=live_state.iv_skew.get(symbol, 1.0)
                     )
                     for t in thoughts: live_state.add_thought("INFERENCE", f"[{symbol}] {t}")
@@ -773,22 +809,33 @@ def run_engine_loop():
                         if signal_type == "BULLISH" and any(abs(market_data.spot_price - r) < 25 for r in live_state.resistances.get(symbol, [])): continue
                         if signal_type == "BEARISH" and any(abs(market_data.spot_price - s) < 25 for s in live_state.supports.get(symbol, [])): continue
 
+                        # [Phase 5] Precision Levels & Smart Stops (Order Blocks, Fractals, OI Walls)
+                        precision_levels = tech_engine.calculate_precision_levels(hist_df, market_data.spot_price, chain_df)
+
                         opt_trade = option_engine.find_executable_option(
-                            symbol, market_data.spot_price, signal_type, macro_zones=macro_zones,
+                            symbol, market_data.spot_price, signal_type, precision_levels=precision_levels,
                             is_momentum_dominant=strategist.is_momentum_dominant(hist_df), days_to_expiry=5, 
                             chain_df=chain_df, is_synthetic=is_synthetic
                         )
                         
                         if not opt_trade.get("rejection_reasons"):
+                            
+                            smart_risk = risk_engine.calculate_dynamic_stops(
+                                entry_price=market_data.spot_price,
+                                signal_type=signal_type,
+                                atr=atr_val,
+                                precision_levels=precision_levels
+                            )
+                            
                             new_signal = TradeSignal(
                                 symbol=symbol, entry_price=market_data.spot_price,
-                                stop_loss=max(APP_CONFIG["SIGNAL_STOP_LOSS_POINTS"], round(1.0 * atr_val)), 
-                                target=max(APP_CONFIG["SIGNAL_TARGET_POINTS"], round(1.5 * atr_val)),
+                                stop_loss=max(APP_CONFIG["SIGNAL_STOP_LOSS_POINTS"], abs(market_data.spot_price - smart_risk["stop_loss"])), 
+                                target=max(APP_CONFIG["SIGNAL_TARGET_POINTS"], abs((smart_risk["targets"][0] if smart_risk["targets"] else (market_data.spot_price + 100)) - market_data.spot_price)),
                                 confidence=SignalConfidence.HIGH if pattern_results["score"] > 0.9 else SignalConfidence.MEDIUM,
                                 regime=live_state.current_regime, reasoning=f"{signal_type} | {', '.join(detected_patterns)}",
                                 timestamp=datetime.now(timezone.utc), decision_id=decision_id,
                                 logic_version="v9.9.9_HF", spread_at_entry=current_spread,
-                                quantity=risk_engine.get_suggested_size(applied_boost, APP_CONFIG.get("BASE_LOTS", 1)),
+                                quantity=risk_engine.get_suggested_size(applied_boost, APP_CONFIG.get("BASE_LOTS", 1), atr=atr_val),
                                 score=pattern_results["score"], **opt_trade
                             )
                             live_state.active_signals.append(new_signal)
