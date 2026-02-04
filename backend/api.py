@@ -70,15 +70,16 @@ class LiveState:
         
         # [v9.4] Epistemic Transparency: Digital Stream of Consciousness
         self.thought_logs = [] # List of { "timestamp": iso, "type": "VETO|LEARN|SIGNAL", "msg": "..." }
+        self.last_thoughts_by_type = {} # [v9.9.9] Deduplication Cache
         self.is_learning = False
 
     def add_thought(self, thought_type: str, msg: str):
-        """[v9.5.4] Standardized thought logger with de-duplication and capping."""
-        if self.thought_logs:
-            last = self.thought_logs[-1]
-            # De-duplicate identical messages if they occur within 30 seconds of each other
-            if last['msg'] == msg:
-                 return
+        """[v9.5.4] Standardized thought logger with type-aware de-duplication."""
+        # [v9.9.9] Type-aware suppression: Don't repeat the exact same message for the same type
+        if self.last_thoughts_by_type.get(thought_type) == msg:
+            return
+            
+        self.last_thoughts_by_type[thought_type] = msg
         
         self.thought_logs.append({
             "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -641,7 +642,7 @@ def run_engine_loop():
                     pattern_results = pattern_engine.get_signal_confirmation(
                         hist_df, macro_bias=macro_bias, macro_zones=macro_zones, atr=atr_val
                     )
-                    live_state.add_thought("ANALYSIS", f"Chart Pattern Score: {pattern_results['score']:.2f}. Found: {', '.join(pattern_results.get('patterns', ['NONE']))}")
+                    live_state.add_thought("ANALYSIS", f"[{symbol}] Pattern Score: {pattern_results['score']:.2f}. Found: {', '.join(pattern_results.get('patterns', ['NONE']))}")
 
                     # Option Chain
                     chain_df, is_synthetic = data_provider.get_option_chain(symbol)
@@ -724,7 +725,7 @@ def run_engine_loop():
                         grandmaster_data=grandmaster_data, is_commit=False, pattern_score=pattern_results["score"],
                         signal_intent=likely_intent, iv_skew=live_state.iv_skew.get(symbol, 1.0)
                     )
-                    for t in thoughts: live_state.add_thought("INFERENCE", t)
+                    for t in thoughts: live_state.add_thought("INFERENCE", f"[{symbol}] {t}")
 
                     confidence_boost, _ = call_brain_safely(
                         "BOOST", features=brain_features, regime=live_state.current_regime,
