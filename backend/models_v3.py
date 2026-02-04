@@ -43,6 +43,7 @@ class Regime(str, Enum):
     SIDEWAYS_STRONG = "SIDEWAYS_STRONG"
     SIDEWAYS_WEAK = "SIDEWAYS_WEAK"
     NEUTRAL = "NEUTRAL"
+    UNCERTAIN = "UNCERTAIN"
 
 
 class MarketStructure(str, Enum):

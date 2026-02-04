@@ -46,6 +46,18 @@ interface SystemState {
   thought_logs: Array<{ timestamp: string; type: string; msg: string }>;
   is_learning: boolean;
   sector_synergy?: number;
+  resets_today?: number;
+  integrity_status?: string;
+  last_update?: string;
+  data_source?: string;
+  max_pain?: Record<string, number>;
+  option_battles?: Record<string, any[]>;
+  option_chains?: Record<string, any[]>;
+  iv_skew?: Record<string, number>;
+  supports?: Record<string, number[]>;
+  resistances?: Record<string, number[]>;
+  gex_bias?: Record<string, number>;
+  market_open?: boolean;
 }
 
 // ============================================================================
@@ -349,8 +361,8 @@ export default function TitanDashboard() {
                     <div key={i} className="p-4 bg-white/5 border border-white/5 rounded-2xl group hover:border-violet-500/20 transition-all">
                       <div className="flex justify-between items-center mb-2">
                         <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${log.type === 'INFO' ? 'bg-cyan-500/10 text-cyan-400' :
-                            log.type === 'TRACE' ? 'bg-violet-500/10 text-violet-400' :
-                              'bg-amber-500/10 text-amber-400'
+                          log.type === 'TRACE' ? 'bg-violet-500/10 text-violet-400' :
+                            'bg-amber-500/10 text-amber-400'
                           }`}>
                           {log.type}
                         </span>
