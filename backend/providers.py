@@ -245,11 +245,24 @@ class DataProvider:
                 'datetime': dates,
                 'open': 25000.0, 'high': 25050.0, 'low': 24950.0, 'close': 25000.0, 'volume': 1000
             })
+            df.set_index('datetime', inplace=True)
             return df
+        
         df = pd.DataFrame(raw)
         df.rename(columns={'into': 'open', 'inth': 'high', 'intl': 'low', 'intc': 'close', 'v': 'volume'}, inplace=True)
+        
+        # [v9.9.9] Fix: Ensure proper DatetimeIndex for pandas-ta stability (VWAP/Divergence)
+        if 'time' in df.columns:
+            df['time'] = pd.to_datetime(df['time'], format='%d-%m-%Y %H:%M:%S', errors='coerce')
+            df.set_index('time', inplace=True)
+            # Shoonya returns data in descending order sometimes; ensure it's ascending for indicators
+            df.sort_index(inplace=True)
+            
         # Type casting for pandas-ta stability
         for col in ['open', 'high', 'low', 'close', 'volume']:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        # Final safety check: drop rows where datetime conversion failed (index is NaT)
+        df = df[df.index.notnull()]
         return df

@@ -31,9 +31,22 @@ class PatternEngine:
     def detect_structural(self, df: pd.DataFrame) -> List[str]:
         patterns = []
         if len(df) < 50: return []
-        vwap = df.ta.vwap()
-        if vwap is not None and len(vwap) > 1:
-            if df.close.iloc[-1] > vwap.iloc[-1] and df.close.iloc[-2] <= vwap.iloc[-2]: patterns.append("VWAP_CROSSOVER")
+        
+        # [v9.9.9] Robust VWAP handling: Ensure numeric scalar comparison
+        try:
+            vwap = df.ta.vwap()
+            if vwap is not None and len(vwap) > 1:
+                # If vwap is a DataFrame, select the first column (standard VWAP)
+                v_series = vwap.iloc[:, 0] if isinstance(vwap, pd.DataFrame) else vwap
+                
+                curr_close, prev_close = float(df.close.iloc[-1]), float(df.close.iloc[-2])
+                curr_vwap, prev_vwap = float(v_series.iloc[-1]), float(v_series.iloc[-2])
+                
+                if curr_close > curr_vwap and prev_close <= prev_vwap: 
+                    patterns.append("VWAP_CROSSOVER")
+        except Exception as e:
+            logger.warning(f"STRUCTURAL: VWAP analysis failed: {e}")
+
         rsi = df.ta.rsi(length=14)
         if rsi is not None and len(rsi) > 20:
             if df.close.iloc[-1] > df.close.iloc[-20:-1].max() and rsi.iloc[-1] < rsi.iloc[-20:-1].max(): patterns.append("BEARISH_DIVERGENCE")
