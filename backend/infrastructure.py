@@ -37,8 +37,8 @@ APP_CONFIG = {
     "ATR_MAE_MIN_THRESHOLD": float(os.getenv("ATR_MAE_MIN_THRESHOLD", "20.0")),
     "DECAY_PRICE_ADVERSE_THRESHOLD": float(os.getenv("DECAY_PRICE_ADVERSE_THRESHOLD", "15.0")),
     "SIGNAL_ACTIVE_CAP": int(os.getenv("SIGNAL_ACTIVE_CAP", "20")),
-    "ENGINE_POLLING_BASE_SECONDS": int(os.getenv("ENGINE_POLLING_BASE_SECONDS", "5")),
-    "ENGINE_POLLING_JITTER_SECONDS": int(os.getenv("ENGINE_POLLING_JITTER_SECONDS", "2")),
+    "ENGINE_POLLING_BASE_SECONDS": int(os.getenv("ENGINE_POLLING_BASE_SECONDS", "1")),
+    "ENGINE_POLLING_JITTER_SECONDS": int(os.getenv("ENGINE_POLLING_JITTER_SECONDS", "1")),
     "SIDECAR_STOP_LOSS_POINTS": float(os.getenv("SIDECAR_STOP_LOSS_POINTS", "30.0")),
     "SIDECAR_TARGET_POINTS": float(os.getenv("SIDECAR_TARGET_POINTS", "100.0")),
     "SKIRMISHER_STOP_LOSS_POINTS": float(os.getenv("SKIRMISHER_STOP_LOSS_POINTS", "15.0")),
@@ -70,8 +70,20 @@ class TelegramNotifier:
             masked_chat = str(self.chat_id)[-4:] if self.chat_id else "****"
             logging.info(f"TELEGRAM: Notifications ENABLED | Bot: {masked_token} | Chat: {masked_chat}")
             self._test_connection()
+            # [v9.9.9] Anti-Spam Gate
+            self.sent_messages: Dict[str, int] = {}
         else:
             logging.warning("TELEGRAM: Notifications DISABLED (Check .env for TOKEN/CHAT_ID)")
+
+    def _should_send(self, content: str) -> bool:
+        """[v9.9.9] Prevents sending the same message more than twice."""
+        if not self.enabled: return False
+        count = self.sent_messages.get(content, 0)
+        if count >= 2:
+            logging.warning(f"TELEGRAM SPAM VETO: Message already sent {count} times.")
+            return False
+        self.sent_messages[content] = count + 1
+        return True
 
     def _test_connection(self):
         try:
@@ -88,6 +100,10 @@ class TelegramNotifier:
 
     def send_signal(self, signal: Dict, dashboard_url: str = "") -> bool:
         if not self.enabled: return False
+        # [Anti-Spam] Track signals by decision_id or content
+        msg_id = f"SIGNAL_{signal.get('decision_id', 'UNKNOWN')}"
+        if not self._should_send(msg_id): return False
+        
         try:
             direction = "🟢 BULLISH" if "BULLISH" in signal.get('reasoning', '') or "BULLISH" in signal.get('type', '') else "🔴 BEARISH"
             conf_val = signal.get('confidence_val', 0.85)
@@ -125,6 +141,7 @@ class TelegramNotifier:
 
     def send_alert(self, message: str) -> bool:
         if not self.enabled: return False
+        if not self._should_send(message): return False
         try:
             url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
             rich_message = (
