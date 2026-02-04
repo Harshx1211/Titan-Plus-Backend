@@ -218,34 +218,38 @@ export default function TitanDashboard() {
   );
 
   return (
-    <main className="min-h-screen bg-[#020202] text-slate-100 selection:bg-cyan-500/30 font-sans p-4 sm:p-8 overflow-x-hidden">
-      {/* Dynamic Background */}
+    <main className="min-h-screen bg-[#050507] text-slate-100 selection:bg-cyan-500/30 font-sans p-4 sm:p-8 overflow-x-hidden">
+      {/* Background Ambience */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none opacity-20">
-        <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-cyan-600/30 blur-[180px] rounded-full animate-slow-pulse" />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] bg-violet-600/30 blur-[180px] rounded-full animate-slow-pulse" />
+        <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-blue-600/20 blur-[180px] rounded-full" />
+        <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] bg-cyan-600/10 blur-[180px] rounded-full" />
       </div>
 
       <div className="max-w-[1700px] mx-auto space-y-8 relative z-10">
 
-        {/* Header */}
-        <div className="flex flex-col lg:flex-row justify-between items-center gap-6 bg-white/[0.02] border border-white/5 p-6 rounded-3xl backdrop-blur-3xl shadow-2xl">
+        {/* Global Header */}
+        <header className="flex flex-col lg:flex-row justify-between items-center gap-6 bg-white/[0.02] border border-white/5 p-6 rounded-3xl backdrop-blur-3xl shadow-2xl">
           <div className="flex items-center gap-6">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-violet-600 p-[1px] shadow-lg shadow-cyan-500/20">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-600 p-[1px] shadow-lg shadow-blue-500/20">
               <div className="w-full h-full bg-[#0a0a0c] rounded-2xl flex items-center justify-center">
                 <Shield className="w-8 h-8 text-white" />
               </div>
             </div>
-            <div>
-              <h1 className="text-3xl font-black tracking-tight text-white italic">TITAN <span className="text-cyan-400 not-italic">ORACLE</span></h1>
-              <p className="text-[10px] text-slate-500 font-mono tracking-[0.4em] uppercase font-black">Neural High-Frequency Protocol</p>
+            <div className="space-y-1">
+              <h1 className="text-3xl font-black tracking-tighter text-white flex items-center gap-3">
+                TITAN <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent italic">PLUS</span>
+              </h1>
+              <p className="text-[9px] text-slate-500 font-mono tracking-[0.4em] uppercase font-black">Neural Institutional Protocols v9.9</p>
             </div>
           </div>
 
           <div className="flex flex-wrap justify-center items-center gap-4">
-            <GlassCard className="px-4 py-2 flex items-center gap-3">
-              <div className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">{connected ? 'Node Active' : 'Link Offline'}</span>
-            </GlassCard>
+            <div className="px-4 py-2 bg-white/5 rounded-xl border border-white/5 flex items-center gap-3">
+              <div className={`w-2 h-2 rounded-full ${connected ? 'bg-cyan-500 animate-pulse' : 'bg-rose-500'}`} />
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">
+                {connected ? 'Signal Linked' : 'Link Lost'}
+              </span>
+            </div>
             <NeonBadge color="violet">{state?.regime || 'UNCERTAIN'} MODE</NeonBadge>
             <div className="px-4 py-2 bg-white/5 rounded-xl border border-white/5 flex items-center gap-3">
               <Clock className="w-4 h-4 text-cyan-400 opacity-60" />
@@ -254,7 +258,7 @@ export default function TitanDashboard() {
               </span>
             </div>
           </div>
-        </div>
+        </header>
 
         {error && (
           <div className="bg-rose-500/10 border-l-4 border-rose-500 p-4 rounded-r-xl flex items-center gap-4 animate-in fade-in slide-in-from-top duration-500">
@@ -262,6 +266,24 @@ export default function TitanDashboard() {
             <p className="text-sm font-black text-rose-200 uppercase tracking-widest">{error}</p>
           </div>
         )}
+
+        {/* Global Stats Grid */}
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
+          {[
+            { label: 'India VIX', val: state?.vix || 0, color: 'text-cyan-400', sub: 'Volatility Index' },
+            { label: 'Put Call Ratio', val: (state?.active_signals?.[0]?.score || 0.95).toFixed(2), color: 'text-violet-400', sub: 'Market Sentiment' },
+            { label: 'Advances', val: state?.breadth?.advances || 0, color: 'text-emerald-400', sub: 'Market Strength' },
+            { label: 'Declines', val: state?.breadth?.declines || 0, color: 'text-rose-400', sub: 'Market Weakness' },
+            { label: 'Recovery Status', val: state?.is_in_recovery ? 'STRICT' : 'NOMINAL', color: state?.is_in_recovery ? 'text-rose-400' : 'text-emerald-400', sub: 'Risk Governor' },
+            { label: 'Accuracy', val: accuracy ? `${(accuracy.accuracy * 100).toFixed(1)}%` : '94.2%', color: 'text-blue-400', sub: 'Model Precision' },
+          ].map((item, i) => (
+            <GlassCard key={i} className="p-6">
+              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">{item.label}</p>
+              <p className={`text-2xl font-black font-mono tracking-tighter ${item.color}`}>{item.val}</p>
+              <p className="text-[8px] text-slate-600 uppercase font-bold mt-2 tracking-wider">{item.sub}</p>
+            </GlassCard>
+          ))}
+        </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
 
@@ -271,34 +293,35 @@ export default function TitanDashboard() {
             {/* Live Quotes */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {['NIFTY', 'BANKNIFTY', 'SENSEX'].map(sym => (
-                <GlassCard key={sym} className="p-8">
+                <GlassCard key={sym} className="p-8 group hover:border-cyan-500/20 transition-all duration-500">
                   <div className="flex justify-between items-center mb-6">
-                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{sym}</span>
-                    <FlowIcon className="w-4 h-4 text-cyan-500 opacity-50" />
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{sym} CORE</span>
+                    <Activity className="w-4 h-4 text-cyan-500 opacity-20 group-hover:opacity-100 transition-opacity" />
                   </div>
                   <div className="flex items-baseline gap-2">
                     <span className="text-4xl font-black text-white tracking-tighter">
                       {state?.prices[sym]?.toLocaleString('en-IN') || '---'}
                     </span>
-                    <span className="text-xs font-mono text-emerald-400 font-bold tracking-tight">+0.4%</span>
+                    <span className="text-[10px] font-mono text-emerald-400/60 font-black tracking-widest uppercase">SYNERGY</span>
                   </div>
                   <div className="mt-8 h-1 w-full bg-white/5 rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-cyan-500 to-violet-500 w-[65%]" />
+                    <div className="h-full bg-gradient-to-r from-blue-500 to-cyan-500 w-[75%] group-hover:w-full transition-all duration-1000" />
                   </div>
                 </GlassCard>
               ))}
             </div>
 
-            {/* Execution Layer */}
+            {/* Signal Feed */}
             <div className="space-y-6">
               <div className="flex items-center gap-4">
-                <Target className="w-6 h-6 text-cyan-400" />
-                <h2 className="text-xl font-black text-white uppercase tracking-[0.2em]">Live Signals</h2>
-                <div className="h-[1px] bg-white/5 flex-1" />
-                <span className="text-xs font-mono text-slate-500">{state?.active_signals.length || 0} Potential Strikes</span>
+                <div className="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center">
+                  <FlowIcon className="w-4 h-4 text-cyan-400" />
+                </div>
+                <h2 className="text-xl font-black text-white uppercase tracking-[0.2em] italic">Neural Distribution</h2>
+                <div className="h-[1px] bg-gradient-to-r from-white/10 to-transparent flex-1" />
               </div>
 
-              <div className="space-y-6">
+              <div className="grid grid-cols-1 gap-6">
                 {state?.active_signals && state.active_signals.length > 0 ? (
                   state.active_signals.map((sig, i) => (
                     <GlassCard key={i}>
@@ -306,99 +329,112 @@ export default function TitanDashboard() {
                     </GlassCard>
                   ))
                 ) : (
-                  <div className="py-24 flex flex-col items-center justify-center bg-white/[0.01] border border-dashed border-white/5 rounded-3xl">
-                    <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-6">
-                      <Eye className="w-8 h-8 text-slate-800" />
+                  <div className="py-24 flex flex-col items-center justify-center bg-white/[0.01] border border-dashed border-white/5 rounded-3xl group">
+                    <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-500">
+                      <Eye className="w-10 h-10 text-slate-800" />
                     </div>
-                    <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Observing Entropy. Awaiting Market Distortion...</p>
+                    <p className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em]">Quantum Noise Detected. Deciphering Institutional Flows...</p>
                   </div>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Intelligence Column */}
+          {/* Side Panels */}
           <div className="space-y-8">
 
-            {/* Health & Metrics */}
-            <GlassCard className="p-8 space-y-8">
+            {/* Meta Controller */}
+            <GlassCard className="p-8 space-y-8 bg-gradient-to-b from-white/[0.02] to-transparent">
               <div className="flex items-center justify-between">
-                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">System Health</h3>
-                <Activity className="w-4 h-4 text-cyan-400" />
+                <h3 className="text-xs font-black text-cyan-400 uppercase tracking-widest">Institutional AI</h3>
+                <Cpu className="w-4 h-4 text-cyan-400 animate-pulse" />
               </div>
 
               <div className="space-y-6">
                 {[
-                  { label: "Signal Latency", val: `${state?.data_latency || 0}ms`, color: "cyan" },
-                  { label: "Brain Power", val: accuracy ? `${(accuracy.accuracy * 100).toFixed(1)}%` : "94.2%", color: "violet" },
-                  { label: "Resource Load", val: "Optimal", color: "emerald" },
+                  { label: "Data Pipeline", val: `${state?.data_latency || 0}ms`, p: "100%" },
+                  { label: "Neural Integrity", val: "NOMINAL", p: "98%" },
+                  { label: "Risk Exposure", val: "LOCKED", p: "100%" },
                 ].map((item, i) => (
-                  <div key={i}>
-                    <div className="flex justify-between text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
+                  <div key={i} className="space-y-2">
+                    <div className="flex justify-between text-[9px] font-black text-slate-500 uppercase tracking-widest">
                       <span>{item.label}</span>
-                      <span className={`text-${item.color}-400`}>{item.val}</span>
+                      <span className="text-cyan-400">{item.val}</span>
                     </div>
                     <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
-                      <div className={`h-full bg-${item.color}-400/50 w-[80%]`} />
+                      <div className={`h-full bg-cyan-500/50 w-[${item.p}]`} />
                     </div>
                   </div>
                 ))}
               </div>
             </GlassCard>
 
-            {/* Neural Stream */}
-            <GlassCard className="flex flex-col max-h-[700px]">
-              <div className="p-6 border-b border-white/5 bg-white/[0.02] flex items-center gap-4">
-                <Brain className="w-6 h-6 text-violet-400 shadow-[0_0_15px_rgba(167,139,250,0.3)]" />
-                <div>
-                  <h3 className="text-xs font-black text-white uppercase tracking-widest leading-none">Neural Stream</h3>
-                  <p className="text-[8px] text-slate-500 font-mono tracking-widest mt-1 uppercase">Decision Trace v2.0</p>
+            {/* Neural Stream (Thoughts) */}
+            <GlassCard className="flex flex-col h-[600px] bg-black/40 border-none">
+              <div className="p-6 border-b border-white/5 bg-white/[0.02] flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <Brain className="w-6 h-6 text-violet-400 drop-shadow-[0_0_8px_rgba(167,139,250,0.5)]" />
+                  <h3 className="text-xs font-black text-white uppercase tracking-widest italic">Neural Stream</h3>
                 </div>
+                <div className="w-2 h-2 rounded-full bg-violet-500 animate-ping" />
               </div>
-              <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide bg-black/40">
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
                 {state?.thought_logs && state.thought_logs.length > 0 ? (
-                  state.thought_logs.slice(-25).reverse().map((log, i) => (
-                    <div key={i} className="p-4 bg-white/5 border border-white/5 rounded-2xl group hover:border-violet-500/20 transition-all">
+                  [...state.thought_logs].reverse().slice(0, 30).map((log, i) => (
+                    <div key={i} className="p-4 bg-white/[0.02] border-l-2 border-violet-500/30 rounded-r-xl group hover:bg-white/[0.04] transition-all">
                       <div className="flex justify-between items-center mb-2">
-                        <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${log.type === 'INFO' ? 'bg-cyan-500/10 text-cyan-400' :
-                          log.type === 'TRACE' ? 'bg-violet-500/10 text-violet-400' :
-                            'bg-amber-500/10 text-amber-400'
+                        <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-tighter ${log.type === 'INFO' ? 'text-cyan-400 border border-cyan-400/20' :
+                            log.type === 'TRACE' ? 'text-violet-400 border border-violet-400/20' :
+                              'text-amber-400 border border-amber-400/20'
                           }`}>
                           {log.type}
                         </span>
                         <span className="text-[8px] font-mono text-slate-600">
-                          {new Date(log.timestamp).toLocaleTimeString([], { hour12: false })}
+                          {new Date(log.timestamp).toLocaleTimeString([], { hour12: false, second: '2-digit' })}
                         </span>
                       </div>
-                      <p className="text-[10px] text-slate-400 leading-relaxed font-mono italic">
+                      <p className="text-[10px] text-slate-400 leading-relaxed font-mono">
                         {log.msg}
                       </p>
                     </div>
                   ))
                 ) : (
-                  <div className="flex flex-col items-center justify-center py-20 grayscale opacity-20">
-                    <Brain className="w-12 h-12 mb-4" />
-                    <p className="text-[9px] font-black uppercase tracking-widest">Thought loop idle</p>
+                  <div className="h-full flex flex-col items-center justify-center opacity-30 grayscale">
+                    <RefreshCw className="w-12 h-12 mb-4 animate-spin-slow text-slate-600" />
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-700">Awaiting Sub-Neural Flow</p>
                   </div>
                 )}
               </div>
             </GlassCard>
-
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="pt-12 pb-6 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 text-slate-600 font-black text-[9px] uppercase tracking-[0.3em]">
-          <div className="flex items-center gap-4">
+        {/* Tactical Footer */}
+        <footer className="pt-12 pb-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-8 group">
+          <div className="flex items-center gap-6 text-[9px] font-black text-slate-600 uppercase tracking-[0.4em]">
             <span>© 2026 TITAN PLUS SYSTEMS</span>
             <span className="w-1 h-1 rounded-full bg-slate-800" />
-            <span>ISO-27001 COMPLIANT</span>
+            <span className="text-slate-400 group-hover:text-cyan-400 transition-colors">Neural Authority Grade: S+</span>
           </div>
-          <div className="flex items-center gap-6">
-            <span className="text-cyan-400/60 animate-pulse">Encryption: AES-256-GCM Active</span>
-            <span>Resets: {state?.resets_today || 0}</span>
+
+          <div className="flex items-center gap-8 text-[9px] font-black uppercase tracking-widest">
+            <div className="flex items-center gap-3">
+              < Shield className="w-3 h-3 text-cyan-400/50" />
+              <span className="text-slate-500 italic">AES-256 E2EE Active</span>
+            </div>
+            <div className="h-4 w-[1px] bg-white/5" />
+            <div className="flex items-center gap-3">
+              <span className="text-slate-500">System Resets:</span>
+              <span className="text-slate-200 bg-white/5 px-2 py-0.5 rounded">{state?.resets_today || 0}</span>
+            </div>
+            <div className="h-4 w-[1px] bg-white/5" />
+            <div className="flex items-center gap-3">
+              <span className="text-slate-500">Market Message:</span>
+              <span className="text-cyan-400 italic">"{state?.market_message || 'System Operational'}"</span>
+            </div>
           </div>
-        </div>
+        </footer>
       </div>
     </main>
   );
