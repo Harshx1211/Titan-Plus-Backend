@@ -4,7 +4,8 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from infrastructure import SupabaseManager
-from brain_engine import BrainEngine
+# from brain_engine import BrainEngine
+from brain_engine_enhanced import EnhancedBrainEngine
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("evolution_engine")
@@ -47,7 +48,7 @@ class EvolutionEngine:
     [v9.0.0] The Evolutionary Organism (Advisory Mode).
     Uses Feature Reputation (Bounded) instead of permanent mutation.
     """
-    def __init__(self, brain: BrainEngine):
+    def __init__(self, brain: EnhancedBrainEngine):
         self.db = SupabaseManager()
         self.brain = brain
         self.governor = MetaGovernor()
@@ -102,28 +103,34 @@ class EvolutionEngine:
         # Analyze Missed Alphas (Blocks that persisted)
         for _, row in blocks.iterrows():
             if row.get('efficacy') == 0: # Missed Win
-                features = row.get('features', {})
-                if features:
-                    min_feat = min(features, key=features.get)
-                    if min_feat in rep_adjustments:
-                        rep_adjustments[min_feat] -= 0.02
+                raw_features = row.get('features', {})
+                if isinstance(raw_features, dict):
+                    # Filter for numeric values only (ignore 'symbol', etc.)
+                    numeric_features = {k: v for k, v in raw_features.items() if isinstance(v, (int, float))}
+                    if numeric_features:
+                        min_feat = min(numeric_features, key=numeric_features.get)
+                        if min_feat in rep_adjustments:
+                            rep_adjustments[min_feat] -= 0.02
 
         # Analyze Bad Approvals (Losses)
         for _, row in approvals.iterrows():
             if row.get('efficacy') == 0: # Bad Trade
-                features = row.get('features', {})
-                if features:
-                    max_feat = max(features, key=features.get)
-                    if max_feat in rep_adjustments:
-                        rep_adjustments[max_feat] -= 0.05
+                raw_features = row.get('features', {})
+                if isinstance(raw_features, dict):
+                    numeric_features = {k: v for k, v in raw_features.items() if isinstance(v, (int, float))}
+                    if numeric_features:
+                        max_feat = max(numeric_features, key=numeric_features.get)
+                        if max_feat in rep_adjustments:
+                            rep_adjustments[max_feat] -= 0.05
         
         # Analyze Good Approvals (Wins)
         for _, row in approvals.iterrows():
             if row.get('efficacy') == 1:
-                features = row.get('features', {})
-                for f in features:
-                    if f in rep_adjustments:
-                         rep_adjustments[f] += 0.01
+                raw_features = row.get('features', {})
+                if isinstance(raw_features, dict):
+                    for f, v in raw_features.items():
+                        if f in rep_adjustments and isinstance(v, (int, float)):
+                             rep_adjustments[f] += 0.01
 
         # 4. Apply Reputation Updates (Inertial & Bounded)
         for feat, adj in rep_adjustments.items():
@@ -159,7 +166,7 @@ class EvolutionEngine:
         }
 
 if __name__ == "__main__":
-    from brain_engine import BrainEngine
-    brain = BrainEngine()
+    from brain_engine_enhanced import EnhancedBrainEngine
+    brain = EnhancedBrainEngine()
     evolver = EvolutionEngine(brain)
     evolver.evolve_session()
