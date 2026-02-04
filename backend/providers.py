@@ -17,7 +17,7 @@ from typing import Optional, Dict, List, Tuple
 from dotenv import load_dotenv
 from NorenRestApiPy.NorenApi import NorenApi
 from growwapi import GrowwAPI
-from models import MarketData
+from models_v3 import MarketData
 
 load_dotenv()
 logger = logging.getLogger("providers")

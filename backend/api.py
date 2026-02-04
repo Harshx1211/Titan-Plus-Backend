@@ -72,6 +72,7 @@ class LiveState:
         self.thought_logs = [] # List of { "timestamp": iso, "type": "VETO|LEARN|SIGNAL", "msg": "..." }
         self.last_thoughts_by_type = {} # [v9.9.9] Deduplication Cache
         self.is_learning = False
+        self.integrity = DivergenceType.NONE
 
     def add_thought(self, thought_type: str, msg: str):
         """[v9.5.4] Standardized thought logger with type-aware de-duplication."""
