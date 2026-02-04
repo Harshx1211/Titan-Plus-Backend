@@ -148,7 +148,7 @@ def call_brain_safely(action: str, **kwargs):
             if shadow_mode_enabled and shadow_engine:
                 shadow_engine.compare_predictions(kwargs.get("features"), kwargs.get("regime"))
             
-            return brain.get_confidence_boost(
+            return brain.get_confidence_boost_ml(
                 features=kwargs.get("features"),
                 regime_val=kwargs.get("regime").value if hasattr(kwargs.get("regime"), 'value') else kwargs.get("regime"),
                 signal_intent=kwargs.get("signal_intent"),
@@ -165,7 +165,7 @@ def call_brain_safely(action: str, **kwargs):
                     pattern_score=kwargs.get("pattern_score", 0.0)
                 )
             elif action == "BOOST":
-                return brain.get_confidence_boost(
+                return brain.get_confidence_boost_ml(
                     features=kwargs.get("features"),
                     regime_val=kwargs.get("regime").value if hasattr(kwargs.get("regime"), 'value') else kwargs.get("regime")
                 )
