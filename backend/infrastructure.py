@@ -66,11 +66,12 @@ class TelegramNotifier:
                 self.enabled = True
         
         if self.enabled:
+            masked_token = f"{self.bot_token[:5]}...{self.bot_token[-5:]}" if self.bot_token else "****"
             masked_chat = str(self.chat_id)[-4:] if self.chat_id else "****"
-            logging.getLogger("infrastructure").info(f"TELEGRAM: Notifications ENABLED (Chat ID ending in: {masked_chat})")
+            logging.info(f"TELEGRAM: Notifications ENABLED | Bot: {masked_token} | Chat: {masked_chat}")
             self._test_connection()
         else:
-            logging.getLogger("infrastructure").warning("TELEGRAM: Notifications DISABLED")
+            logging.warning("TELEGRAM: Notifications DISABLED (Check .env for TOKEN/CHAT_ID)")
 
     def _test_connection(self):
         try:
@@ -78,12 +79,12 @@ class TelegramNotifier:
             response = requests.get(url, timeout=5)
             if response.status_code != 200:
                 self.enabled = False
-                logging.getLogger("infrastructure").error(f"TELEGRAM: Connection failed ({response.status_code}): {response.text}")
+                logging.error(f"TELEGRAM: Connection failed ({response.status_code}): {response.text}")
             else:
-                logging.getLogger("infrastructure").info("TELEGRAM: Connection verified successfully.")
+                logging.info("TELEGRAM: Connection verified successfully.")
         except Exception as e:
             self.enabled = False
-            logging.getLogger("infrastructure").error(f"TELEGRAM: Connection exception: {e}")
+            logging.error(f"TELEGRAM: Connection exception: {e}")
 
     def send_signal(self, signal: Dict, dashboard_url: str = "") -> bool:
         if not self.enabled: return False
@@ -101,9 +102,9 @@ class TelegramNotifier:
                 f"📦 <b>Instrument:</b> {signal.get('option_symbol', 'OPTION')}\n"
                 f"━━━━━━━━━━━━━━━━━━\n"
                 f"💰 <b>EXECUTION MATRIX</b>\n"
-                f"├─ <b>Entry:</b> ₹{signal.get('premium_entry', 0):.2f}\n"
-                f"├─ <b>SL:</b> ₹{signal.get('premium_sl', 0):.2f}\n"
-                f"└─ <b>Target:</b> ₹{signal.get('premium_target', 0):.2f}\n"
+                f"├─ <b>Entry:</b> ₹{(signal.get('premium_entry') or 0.0):.2f}\n"
+                f"├─ <b>SL:</b> ₹{(signal.get('premium_sl') or 0.0):.2f}\n"
+                f"└─ <b>Target:</b> ₹{(signal.get('premium_target') or 0.0):.2f}\n"
                 f"━━━━━━━━━━━━━━━━━━\n"
                 f"🧠 <b>BRAIN INTELLIGENCE</b>\n"
                 f"├─ <b>Confidence:</b> {signal.get('confidence', 'MEDIUM')} {conf_pct}\n"
@@ -115,11 +116,11 @@ class TelegramNotifier:
             url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
             resp = requests.post(url, json={"chat_id": self.chat_id, "text": message, "parse_mode": "HTML"}, timeout=10)
             if resp.status_code != 200:
-                logging.getLogger("infrastructure").error(f"TELEGRAM: Signal failed ({resp.status_code}): {resp.text}")
+                logging.error(f"TELEGRAM: Signal failed ({resp.status_code}): {resp.text}")
                 return False
             return True
         except Exception as e:
-            logging.getLogger("infrastructure").error(f"TELEGRAM: Signal exception: {e}")
+            logging.error(f"TELEGRAM: Signal exception: {e}")
             return False
 
     def send_alert(self, message: str) -> bool:

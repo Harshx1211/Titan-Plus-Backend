@@ -1089,8 +1089,10 @@ def run_engine_loop():
                 # Phase 25/27: Hard Veto Gates
                 # [v9.8.5] Daily Circuit Breaker
                 if risk_engine.is_blown_today():
-                    live_state.add_thought("RISK_VETO", "Daily drawdown limit hit. Trading HALTED.")
-                    logger.warning("SIGNAL Veto: Daily drawdown limit hit.")
+                    msg = "🔴 RISK VETO: Daily drawdown limit hit. Trading HALTED for the day."
+                    live_state.add_thought("RISK_VETO", msg)
+                    logger.warning(msg)
+                    telegram_notifier.send_alert(msg)
                     continue
                 
                 if is_basis_unstable:
@@ -1103,6 +1105,9 @@ def run_engine_loop():
                     msg = f"🔄 TAKEOVER: Switching from {live_signal.symbol} ({live_signal.score:.2f}) to {symbol} (Score: {new_score:.2f})"
                     live_state.add_thought("TAKEOVER", msg)
                     live_signal.is_live = False
+                    
+                    # Log SWAP outcome to DB
+                    db.log_outcome(live_signal.decision_id, "SWAP_EXIT")
                     telegram_notifier.send_alert(f"⚠️ EXIT (SWAP): Closing {live_signal.option_symbol} for superior setup in {symbol}.")
 
                 # [v9.8.1] S/R Hard Veto: No buying into resistance, No selling into support
