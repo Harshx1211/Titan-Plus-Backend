@@ -90,6 +90,20 @@ class NuclearScorecard:
         score = 0.4 if greeks.get('dealer_bias') == 'long_gamma' else (0.2 if greeks.get('dealer_bias') == 'short_gamma' else 0.0)
         return min(score + 0.4, 1.0) # Simplified logic
 
+    def _score_liquidity(self, smc: Dict) -> float:
+        # [v1.0.1] Stub: score based on number of liquidity zones/sweeps
+        sweeps = smc.get('sweeps', [])
+        return min(len(sweeps) * 0.4 + 0.2, 1.0) if sweeps else 0.4
+
+    def _score_gex(self, greeks: Dict) -> float:
+        # [v1.0.1] Stub: score based on total GEX magnitude
+        gex = abs(greeks.get('total_gex', 0))
+        return min(gex / 1e9, 1.0) if gex > 0 else 0.5
+
+    def _normalize_macro(self, macro_score: float) -> float:
+        # [v1.0.1] Convert macro score (-1 to 1) to 0 to 1 range
+        return (macro_score + 1.0) / 2.0
+
     def _score_timing(self, t: datetime) -> float:
         m = t.hour * 60 + t.minute
         if 560 <= m <= 600 or 855 <= m <= 900: return 1.0 # Prime times: 9:20-10:00, 14:15-15:00

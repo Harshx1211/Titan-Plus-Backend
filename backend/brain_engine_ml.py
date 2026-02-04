@@ -368,10 +368,19 @@ class BrainEngineML:
         
         decision_str = "APPROVE" if boost > threshold else "BLOCK"
         
+        # [v9.9.9] Schema Sync: Extract symbol and ensure features remains numeric
+        feat_copy = features.copy()
+        symbol_val = str(feat_copy.pop("symbol", "UNKNOWN"))
+        
         self.decisions[decision_id] = DecisionObject(
-            decision_id=decision_id, timestamp=datetime.now(),
-            features=features.copy(), regime=regime,
-            threshold=threshold, confidence_boost=boost, decision=decision_str
+            decision_id=decision_id, 
+            symbol=symbol_val,
+            timestamp=datetime.now(),
+            features=feat_copy, 
+            regime=regime,
+            threshold=threshold, 
+            confidence_boost=boost, 
+            decision=decision_str
         )
         
         return decision_id, thoughts

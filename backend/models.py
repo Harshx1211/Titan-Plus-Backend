@@ -75,6 +75,7 @@ class DecisionObject(BaseModel):
     Ensures that every block/approval is grounded in context.
     """
     decision_id: str
+    symbol: str                     # [v9.9.9] Index Symbol (e.g., NIFTY)
     timestamp: datetime
     features: Dict[str, float]      # Input Z-scores
     regime: Regime
