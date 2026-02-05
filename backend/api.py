@@ -303,13 +303,13 @@ async def post_outcome(signal_id: str, outcome: str):
 async def get_history():
     """Returns the Truth Ledger (Immutable Records) from Supabase."""
     if db is None:
-        raise HTTPException(status_code=503, detail="Database engine initializing")
+        return [] # Return empty list during initialization
     return db.cloud_db.get_history()
 
 @app.get("/accuracy")
 async def get_accuracy():
     if db is None:
-        raise HTTPException(status_code=503, detail="Database engine initializing")
+        return {"win_rate": 0.0, "accuracy": 0.0, "total_trades": 0, "status": "INITIALIZING"}
     return db.get_accuracy_report()
 
 @app.get("/audit")

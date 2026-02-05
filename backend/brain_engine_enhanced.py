@@ -15,9 +15,19 @@ import logging
 import pickle
 import os
 import numpy as np
+import warnings
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 import json
+
+# [v9.9.9] Suppress legacy model version warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="xgboost")
+warnings.filterwarnings("ignore", category=FutureWarning)
+try:
+    from sklearn.exceptions import InconsistentVersionWarning
+    warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
+except ImportError:
+    pass
 
 # Import ML engines
 try:

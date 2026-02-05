@@ -94,9 +94,12 @@ class TelegramNotifier:
                 logging.error(f"TELEGRAM: Connection failed ({response.status_code}): {response.text}")
             else:
                 logging.info("TELEGRAM: Connection verified successfully.")
+        except requests.exceptions.ConnectionError as e:
+            # [v9.9.9] Handle DNS Resolution/Transient connection issues gracefully
+            logging.warning(f"TELEGRAM: Connectivity lag detected (DNS/Network). Will retry on next event. Error: {e}")
         except Exception as e:
             self.enabled = False
-            logging.error(f"TELEGRAM: Connection exception: {e}")
+            logging.error(f"TELEGRAM: Permanent initialization failure: {e}")
 
     def send_signal(self, signal: Dict, dashboard_url: str = "") -> bool:
         if not self.enabled: return False
