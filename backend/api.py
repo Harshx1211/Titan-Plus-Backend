@@ -6,7 +6,7 @@ import logging
 import time
 import pytz
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Optional, Tuple
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -658,7 +658,7 @@ def run_engine_loop():
                     # Option Chain
 
                     # [Phase 3.5] Killzone Logic
-                    now_time_obj = datetime.now(timezone(timedelta(hours=5, minutes=30))).time() # IST
+                    now_time_obj = datetime.now(IST).time() # IST
                     killzone_1_start = datetime.strptime("09:15", "%H:%M").time()
                     killzone_1_end = datetime.strptime("10:00", "%H:%M").time()
                     killzone_2_start = datetime.strptime("14:30", "%H:%M").time()

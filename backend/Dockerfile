@@ -1,5 +1,5 @@
 # Using Python 3.11 slim as base image
-# Build Identifier: v9.9.8-AUDIT-REMEDIATED
+# Build Identifier: v9.9.9-FIX-TIMEDELTA-TRIGGER
 FROM python:3.12-slim
 
 # Set working directory
@@ -13,6 +13,9 @@ RUN apt-get update && apt-get install -y \
 
 # Copy requirements first for better caching
 COPY requirements.txt .
+
+# Install PyTorch CPU-only (lightweight)
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
 # Install dependencies
 # Using --no-cache-dir to keep the image slim
