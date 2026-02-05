@@ -144,7 +144,9 @@ class EnhancedBrainEngine:
 
                     # Legacy Pickle Support
                     with open(path, 'rb') as f:
-                        data = pickle.load(f)
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore")
+                            data = pickle.load(f)
                     
                     if isinstance(data, dict) and 'model' in data:
                         self.model = data['model']

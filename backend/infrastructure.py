@@ -139,7 +139,11 @@ class TelegramNotifier:
                 return False
             return True
         except Exception as e:
-            logging.error(f"TELEGRAM: Signal exception: {e}")
+            msg = f"TELEGRAM: Signal exception: {e}"
+            if "NameResolutionError" in str(e) or "ConnectionError" in str(e):
+                logging.warning(msg)
+            else:
+                logging.error(msg)
             return False
 
     def send_alert(self, message: str) -> bool:
@@ -160,7 +164,11 @@ class TelegramNotifier:
                 return False
             return True
         except Exception as e:
-            logging.getLogger("infrastructure").error(f"TELEGRAM: Alert exception: {e}")
+            msg = f"TELEGRAM: Alert exception: {e}"
+            if "NameResolutionError" in str(e) or "ConnectionError" in str(e):
+                logging.warning(msg)
+            else:
+                logging.error(msg)
             return False
 
 # ============================================================================
