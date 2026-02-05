@@ -97,14 +97,14 @@ const NeonBadge = ({ children, color = "cyan" }: { children: React.ReactNode, co
 };
 
 const StatCard = ({ label, value, sub, colorClass }: { label: string, value: string | number, sub: string, colorClass: string }) => (
-  <GlassCard className="p-7 hover:translate-y-[-4px] hover:border-white/20 transition-all duration-300">
-    <div className="space-y-5">
+  <GlassCard className="p-4 md:p-7 hover:translate-y-[-4px] hover:border-white/20 transition-all duration-300">
+    <div className="space-y-3 md:space-y-5">
       <div className="flex justify-between items-start">
-        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{label}</p> {/* Brightened label */}
-        <div className={`w-2 h-2 rounded-full blur-[2px] ${colorClass.replace('text-', 'bg-')}`} />
+        <p className="text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{label}</p>
+        <div className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full blur-[2px] ${colorClass.replace('text-', 'bg-')}`} />
       </div>
-      <p className={`text-4xl font-black font-mono tracking-tighter ${colorClass}`}>{value}</p>
-      <p className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.15em]">{sub}</p>
+      <p className={`text-2xl md:text-4xl font-black font-mono tracking-tighter ${colorClass}`}>{value}</p>
+      <p className="text-[8px] md:text-[9px] text-slate-500 font-bold uppercase tracking-[0.15em]">{sub}</p>
     </div>
   </GlassCard>
 );
@@ -114,60 +114,62 @@ const SignalCard = ({ signal, onExecute }: { signal: TradeSignal, onExecute: (id
   const accentColor = isPE ? 'rose' : 'emerald';
 
   return (
-    <div className="p-10 relative group border-none">
-      <div className={`absolute top-0 right-0 w-[30rem] h-[30rem] bg-${accentColor}-500/5 blur-[150px] rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-1000`} />
+    <div className="p-6 md:p-10 relative group border-none">
+      <div className={`absolute top-0 right-0 w-[20rem] h-[20rem] md:w-[30rem] md:h-[30rem] bg-${accentColor}-500/5 blur-[100px] md:blur-[150px] rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-1000`} />
 
-      <div className="relative z-10 flex flex-col xl:flex-row justify-between gap-16">
-        <div className="flex-1 space-y-10">
-          <div className="flex items-center gap-8">
-            <div className={`w-20 h-20 rounded-3xl bg-${accentColor}-500/10 border border-${accentColor}-500/20 flex items-center justify-center shadow-2xl`}>
-              {isPE ? <TrendingDown className={`w-10 h-10 text-rose-400`} /> : <TrendingUp className={`w-10 h-10 text-emerald-400`} />}
+      <div className="relative z-10 flex flex-col xl:flex-row justify-between gap-8 md:gap-16">
+        <div className="flex-1 space-y-6 md:space-y-10">
+          <div className="flex items-center gap-4 md:gap-8">
+            <div className={`w-14 h-14 md:w-20 md:h-20 rounded-2xl md:rounded-3xl bg-${accentColor}-500/10 border border-${accentColor}-500/20 flex items-center justify-center shadow-2xl`}>
+              {isPE ? <TrendingDown className={`w-6 h-6 md:w-10 md:h-10 text-rose-400`} /> : <TrendingUp className={`w-6 h-6 md:w-10 md:h-10 text-emerald-400`} />}
             </div>
             <div>
-              <div className="flex items-center gap-5">
-                <h3 className="text-5xl font-black text-white tracking-tighter">{signal.symbol}</h3>
-                <NeonBadge color={accentColor}>{signal.option_type || (isPE ? 'SHORT' : 'LONG')}</NeonBadge>
+              <div className="flex flex-wrap items-center gap-2 md:gap-5">
+                <h3 className="text-2xl md:text-5xl font-black text-white tracking-tighter">{signal.symbol}</h3>
+                <div className="scale-75 md:scale-100 origin-left">
+                  <NeonBadge color={accentColor}>{signal.option_type || (isPE ? 'SHORT' : 'LONG')}</NeonBadge>
+                </div>
               </div>
-              <p className="text-sm font-mono text-slate-400 mt-2 uppercase tracking-[0.3em] font-bold">
-                {signal.option_symbol || 'Precision Execution Protocol'} • ID: {signal.decision_id?.slice(0, 12) || 'AUTO-ALPHA'}
+              <p className="text-[10px] md:text-sm font-mono text-slate-400 mt-1 md:mt-2 uppercase tracking-[0.2em] md:tracking-[0.3em] font-bold">
+                {signal.option_symbol || 'Execution Protocol'} • {signal.decision_id?.slice(0, 8) || 'AUTO'}
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-8">
             {[
-              { label: 'Entry Price', val: signal.premium_entry || signal.entry_price, color: 'text-white' },
-              { label: 'Stop Loss', val: signal.premium_sl || signal.stop_loss, color: 'text-rose-400' },
+              { label: 'Entry', val: signal.premium_entry || signal.entry_price, color: 'text-white' },
+              { label: 'SL', val: signal.premium_sl || signal.stop_loss, color: 'text-rose-400' },
               { label: 'Target', val: signal.premium_target || signal.target, color: 'text-emerald-400' },
-              { label: 'Confidence', val: signal.confidence, color: 'text-blue-400' },
+              { label: 'Conf', val: signal.confidence, color: 'text-blue-400' },
             ].map((d, i) => (
-              <div key={i} className="bg-white/5 rounded-[2rem] p-7 border border-white/5 hover:border-white/10 transition-colors">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">{d.label}</p>
-                <p className={`text-2xl font-black font-mono tracking-tighter ${d.color}`}>
+              <div key={i} className="bg-white/5 rounded-2xl md:rounded-[2rem] p-4 md:p-7 border border-white/5 hover:border-white/10 transition-colors">
+                <p className="text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 md:mb-3">{d.label}</p>
+                <p className={`text-lg md:text-2xl font-black font-mono tracking-tighter ${d.color}`}>
                   {typeof d.val === 'number' ? `₹${d.val.toLocaleString()}` : d.val}
                 </p>
               </div>
             ))}
           </div>
 
-          <div className="bg-black/40 rounded-[2rem] p-8 border border-white/5 border-l-4 border-l-blue-500 shadow-2xl">
-            <div className="flex items-center gap-4 mb-4">
-              <Brain className="w-5 h-5 text-blue-400" />
-              <span className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Neural Decision Matrix</span>
+          <div className="bg-black/40 rounded-2xl md:rounded-[2rem] p-5 md:p-8 border border-white/5 border-l-4 border-l-blue-500 shadow-2xl">
+            <div className="flex items-center gap-3 md:gap-4 mb-2 md:mb-4">
+              <Brain className="w-4 h-4 md:w-5 md:h-5 text-blue-400" />
+              <span className="text-[9px] md:text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Neural Decision Matrix</span>
             </div>
-            <p className="text-base text-slate-300 font-medium leading-relaxed italic opacity-90">"{signal.reasoning}"</p>
+            <p className="text-xs md:text-base text-slate-300 font-medium leading-relaxed italic opacity-90">"{signal.reasoning}"</p>
           </div>
         </div>
 
-        <div className="flex flex-col justify-center gap-5 min-w-[280px]">
+        <div className="flex flex-col justify-center gap-3 md:gap-5 min-w-full xl:min-w-[280px]">
           <button
             onClick={() => signal.decision_id && onExecute(signal.decision_id)}
-            className={`w-full bg-${accentColor}-600 hover:bg-${accentColor}-500 text-white font-black py-8 rounded-[2rem] transition-all shadow-2xl shadow-${accentColor}-500/30 active:scale-[0.98] flex flex-col items-center justify-center gap-3 tracking-[0.3em] group/btn`}
+            className={`w-full bg-${accentColor}-600 hover:bg-${accentColor}-500 text-white font-black py-5 md:py-8 rounded-2xl md:rounded-[2rem] transition-all shadow-2xl shadow-${accentColor}-500/30 active:scale-[0.98] flex flex-row xl:flex-col items-center justify-center gap-3 tracking-[0.2em] md:tracking-[0.3em] group/btn`}
           >
-            <Zap className="w-8 h-8 fill-white group-hover/btn:scale-110 transition-transform duration-500" />
-            <span className="text-sm">DEPLOY CAPITAL</span>
+            <Zap className="w-5 h-5 md:w-8 md:h-8 fill-white group-hover/btn:scale-110 transition-transform duration-500" />
+            <span className="text-xs md:text-sm">DEPLOY CAPITAL</span>
           </button>
-          <button className="w-full bg-white/5 hover:bg-white/10 text-slate-400 font-black py-5 rounded-[2rem] border border-white/10 text-xs tracking-[0.2em] uppercase transition-all">
+          <button className="w-full bg-white/5 hover:bg-white/10 text-slate-400 font-black py-4 md:py-5 rounded-2xl md:rounded-[2rem] border border-white/10 text-[10px] md:text-xs tracking-[0.2em] uppercase transition-all">
             Veto Alpha
           </button>
         </div>
@@ -232,7 +234,7 @@ export default function TitanDashboard() {
   );
 
   return (
-    <main className="min-h-screen bg-[#030305] text-slate-200 selection:bg-blue-500/30 font-sans p-8 sm:p-16 overflow-x-hidden relative">
+    <main className="min-h-screen bg-[#030305] text-slate-200 selection:bg-blue-500/30 font-sans p-4 sm:p-8 lg:p-16 overflow-x-hidden relative">
       {/* Institutional Grid & Scanline */}
       <div className="fixed inset-0 pointer-events-none opacity-[0.03]" style={{ backgroundImage: `radial-gradient(#ffffff 1px, transparent 1px)`, backgroundSize: '40px 40px' }} />
       <div className="fixed inset-0 pointer-events-none bg-gradient-to-b from-transparent via-white/[0.01] to-transparent h-2 top-0 animate-scanline" />
@@ -246,36 +248,38 @@ export default function TitanDashboard() {
       <div className="max-w-[1800px] mx-auto space-y-16 relative z-10">
 
         {/* Header Section */}
-        <header className="flex flex-col xl:flex-row justify-between items-center gap-12 bg-white/[0.03] border border-white/10 p-10 rounded-[3.5rem] backdrop-blur-3xl shadow-2xl">
-          <div className="flex items-center gap-10">
-            <div className="w-20 h-20 rounded-[1.75rem] bg-gradient-to-br from-blue-600 to-cyan-500 p-[2px] shadow-3xl shadow-blue-500/30">
-              <div className="w-full h-full bg-[#050507] rounded-[1.75rem] flex items-center justify-center">
-                <Shield className="w-11 h-11 text-white" />
+        <header className="flex flex-col xl:flex-row justify-between items-center gap-8 md:gap-12 bg-white/[0.03] border border-white/10 p-6 md:p-10 rounded-3xl md:rounded-[3.5rem] backdrop-blur-3xl shadow-2xl">
+          <div className="flex items-center gap-6 md:gap-10">
+            <div className="w-14 h-14 md:w-20 md:h-20 rounded-2xl md:rounded-[1.75rem] bg-gradient-to-br from-blue-600 to-cyan-500 p-[2px] shadow-3xl shadow-blue-500/30">
+              <div className="w-full h-full bg-[#050507] rounded-2xl md:rounded-[1.75rem] flex items-center justify-center">
+                <Shield className="w-8 h-8 md:w-11 md:h-11 text-white" />
               </div>
             </div>
-            <div className="space-y-2">
-              <h1 className="text-5xl font-black tracking-tighter text-white">
+            <div className="space-y-1 md:space-y-2">
+              <h1 className="text-3xl md:text-5xl font-black tracking-tighter text-white">
                 TITAN <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent italic">PLUS</span>
               </h1>
-              <div className="flex items-center gap-4">
-                <span className="text-[10px] text-slate-400 font-mono tracking-[0.5em] uppercase font-black">Institutional High-Frequency Protocol</span>
-                <div className="h-3 w-[1px] bg-white/20" />
-                <span className="text-[10px] text-blue-400 font-mono font-bold tracking-[0.2em] uppercase">v9.9.9 Secure</span>
+              <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
+                <span className="text-[8px] md:text-[10px] text-slate-400 font-mono tracking-[0.2em] md:tracking-[0.5em] uppercase font-black">Institutional Protocol</span>
+                <div className="hidden md:block h-3 w-[1px] bg-white/20" />
+                <span className="text-[8px] md:text-[10px] text-blue-400 font-mono font-bold tracking-[0.2em] uppercase">v9.9.9 Secure</span>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap justify-center items-center gap-8">
-            <div className="flex items-center gap-5 px-8 py-3.5 bg-black/50 rounded-2xl border border-white/10 shadow-xl">
-              <div className={`w-3 h-3 rounded-full ${connected ? 'bg-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.6)] animate-pulse' : 'bg-rose-500'}`} />
-              <span className="text-xs font-black uppercase tracking-[0.25em] text-slate-300">
+          <div className="flex flex-wrap justify-center items-center gap-4 md:gap-8">
+            <div className="flex items-center gap-3 md:gap-5 px-4 md:px-8 py-2 md:py-3.5 bg-black/50 rounded-xl md:rounded-2xl border border-white/10 shadow-xl">
+              <div className={`w-2 h-2 md:w-3 md:h-3 rounded-full ${connected ? 'bg-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.6)] animate-pulse' : 'bg-rose-500'}`} />
+              <span className="text-[9px] md:text-xs font-black uppercase tracking-[0.2em] md:tracking-[0.25em] text-slate-300">
                 {connected ? 'Sync: Nominal' : 'No Connection'}
               </span>
             </div>
-            <NeonBadge color="violet">{state?.regime || 'UNCERTAIN'} MARKET</NeonBadge>
-            <div className="flex items-center gap-5 px-8 py-3.5 bg-white/5 rounded-2xl border border-white/10">
-              <Clock className="w-5 h-5 text-blue-400" />
-              <span className="text-base font-mono font-black text-slate-300 tracking-widest">
+            <div className="transform scale-90 md:scale-100">
+              <NeonBadge color="violet">{state?.regime || 'UNCERTAIN'}</NeonBadge>
+            </div>
+            <div className="flex items-center gap-3 md:gap-5 px-4 md:px-8 py-2 md:py-3.5 bg-white/5 rounded-xl md:rounded-2xl border border-white/10">
+              <Clock className="w-4 h-4 md:w-5 md:h-5 text-blue-400" />
+              <span className="text-sm md:text-base font-mono font-black text-slate-300 tracking-widest">
                 {lastUpdate.toLocaleTimeString([], { hour12: false })}
               </span>
             </div>
@@ -292,7 +296,7 @@ export default function TitanDashboard() {
         )}
 
         {/* Global Market Intelligence Grid */}
-        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-8">
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 md:gap-8">
           <StatCard label="Volatility" value={state?.vix || '14.2'} sub="India VIX Alpha" colorClass="text-cyan-400" />
           <StatCard label="Sentiment" value={(state?.active_signals?.[0]?.score || 0.95).toFixed(2)} sub="Global PCR Bias" colorClass="text-violet-400" />
           <StatCard label="Advances" value={state?.breadth?.advances || '0'} sub="Bullish Synergy" colorClass="text-emerald-400" />
@@ -305,22 +309,22 @@ export default function TitanDashboard() {
 
           <div className="2xl:col-span-3 space-y-16">
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-10">
               {['NIFTY', 'BANKNIFTY', 'SENSEX'].map(sym => (
-                <GlassCard key={sym} variant="premium" className="p-10 group hover:ring-2 ring-blue-500/20 transition-all duration-700">
-                  <div className="flex justify-between items-center mb-10">
-                    <span className="text-xs font-black text-slate-400 uppercase tracking-[0.4em] font-mono">{sym} CORE</span>
-                    <FlowIcon className="w-6 h-6 text-blue-400 opacity-20 group-hover:opacity-100 transition-all duration-700" />
+                <GlassCard key={sym} variant="premium" className="p-6 md:p-10 group hover:ring-2 ring-blue-500/20 transition-all duration-700">
+                  <div className="flex justify-between items-center mb-6 md:mb-10">
+                    <span className="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-[0.4em] font-mono">{sym} CORE</span>
+                    <FlowIcon className="w-5 h-5 md:w-6 md:h-6 text-blue-400 opacity-20 group-hover:opacity-100 transition-all duration-700" />
                   </div>
-                  <div className="space-y-4">
-                    <p className="text-6xl font-black text-white tracking-tighter group-hover:translate-x-2 transition-transform duration-700 origin-left">
+                  <div className="space-y-2 md:space-y-4">
+                    <p className="text-4xl md:text-6xl font-black text-white tracking-tighter group-hover:translate-x-2 transition-transform duration-700 origin-left">
                       {state?.prices[sym]?.toLocaleString('en-IN') || '---'}
                     </p>
-                    <div className="flex items-center gap-3">
-                      <p className="text-[10px] font-mono text-emerald-400 font-black tracking-[0.3em] uppercase opacity-80 group-hover:opacity-100 transition-opacity">Institutional Synergy ACTIVE</p>
+                    <div className="flex items-center gap-2 md:gap-3">
+                      <p className="text-[8px] md:text-[10px] font-mono text-emerald-400 font-black tracking-[0.2em] md:tracking-[0.3em] uppercase opacity-80 group-hover:opacity-100 transition-opacity">Synergy ACTIVE</p>
                     </div>
                   </div>
-                  <div className="mt-12 h-2 w-full bg-white/5 rounded-full overflow-hidden shadow-inner">
+                  <div className="mt-8 md:mt-12 h-1.5 md:h-2 w-full bg-white/5 rounded-full overflow-hidden shadow-inner">
                     <div className="h-full bg-gradient-to-r from-blue-600 via-cyan-500 to-blue-400 w-[65%] group-hover:w-full transition-all duration-[2s] rounded-full shadow-[0_0_15px_rgba(59,130,246,0.3)]" />
                   </div>
                 </GlassCard>
@@ -328,12 +332,14 @@ export default function TitanDashboard() {
             </div>
 
             <div className="space-y-10">
-              <div className="flex items-center gap-8">
-                <div className="w-14 h-14 rounded-3xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shadow-xl">
-                  <Target className="w-7 h-7 text-blue-400" />
+              <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-8">
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 md:w-14 md:h-14 rounded-2xl md:rounded-3xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shadow-xl">
+                    <Target className="w-5 h-5 md:w-7 md:h-7 text-blue-400" />
+                  </div>
+                  <h2 className="text-2xl md:text-4xl font-black text-white uppercase tracking-tighter italic">Neural Alpha</h2>
                 </div>
-                <h2 className="text-4xl font-black text-white uppercase tracking-tighter italic">Neural Alpha Distribution</h2>
-                <div className="h-[2px] bg-gradient-to-r from-white/20 via-white/5 to-transparent flex-1" />
+                <div className="h-[1px] md:h-[2px] bg-gradient-to-r from-white/20 via-white/5 to-transparent flex-1" />
               </div>
 
               <div className="grid grid-cols-1 gap-10">
@@ -359,27 +365,27 @@ export default function TitanDashboard() {
 
           <div className="space-y-12">
 
-            <GlassCard className="p-12 space-y-12 border-blue-500/20 shadow-3xl">
+            <GlassCard className="p-6 md:p-12 space-y-8 md:space-y-12 border-blue-500/20 shadow-3xl">
               <div className="flex items-center justify-between">
-                <div className="space-y-2">
-                  <h3 className="text-sm font-black text-white uppercase tracking-[0.3em]">Grid Status</h3>
-                  <p className="text-[11px] text-slate-400 font-mono font-bold uppercase opacity-60 tracking-widest">Efficiency Metrics</p>
+                <div className="space-y-1 md:space-y-2">
+                  <h3 className="text-xs md:text-sm font-black text-white uppercase tracking-[0.3em]">Grid Status</h3>
+                  <p className="text-[9px] md:text-[11px] text-slate-400 font-mono font-bold uppercase opacity-60 tracking-widest">Efficiency Metrics</p>
                 </div>
-                <Activity className="w-6 h-6 text-blue-400 animate-pulse" />
+                <Activity className="w-5 h-5 md:w-6 md:h-6 text-blue-400 animate-pulse" />
               </div>
 
-              <div className="space-y-10">
+              <div className="space-y-6 md:space-y-10">
                 {[
                   { label: "Pipeline Sync", val: `${state?.data_latency || 0}ms`, p: "98%", c: "bg-blue-400 shadow-blue-400/50" },
                   { label: "Neural Entropy", val: "Optimal", p: "72%", c: "bg-cyan-400 shadow-cyan-400/50" },
                   { label: "Alpha Integrity", val: "NOMINAL", p: "100%", c: "bg-emerald-400 shadow-emerald-400/50" },
                 ].map((item, i) => (
-                  <div key={i} className="space-y-4">
-                    <div className="flex justify-between text-[11px] font-black text-slate-400 uppercase tracking-widest">
+                  <div key={i} className="space-y-3 md:space-y-4">
+                    <div className="flex justify-between text-[9px] md:text-[11px] font-black text-slate-400 uppercase tracking-widest">
                       <span>{item.label}</span>
                       <span className="text-white opacity-90">{item.val}</span>
                     </div>
-                    <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden shadow-inner">
+                    <div className="h-1.5 md:h-2 w-full bg-white/5 rounded-full overflow-hidden shadow-inner">
                       <div className={`h-full ${item.c} shadow-[0_0_15px_rgba(59,130,246,0.3)] rounded-full transition-all duration-[1.5s]`} style={{ width: item.p }} />
                     </div>
                   </div>
@@ -387,15 +393,15 @@ export default function TitanDashboard() {
               </div>
             </GlassCard>
 
-            <GlassCard className="flex flex-col h-[850px] border-none bg-black/70 shadow-3xl overflow-hidden rounded-[3rem]">
-              <div className="p-10 border-b border-white/10 bg-white/[0.03] flex items-center justify-between backdrop-blur-3xl">
-                <div className="flex items-center gap-6">
-                  <FlowIcon className="w-7 h-7 text-violet-400 drop-shadow-[0_0_10px_rgba(167,139,250,0.5)]" />
-                  <h3 className="text-sm font-black text-white uppercase tracking-[0.4em] font-mono leading-none">Sub-Neural Flow</h3>
+            <GlassCard className="flex flex-col h-[500px] md:h-[850px] border-none bg-black/70 shadow-3xl overflow-hidden rounded-[2rem] md:rounded-[3rem]">
+              <div className="p-6 md:p-10 border-b border-white/10 bg-white/[0.03] flex items-center justify-between backdrop-blur-3xl">
+                <div className="flex items-center gap-4 md:gap-6">
+                  <FlowIcon className="w-5 h-5 md:w-7 md:h-7 text-violet-400 drop-shadow-[0_0_10px_rgba(167,139,250,0.5)]" />
+                  <h3 className="text-xs md:text-sm font-black text-white uppercase tracking-[0.3em] md:tracking-[0.4em] font-mono leading-none">Sub-Neural Flow</h3>
                 </div>
                 <div className="relative">
-                  <div className="w-3 h-3 rounded-full bg-violet-500 animate-ping absolute" />
-                  <div className="w-3 h-3 rounded-full bg-violet-500 shadow-[0_0_15px_rgba(167,139,250,0.8)]" />
+                  <div className="w-2 h-2 md:w-3 md:h-3 rounded-full bg-violet-500 animate-ping absolute" />
+                  <div className="w-2 h-2 md:w-3 md:h-3 rounded-full bg-violet-500 shadow-[0_0_15px_rgba(167,139,250,0.8)]" />
                 </div>
               </div>
 
@@ -405,8 +411,8 @@ export default function TitanDashboard() {
                     <div key={i} className="p-6 bg-white/[0.04] border border-white/5 rounded-[1.5rem] transition-all duration-500 hover:bg-white/[0.08] hover:translate-x-1 group/log">
                       <div className="flex justify-between items-center mb-4">
                         <span className={`text-[10px] font-black px-3 py-1.5 rounded-xl uppercase tracking-widest ${log.type === 'INFO' ? 'text-cyan-400 bg-cyan-400/10 border border-cyan-400/20' :
-                            log.type === 'TRACE' ? 'text-violet-400 bg-violet-400/10 border border-violet-400/20' :
-                              'text-amber-400 bg-amber-400/10 border border-amber-400/20'
+                          log.type === 'TRACE' ? 'text-violet-400 bg-violet-400/10 border border-violet-400/20' :
+                            'text-amber-400 bg-amber-400/10 border border-amber-400/20'
                           }`}>
                           {log.type}
                         </span>
@@ -430,38 +436,38 @@ export default function TitanDashboard() {
           </div>
         </div>
 
-        <footer className="pt-24 pb-20 border-t border-white/10 flex flex-col lg:flex-row justify-between items-center gap-16 group">
-          <div className="flex flex-col md:flex-row items-center gap-16">
-            <div className="flex items-center gap-6">
-              <div className="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center shadow-2xl border border-white/10 group-hover:border-blue-500/30 transition-all duration-700">
-                <Shield className="w-7 h-7 text-blue-500" />
+        <footer className="pt-12 md:pt-24 pb-12 md:pb-20 border-t border-white/10 flex flex-col xl:flex-row justify-between items-center gap-10 md:gap-16 group">
+          <div className="flex flex-col md:flex-row items-center gap-8 md:gap-16">
+            <div className="flex items-center gap-4 md:gap-6">
+              <div className="w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl bg-white/5 flex items-center justify-center shadow-2xl border border-white/10 group-hover:border-blue-500/30 transition-all duration-700">
+                <Shield className="w-5 h-5 md:w-7 md:h-7 text-blue-500" />
               </div>
               <div className="space-y-1">
-                <p className="text-xs font-black text-white uppercase tracking-[0.3em]">© 2026 TITAN PLUS SYSTEMS</p>
-                <p className="text-[10px] text-slate-500 font-mono font-bold uppercase tracking-[0.4em] opacity-60">Protocol Grade: EXCLUSIVE AUTHORITY</p>
+                <p className="text-[9px] md:text-xs font-black text-white uppercase tracking-[0.2em] md:tracking-[0.3em]">© 2026 TITAN PLUS SYSTEMS</p>
+                <p className="text-[8px] md:text-[10px] text-slate-500 font-mono font-bold uppercase tracking-[0.3em] md:tracking-[0.4em] opacity-60">Protocol Grade: EXCLUSIVE AUTHORITY</p>
               </div>
             </div>
-            <div className="h-16 w-[1px] bg-white/10 hidden md:block" />
-            <div className="flex items-center gap-12 text-[11px] font-black uppercase tracking-[0.4em]">
-              <span className="text-slate-600 hover:text-cyan-400 transition-all cursor-crosshair">Node: HKG-77</span>
-              <span className="text-slate-600 hover:text-blue-400 transition-all cursor-crosshair">Uptime: 99.992%</span>
+            <div className="hidden md:block h-10 md:h-16 w-[1px] bg-white/10" />
+            <div className="flex items-center gap-8 md:gap-12 text-[9px] md:text-[11px] font-black uppercase tracking-[0.3em] md:tracking-[0.4em]">
+              <span className="text-slate-600 hover:text-cyan-400 transition-all">Node: HKG-77</span>
+              <span className="text-slate-600 hover:text-blue-400 transition-all">Uptime: 99.99%</span>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-center gap-12 bg-white/[0.03] px-16 py-8 rounded-[3rem] border border-white/10 shadow-3xl backdrop-blur-3xl group-hover:border-blue-500/20 transition-all duration-1000">
-            <div className="flex items-center gap-4">
-              <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest leading-none">Health:</span>
-              <span className="text-emerald-400 font-mono text-xs font-black uppercase tracking-widest animate-pulse">NOMINAL</span>
+          <div className="flex flex-wrap items-center justify-center gap-6 md:gap-12 bg-white/[0.03] px-6 md:px-16 py-4 md:py-8 rounded-2xl md:rounded-[3rem] border border-white/10 shadow-3xl backdrop-blur-3xl group-hover:border-blue-500/20 transition-all duration-1000">
+            <div className="flex items-center gap-3">
+              <span className="text-[9px] md:text-[11px] font-black text-slate-500 uppercase tracking-widest leading-none">Health:</span>
+              <span className="text-emerald-400 font-mono text-[10px] md:text-xs font-black uppercase tracking-widest animate-pulse">NOMINAL</span>
             </div>
-            <div className="w-1.5 h-1.5 rounded-full bg-white/10" />
-            <div className="flex items-center gap-4">
-              <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest leading-none">Resets:</span>
-              <span className="text-white font-mono text-sm font-black bg-white/5 px-3 py-1 rounded-lg border border-white/5">{state?.resets_today || 0}</span>
+            <div className="hidden md:block w-1.5 h-1.5 rounded-full bg-white/10" />
+            <div className="flex items-center gap-3">
+              <span className="text-[9px] md:text-[11px] font-black text-slate-500 uppercase tracking-widest leading-none">Resets:</span>
+              <span className="text-white font-mono text-xs md:text-sm font-black bg-white/5 px-2 md:px-3 py-0.5 md:py-1 rounded-lg border border-white/5">{state?.resets_today || 0}</span>
             </div>
-            <div className="w-1.5 h-1.5 rounded-full bg-white/10" />
-            <div className="flex items-center gap-4">
-              <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest italic leading-none">Status:</span>
-              <span className="text-cyan-400 font-mono text-xs font-black italic tracking-wide">"{state?.market_message || 'Grid Analysis Stable'}"</span>
+            <div className="hidden md:block w-1.5 h-1.5 rounded-full bg-white/10" />
+            <div className="flex items-center gap-3">
+              <span className="text-[9px] md:text-[11px] font-black text-slate-500 uppercase tracking-widest italic leading-none">Status:</span>
+              <span className="text-cyan-400 font-mono text-[10px] md:text-xs font-black italic tracking-wide">"{state?.market_message || 'Grid Stable'}"</span>
             </div>
           </div>
         </footer>
