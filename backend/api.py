@@ -504,11 +504,12 @@ def run_engine_loop():
             # Post-Market Intelligence Trigger (3:35 PM IST)
             evolution_trigger_time = datetime.strptime("15:35", "%H:%M").time()
             
-            is_market_open = market_start <= current_time <= market_end
+            is_market_open = (market_start <= current_time <= market_end) and (now_ist.weekday() < 5)
             
             if not is_market_open:
                 # 1. Dashboard Status
-                live_state.market_message = f"DORMANT: Market Closed ({current_time.strftime('%H:%M')} IST)"
+                status_reason = "Weekend" if now_ist.weekday() >= 5 else "After Hours"
+                live_state.market_message = f"DORMANT: {status_reason} ({current_time.strftime('%H:%M')} IST)"
                 live_state.current_regime = Regime.UNCERTAIN
                 
                 # [v9.6] Ambient Intelligence: Add a "Watching" thought occasionally
