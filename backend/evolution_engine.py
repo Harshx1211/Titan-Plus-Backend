@@ -93,6 +93,10 @@ class EvolutionEngine:
             logger.warning(f"EVOLUTION: 'decision' column missing in session data. Check Supabase schema.")
             return {"status": "SKIPPED", "reason": "Missing 'decision' column.", "governor_status": "VETOED"}
 
+        # 2. Extract Blocks & Approvals
+        blocks = session_df[session_df['decision'] == 'BLOCK']
+        approvals = session_df[session_df['decision'] == 'APPROVE']
+
         if blocks.empty and approvals.empty:
             logger.info(f"EVOLUTION: No BLOCK or APPROVE decisions found for {date_str}. Skipping.")
             return {"status": "SKIPPED", "reason": "No active trading decisions today", "governor_status": "IDLE"}
