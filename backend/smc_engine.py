@@ -132,6 +132,12 @@ class GrandmasterSMCEngine:
             'timestamp': datetime.now().isoformat()
         }
     
+    def _get_atr(self, df: pd.DataFrame, idx: int) -> float:
+        """Helper to get ATR at index"""
+        atr_window = df.iloc[max(0, idx-14):idx]
+        if atr_window.empty: return 0.0
+        return (atr_window['high'] - atr_window['low']).mean()
+
     def _detect_order_blocks(self, df: pd.DataFrame):
         """
         Detect Order Blocks (OB)
@@ -154,11 +160,18 @@ class GrandmasterSMCEngine:
             prev = df.iloc[i-1]
             next_candle = df.iloc[i+1]
             
-            # Bullish Order Block Detection
-            if (current['close'] > current['open'] and  # Bullish candle
-                current['volume'] > volume_threshold and  # High volume
-                current['close'] > prev['high'] and  # Breaks previous high
-                next_candle['close'] < current['close']):  # Followed by pullback
+            # Institutional Deterministic Order Block Detection
+            # Bullish_OB: Vol Spike + Break of High + Strong Close
+            atr = self._get_atr(df, i)
+            high_vol = current['volume'] > volume_threshold
+            bos_high = current['close'] > prev['high']
+            strong_close = (current['close'] - current['low']) > 0.7 * (current['high'] - current['low'])
+            
+            # Bearish_OB: Vol Spike + Break of Low + Strong Close
+            bos_low = current['close'] < prev['low']
+            strong_close_bear = (current['high'] - current['close']) > 0.7 * (current['high'] - current['low'])
+
+            if high_vol and bos_high and strong_close:
                 
                 strength = self._calculate_ob_strength(df, i, 'BULLISH')
                 
@@ -174,11 +187,7 @@ class GrandmasterSMCEngine:
                 )
                 self.order_blocks.append(ob)
             
-            # Bearish Order Block Detection
-            elif (current['close'] < current['open'] and  # Bearish candle
-                  current['volume'] > volume_threshold and  # High volume
-                  current['close'] < prev['low'] and  # Breaks previous low
-                  next_candle['close'] > current['close']):  # Followed by rally
+            elif high_vol and bos_low and strong_close_bear:
                 
                 strength = self._calculate_ob_strength(df, i, 'BEARISH')
                 
@@ -303,10 +312,7 @@ class GrandmasterSMCEngine:
     
     def _detect_liquidity_sweeps(self, df: pd.DataFrame):
         """
-        Detect Liquidity Sweeps
-        
-        A liquidity sweep occurs when price moves beyond a key level (swing high/low)
-        to trigger stop losses, then reverses. Classic institutional accumulation/distribution.
+        Detect Liquidity Sweeps (Deterministic)
         """
         self.liquidity_sweeps = []
         
@@ -315,58 +321,39 @@ class GrandmasterSMCEngine:
         
         # Identify swing points
         self._identify_swings(df)
-        
-        # Check for sweeps of swing highs (short stops)
-        for swing_time, swing_high in self.swing_highs[-10:]:  # Check last 10 swings
-            for i in range(len(df) - 5, len(df)):
+
+        # Deterministic Sweep: Price breaks swing level but closes within it (wick sweep)
+        # Check last 3 candles for a sweep of recent swings
+        for swing_time, swing_high in self.swing_highs[-5:]:
+            for i in range(len(df) - 3, len(df)):
                 current = df.iloc[i]
-                
-                # Did we sweep above the swing high?
-                if current['high'] > swing_high * (1 + self.liquidity_sweep_threshold / 100):
-                    # Check for reversal
-                    reversal = False
-                    if i < len(df) - 2:
-                        next_candle = df.iloc[i+1]
-                        reversal = next_candle['close'] < current['close']
-                    
-                    sweep_strength = (current['high'] - swing_high) / swing_high * 100
-                    
+                # High > swing level AND Close < swing level (wick rejection)
+                if current['high'] > swing_high and current['close'] <= swing_high:
                     sweep = LiquiditySweep(
                         timestamp=current.name if hasattr(current.name, 'to_pydatetime') else datetime.now(),
                         swept_level=swing_high,
                         sweep_type='SHORT_LIQUIDITY',
-                        reversal=reversal,
-                        strength=sweep_strength
+                        reversal=True, # Wick rejection is a reversal sign
+                        strength=(current['high'] - swing_high) / swing_high * 100
                     )
                     self.liquidity_sweeps.append(sweep)
         
-        # Check for sweeps of swing lows (long stops)
-        for swing_time, swing_low in self.swing_lows[-10:]:
-            for i in range(len(df) - 5, len(df)):
+        for swing_time, swing_low in self.swing_lows[-5:]:
+            for i in range(len(df) - 3, len(df)):
                 current = df.iloc[i]
-                
-                if current['low'] < swing_low * (1 - self.liquidity_sweep_threshold / 100):
-                    reversal = False
-                    if i < len(df) - 2:
-                        next_candle = df.iloc[i+1]
-                        reversal = next_candle['close'] > current['close']
-                    
-                    sweep_strength = (swing_low - current['low']) / swing_low * 100
-                    
+                # Low < swing level AND Close > swing level
+                if current['low'] < swing_low and current['close'] >= swing_low:
                     sweep = LiquiditySweep(
                         timestamp=current.name if hasattr(current.name, 'to_pydatetime') else datetime.now(),
                         swept_level=swing_low,
                         sweep_type='LONG_LIQUIDITY',
-                        reversal=reversal,
-                        strength=sweep_strength
+                        reversal=True,
+                        strength=(swing_low - current['low']) / swing_low * 100
                     )
                     self.liquidity_sweeps.append(sweep)
         
-        # Keep unique sweeps
-        self.liquidity_sweeps = self.liquidity_sweeps[-5:]
-        
         if self.liquidity_sweeps:
-            logger.info(f"SMC_ENGINE: Detected {len(self.liquidity_sweeps)} Liquidity Sweeps")
+            logger.info(f"SMC_ENGINE: Detected {len(self.liquidity_sweeps)} Deterministic Liquidity Sweeps")
     
     def _identify_swings(self, df: pd.DataFrame, window: int = 5):
         """Identify swing highs and lows"""

@@ -68,11 +68,15 @@ class LiveState:
         self.prev_oi = {"NIFTY": 0, "BANKNIFTY": 0, "SENSEX": 0}
         self.prev_spot = 0.0
         
+        # [Institutional Step 5] IV History tracking for Percentile
+        self.iv_history = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
+        
         # [v9.4] Epistemic Transparency: Digital Stream of Consciousness
         self.thought_logs = [] # List of { "timestamp": iso, "type": "VETO|LEARN|SIGNAL", "msg": "..." }
         self.last_thoughts_by_type = {} # [v9.9.9] Deduplication Cache
         self.is_learning = False
         self.integrity = DivergenceType.NONE
+        self.direct_execution_active = False # [Institutional Phase 6] Dynamic Safety Switch
 
     def add_thought(self, thought_type: str, msg: str):
         """[v9.5.4] Standardized thought logger with type-aware de-duplication."""
@@ -211,6 +215,7 @@ class SystemState(BaseModel):
     thought_logs: List[Dict]
     is_learning: bool
     market_open: bool
+    direct_execution_active: bool # [Institutional Phase 6]
 
 def is_market_open():
     """Check if Indian stock market is currently open (IST timezone-aware)."""
@@ -227,6 +232,21 @@ def is_market_open():
     market_end = now.replace(hour=APP_CONFIG["MARKET_END_HOUR"], minute=APP_CONFIG["MARKET_END_MINUTE"], second=0, microsecond=0)
     
     return market_start <= now <= market_end
+
+def get_minutes_to_expiry():
+    """Calculates minutes to the next weekly/monthly expiry (Thursday 3:30 PM)."""
+    ist = pytz_timezone('Asia/Kolkata')
+    now = datetime.now(ist)
+    
+    # Calculate days to Thursday
+    days_to_thursday = (3 - now.weekday()) % 7 # Thursday is 3
+    if days_to_thursday == 0 and now.time() > datetime.strptime("15:30", "%H:%M").time():
+        days_to_thursday = 7 # Next week
+        
+    expiry_date = (now + timedelta(days=days_to_thursday)).replace(hour=15, minute=30, second=0, microsecond=0)
+    delta = expiry_date - now
+    minutes = delta.total_seconds() / 60
+    return max(1, int(minutes))
 
 @app.api_route("/", methods=["GET", "HEAD"])
 async def root():
@@ -291,7 +311,8 @@ async def get_state():
         sector_synergy=live_state.sector_synergy,
         thought_logs=live_state.thought_logs[-100:], # [v9.8] Increased for TRACE visibility
         is_learning=live_state.is_learning,
-        market_open=is_market_open()
+        market_open=is_market_open(),
+        direct_execution_active=live_state.direct_execution_active
     )
 
 @app.post("/signals/intent")
@@ -378,20 +399,24 @@ async def trigger_evolution(date: Optional[str] = None, token: str = None):
 @app.post("/reset")
 async def reset_system(token: str = None):
     """Emergency Reset: Clears recovery mode and active signals."""
-    if token != admin_token:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    if risk_engine is None:
-        raise HTTPException(status_code=503, detail="Risk engine initializing")
-    try:
-        risk_engine.reset()
-        live_state.active_signals = []
-        live_state.market_message = "SYSTEM RESET: Lockout Cleared"
-        logger.info("API: Emergency System Reset Triggered")
-        live_state.add_thought("SYSTEM", "Emergency System Reset Triggered. Lockout Cleared.")
-        return {"status": "system_reset_complete"}
-    except Exception as e:
-        logger.error(f"API: System reset failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"System reset failed: {e}")
+    if token != os.getenv("APP_API_TOKEN", "oracle_v1"):
+         raise HTTPException(status_code=403, detail="Not authorized")
+    global risk_engine, live_state
+    if risk_engine: risk_engine.reset()
+    live_state.active_signals = []
+    live_state.add_thought("SYSTEM", "Emergency reset triggered by administrator.")
+    return {"status": "Ok", "message": "System reset successfully"}
+
+@app.post("/toggle-execution")
+async def toggle_execution(active: bool, token: str = None):
+    """Dynamic toggle for direct order placement."""
+    if token != os.getenv("APP_API_TOKEN", "oracle_v1"):
+         raise HTTPException(status_code=403, detail="Not authorized")
+    live_state.direct_execution_active = active
+    msg = "ENABLED" if active else "DISABLED"
+    live_state.add_thought("SYSTEM", f"Direct order placement {msg} by administrator.")
+    logger.info(f"SYSTEM: Direct execution {msg}")
+    return {"status": "Ok", "active": active}
 
 def run_engine_loop():
     """
@@ -416,8 +441,9 @@ def run_engine_loop():
         except: pass
         
         # Strategy & Infrastructure Imports (STAGGERED)
-        from infrastructure import APP_CONFIG, SupabaseManager, DatabaseManager, TelegramNotifier
+        from infrastructure import APP_CONFIG, SupabaseManager, DatabaseManager, TelegramNotifier, MarketState
         from providers import DataProvider
+        from shoonya_ws import ShoonyaWebSocket
         from engines import DataSentinel, RiskEngine, PatternEngine, TrapHunter, SessionAuditor
         # from skirmisher_v2 import SkirmisherV2
         # from brain_engine_ml import BrainEngineML
@@ -479,6 +505,12 @@ def run_engine_loop():
 
         logger.info("ENGINE: All strategy engines initialized. Starting analysis loop.")
         evolution_done_date = None
+        
+        # [Institutional Phase 6] Initialize WebSocket & MarketState
+        market_state = MarketState()
+        ws = ShoonyaWebSocket(data_provider.shoonya)
+        ws.start()
+        logger.info("ENGINE: WebSocket data pipeline active.")
         
         # [AUDIT FIX] Initialize timing for passive checks
         start_time = time.time()
@@ -571,26 +603,35 @@ def run_engine_loop():
                 time.sleep(60)
                 continue
 
-            # [v9.9.9] High-Frequency Parallel Data Ticker
-            all_snapshots = data_provider.get_multiple_market_snapshots(live_state.symbols)
+            # [Institutional Phase 6] WebSocket Atomic Snapshot
+            # Transitioned from 1s Polling to 200ms Reactive Cycle
+            all_snapshots = market_state.snapshot()
             live_state.last_update = datetime.now(timezone.utc)
+            live_state.data_source = "SHOONYA_WS"
             
             for symbol in live_state.symbols:
                 try:
-                    # 1. Fetch Data (Priority Ticker Update)
+                    # 1. Fetch Data (Atomic Memory Snapshot)
+                    ws_tick = all_snapshots.get(symbol)
+                    fut_tick = all_snapshots.get(f"{symbol}_FUT")
+                    
+                    if not ws_tick:
+                        # Fallback for initialization or missing ticks
+                        continue
+
+                    market_data = MarketData(
+                        symbol=symbol, 
+                        spot_price=ws_tick['lp'], 
+                        future_price=fut_tick['lp'] if fut_tick else (ws_tick['lp'] + 5.0),
+                        oi=ws_tick.get('oi', 0), 
+                        pcr=0.95, 
+                        timestamp=datetime.fromtimestamp(ws_tick.get('timestamp', time.time())), 
+                        source="SHOONYA_WS"
+                    )
+                    
+                    live_state.prices[symbol] = market_data.spot_price
                     detected_patterns = []
                     signal_type = None
-                    market_data = all_snapshots.get(symbol)
-                    
-                    if market_data and market_data.spot_price > 0:
-                        live_state.prices[symbol] = market_data.spot_price
-
-                    src_status = data_provider.get_status()
-                    live_state.data_source = src_status["name"]
-
-                    if not market_data:
-                        logger.warning(f"ENGINE: Snapshot missing for {symbol}. Skipping.")
-                        continue
 
                     # [v9.8.5] Spread Check
                     current_spread = abs(market_data.future_price - market_data.spot_price)
@@ -640,6 +681,9 @@ def run_engine_loop():
                     rsi_series = hist_df.ta.rsi()
                     rsi_val = rsi_series.iloc[-1] if rsi_series is not None and not rsi_series.empty else 50.0
 
+                    # [Institutional Step 4] Realized Volatility (StdDev)
+                    std_dev_val = hist_df['close'].tail(20).std() if len(hist_df) >= 20 else 0.0
+
                     live_state.current_regime = strategist.classify_regime(hist_df)
                     curr_strength = (market_data.spot_price - hist_df.open.iloc[0]) / hist_df.open.iloc[0] * 100
                     live_state.index_strengths[symbol] = curr_strength
@@ -687,7 +731,7 @@ def run_engine_loop():
                         live_state.max_pain[symbol] = option_engine.calculate_max_pain(chain_df)
                         live_state.option_battles[symbol] = option_engine.detect_strike_battles(chain_df)
                         live_state.option_chains[symbol] = chain_df.to_dict('records')
-                        gex_data = option_engine.calculate_gex(chain_df, market_data.spot_price)
+                        gex_data = option_engine.calculate_gex_proxy(chain_df, market_data.spot_price)
                         live_state.gex_bias[symbol] = gex_data["gex_bias"]
                         
                         sym_max_pain = live_state.max_pain[symbol]
@@ -825,20 +869,59 @@ def run_engine_loop():
                         # [Phase 5] Precision Levels & Smart Stops (Order Blocks, Fractals, OI Walls)
                         precision_levels = tech_engine.calculate_precision_levels(hist_df, market_data.spot_price, chain_df)
 
+                        # [Institutional Step 5] Expiry Sensitivity (Precision Greeks)
+                        minutes_to_expiry = get_minutes_to_expiry()
+                        days_to_expiry = max(1, round(minutes_to_expiry / (24 * 60)))
+                        
                         opt_trade = option_engine.find_executable_option(
                             symbol, market_data.spot_price, signal_type, precision_levels=precision_levels,
-                            is_momentum_dominant=strategist.is_momentum_dominant(hist_df), days_to_expiry=5, 
+                            is_momentum_dominant=strategist.is_momentum_dominant(hist_df), 
+                            days_to_expiry=days_to_expiry, 
                             chain_df=chain_df, is_synthetic=is_synthetic
                         )
                         
+                        # IV Percentile & Smooth Scaling
+                        cur_iv = market_data.iv if hasattr(market_data, 'iv') else 20.0
+                        if not cur_iv: # Support synthetic chain lingo
+                             row = chain_df[chain_df['strike'] == opt_trade.get('strike')].iloc[0] if not chain_df.empty else None
+                             cur_iv = row.get(f"{opt_trade['option_type'].lower()}_iv", 20.0) if row is not None else 20.0
+                        
+                        live_state.iv_history[symbol].append(cur_iv)
+                        # Keep 90 trades of history
+                        if len(live_state.iv_history[symbol]) > 90: live_state.iv_history[symbol].pop(0)
+                        
+                        iv_data = option_engine.calculate_iv_percentile(cur_iv, live_state.iv_history[symbol])
+                        iv_scaling = iv_data['scaling_factor']
+                        
+                        # High Fidelity Greeks
+                        greeks = option_engine.calculate_precision_greeks(
+                            market_data.spot_price, opt_trade['strike'], cur_iv/100.0, 
+                            minutes_to_expiry, opt_trade['option_type']
+                        )
+                        
                         if not opt_trade.get("rejection_reasons"):
+                            # [Institutional Step 3] Cost Realism & Yield Veto
+                            # Slippage = 0.05% of price + half the spread
+                            friction_pct = 0.0005
+                            slippage_est = (market_data.spot_price * friction_pct) + (current_spread / 2)
+                            total_cost = current_spread + slippage_est
                             
+                            # Calculate potential edge (Target)
+                            # We need target and SL from risk engine first to calculate edge
                             smart_risk = risk_engine.calculate_dynamic_stops(
                                 entry_price=market_data.spot_price,
                                 signal_type=signal_type,
                                 atr=atr_val,
                                 precision_levels=precision_levels
                             )
+                            
+                            raw_target = max(APP_CONFIG["SIGNAL_TARGET_POINTS"], abs((smart_risk["targets"][0] if smart_risk["targets"] else (market_data.spot_price + 100)) - market_data.spot_price))
+                            expected_edge = raw_target - total_cost
+                            
+                            # Yield Veto: Edge must be > 1.5x of transaction costs
+                            if expected_edge < (1.5 * total_cost):
+                                live_state.add_thought("YIELD_VETO", f"[{symbol}] Edge {expected_edge:.2f} < 1.5x Cost {total_cost:.2f}. Killing signal.")
+                                continue
                             
                             new_signal = TradeSignal(
                                 symbol=symbol, entry_price=market_data.spot_price,
@@ -849,9 +932,44 @@ def run_engine_loop():
                                 regime=live_state.current_regime, reasoning=f"{signal_type} | {', '.join(detected_patterns)}",
                                 timestamp=datetime.now(timezone.utc), decision_id=decision_id,
                                 logic_version="v9.9.9_HF", spread_at_entry=current_spread,
-                                quantity=risk_engine.get_suggested_size(applied_boost, APP_CONFIG.get("BASE_LOTS", 1), atr=atr_val),
+                                slippage_est=slippage_est, expected_edge=expected_edge,
+                                iv_scaling=iv_scaling, greeks=greeks,
+                                quantity=round(risk_engine.get_suggested_size(applied_boost, APP_CONFIG.get("BASE_LOTS", 1), atr=atr_val, std_dev=std_dev_val, vix=live_state.vix) * iv_scaling),
                                 score=pattern_results["score"], **opt_trade
                             )
+                            # [Institutional Phase 6] Automated Order Bridge & Latency Monitor
+                            # Direct connection to Broker API; bypasses Telegram/Human latency.
+                            t_signal = time.time()
+                            
+                            if new_signal.option_symbol and not shadow_mode_enabled:
+                                # Two-Step Safety: Master .env flag AND Live UI toggle must be TRUE
+                                if APP_CONFIG.get("DIRECT_EXECUTION_ENABLED") and live_state.direct_execution_active:
+                                    try:
+                                        logger.info(f"EXECUTION: Sending direct order for {new_signal.option_symbol} (Qty: {new_signal.quantity})")
+                                        order_res = data_provider.execute_order(
+                                            symbol=new_signal.option_symbol,
+                                            exchange='NFO',
+                                            side='BUY',
+                                            qty=new_signal.quantity
+                                        )
+                                        t_order_ack = time.time()
+                                        
+                                        if order_res and order_res.get('stat') == 'Ok':
+                                            new_signal.order_id = order_res.get('norenordno')
+                                            new_signal.latency_ms = (t_order_ack - t_signal) * 1000
+                                            new_signal.fill_time = datetime.now(timezone.utc)
+                                            logger.info(f"LATENCY: {new_signal.symbol} Signal-to-Ack: {new_signal.latency_ms:.2f}ms | OrderID: {new_signal.order_id}")
+                                        else:
+                                            emsg = order_res.get('emsg', 'Unknown Broker Error')
+                                            new_signal.rejection_reasons.append(f"BROKER_REJECT: {emsg}")
+                                            logger.error(f"EXECUTION: Order rejected for {symbol}: {emsg}")
+                                    except Exception as exec_err:
+                                        logger.error(f"EXECUTION: Order bridge critical failure: {exec_err}")
+                                        new_signal.rejection_reasons.append(f"BRIDGE_ERROR: {str(exec_err)}")
+                                else:
+                                    logger.info(f"EXECUTION: Direct execution is DISABLED via safety switch. Signaling only.")
+                                    new_signal.rejection_reasons.append("DIRECT_EXECUTION_DISABLED")
+
                             live_state.active_signals.append(new_signal)
                             telegram_notifier.send_signal(new_signal.dict(), dashboard_url=APP_CONFIG.get("DASHBOARD_URL", ""))
 
@@ -886,7 +1004,8 @@ def run_engine_loop():
             if len(live_state.active_signals) > 20:
                 live_state.active_signals = live_state.active_signals[-20:]
             
-            time.sleep(APP_CONFIG["ENGINE_POLLING_BASE_SECONDS"] + random.uniform(0, APP_CONFIG["ENGINE_POLLING_JITTER_SECONDS"]))
+            # [Institutional Phase 6] Tight 200ms reactive cycle
+            time.sleep(0.2)
         except Exception as e:
             logger.error(f"ENGINE CRITICAL: {e}", exc_info=True)
             time.sleep(10)

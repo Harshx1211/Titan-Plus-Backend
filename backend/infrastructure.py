@@ -49,6 +49,7 @@ APP_CONFIG = {
     "MARKET_END_HOUR": int(os.getenv("MARKET_END_HOUR", "15")),
     "MARKET_END_MINUTE": int(os.getenv("MARKET_END_MINUTE", "30")),
     "ENGINE_ERROR_SLEEP_TIME": int(os.getenv("ENGINE_ERROR_SLEEP_TIME", "5")),
+    "DIRECT_EXECUTION_ENABLED": os.getenv("DIRECT_EXECUTION_ENABLED", "FALSE").upper() == "TRUE",
 }
 
 # ============================================================================
@@ -330,17 +331,50 @@ class SupabaseManager:
 # 4. Database Bridge (Legacy Support)
 # ============================================================================
 
-class DatabaseManager:
-    """Bridge to Supabase to maintain legacy compatibility."""
+# ============================================================================
+# 5. [Institutional Phase 6] Market State (Atomic Snapshot)
+# ============================================================================
+
+class MarketState:
+    """
+    Thread-safe latest market snapshot for event-driven execution.
+    Prevents race conditions between WS thread and Brain decisions.
+    """
+    _instance = None
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(MarketState, cls).__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+
     def __init__(self):
-        self.cloud_db = SupabaseManager()
-    def log_intent(self, signal: TradeSignal, patterns: List[str] = []):
-        data = signal.dict()
-        data['patterns'] = ",".join(patterns)
-        self.cloud_db.log_intent(data)
-    def log_outcome(self, signal_id: str, outcome: str):
-        self.cloud_db.log_outcome(signal_id, outcome)
-    def get_accuracy_report(self) -> Dict:
-        return self.cloud_db.get_accuracy_report()
-    @property
-    def db_path(self): return "SUPABASE_CLOUD"
+        if self._initialized: return
+        self.lock = threading.Lock()
+        self.data: Dict[str, Dict] = {}
+        self.last_update_ts = 0.0
+        self._initialized = True
+        logging.info("INFRA: Atomic MarketState initialized.")
+
+    def update(self, tick: Dict):
+        """Update state with a new tick. Tick should have 'symbol' and 'lp'."""
+        symbol = tick.get('symbol')
+        if not symbol: return
+        
+        with self.lock:
+            if symbol not in self.data:
+                self.data[symbol] = {}
+            
+            # Atomic update of fields
+            self.data[symbol].update(tick)
+            self.data[symbol]['last_tick_time'] = time.time()
+            self.last_update_ts = time.time()
+
+    def snapshot(self) -> Dict[str, Dict]:
+        """Provides a safe copy of the current state for the Brain."""
+        with self.lock:
+            return {k: v.copy() for k, v in self.data.items()}
+
+    def get_symbol_price(self, symbol: str) -> float:
+        """Quick lookup for a single price."""
+        with self.lock:
+            return self.data.get(symbol, {}).get('lp', 0.0)

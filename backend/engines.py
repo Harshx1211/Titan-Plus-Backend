@@ -87,7 +87,10 @@ class RiskEngine:
         self.last_loss_time = 0
         self.win_streak = 0
         self.daily_pnl = 0.0
-        self.max_daily_loss = -500.0 # [v9.8.5] Absolute stop if daily loss exceeds this
+        self.max_daily_loss = -500.0 
+        self.trades_today = 0
+        self.max_trades_per_day = 20 
+        self.last_reset_date = datetime.now().date() # [Institutional Phase 6]
 
     def reset(self):
         """Resets all risk metrics."""
@@ -95,7 +98,16 @@ class RiskEngine:
         self.last_loss_time = 0
         self.win_streak = 0
         self.daily_pnl = 0.0
-        logger.info("RISK: Engine metrics reset.")
+        self.trades_today = 0
+        self.last_reset_date = datetime.now().date()
+        logger.info(f"RISK: Engine metrics reset for {self.last_reset_date}.")
+
+    def _check_day_reset(self):
+        """Checks if the calendar day has changed and resets if necessary."""
+        today = datetime.now().date()
+        if today != self.last_reset_date:
+            logger.info(f"RISK: New day detected ({today}). Performing auto-reset.")
+            self.reset()
 
     def is_in_recovery(self) -> bool:
         return (time.time() - self.last_loss_time) < 3600
@@ -104,13 +116,24 @@ class RiskEngine:
         if is_win: self.win_streak += 1
         else: self.win_streak = 0; self.last_loss_time = time.time()
         self.daily_pnl += pnl
+        self.trades_today += 1
 
     def is_blown_today(self, current_balance: float = 100000.0) -> bool:
         """[v9.8.5] Daily Circuit Breaker with 5% Max Drawdown Cap"""
+        # [Institutional Phase 6] Ensure metrics are for today
+        self._check_day_reset()
+        
+        # 1. PnL Check
         max_loss_limit = -(current_balance * 0.05) # 5% cap
-        # Use the tighter of the fixed limit or the percentage limit
         effective_limit = max(max_loss_limit, self.max_daily_loss) 
-        return self.daily_pnl <= effective_limit
+        if self.daily_pnl <= effective_limit: return True
+        
+        # 2. [Institutional Step 2] Frequency Check
+        if self.trades_today >= self.max_trades_per_day:
+            logger.warning(f"RISK: Daily trade cap hit ({self.trades_today}/{self.max_trades_per_day}). Blocking.")
+            return True
+            
+        return False
 
     def calculate_atr_size(self, account_balance: float, risk_pct: float, atr: float, lot_size_value: float = 25.0) -> int:
         """
@@ -125,28 +148,37 @@ class RiskEngine:
         raw_quantity = risk_amount / stop_loss_value
         return max(1, round(raw_quantity))
 
-    def get_suggested_size(self, confidence: Any, base_size: int = 1, atr: float = 0.0, account_balance: float = 100000.0) -> int:
+    def get_suggested_size(self, confidence: Any, base_lots: int = 1, atr: float = 0.0, std_dev: float = 0.0, vix: float = 15.0, account_balance: float = 100000.0) -> int:
         """
-        Smart Sizing: Uses ATR if available, else falls back to conviction multiplier.
+        [Institutional Step 4] Volatility Targeting Position Sizing
+        Formula: size = base * (20 / VIX) * (target_vol / realized_vol)
         """
-        # [Phase 3.5] ATR-based Sizing
-        if atr > 0:
-            risk_per_trade = 2.0 if (isinstance(confidence, float) and confidence > 0.8) else 1.0
-            # Adjust risk based on recovery mode
-            if self.is_in_recovery(): risk_per_trade *= 0.5
-            
-            return self.calculate_atr_size(account_balance, risk_per_trade, atr)
-
-        # Fallback Logic
-        mult = 0.5
-        if isinstance(confidence, float): mult = 1.0 if confidence > 0.7 else 0.5
+        # 1. Base Multiplier from Confidence
+        conf_mult = 1.0
+        if isinstance(confidence, float): 
+            conf_mult = 1.25 if confidence > 0.8 else (1.0 if confidence > 0.6 else 0.5)
         
-        if self.win_streak >= 5: mult *= 0.7
-        size = base_size * mult
+        # 2. Hybrid Realized Volatility
+        # ATR captures gaps, StdDev captures chop. Max captures worst of both.
+        realized_vol = max(atr, std_dev) if (atr > 0 and std_dev > 0) else (atr or std_dev or 20.0)
         
-        if self.is_in_recovery():  size *= 0.25
+        # 3. Volatility Targeting Factor
+        vix_factor = 20.0 / max(10.0, vix) # Normalized to VIX 20
+        target_vol = 25.0 # Typical institutional volatility target points
+        vol_factor = target_vol / max(5.0, realized_vol)
+        
+        # 4. Final Calculation
+        calculated_lots = base_lots * conf_mult * vix_factor * vol_factor
+        
+        # 5. Recovery Mode Safety
+        if self.is_in_recovery():
+            calculated_lots *= 0.5
             
-        return max(1, round(size))
+        # 6. Streak Adjustment
+        if self.win_streak >= 5:
+            calculated_lots *= 0.8 # De-risk on hot streaks
+            
+        return max(1, round(calculated_lots))
 
     def calculate_dynamic_stops(self, entry_price: float, signal_type: str, atr: float, precision_levels: Dict) -> Dict:
         """

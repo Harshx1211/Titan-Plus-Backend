@@ -20,6 +20,8 @@ import uuid
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timezone
 import json
+import threading
+import queue
 from collections import deque
 
 # [v9.9.9] Suppress legacy model version warnings
@@ -73,9 +75,19 @@ class EnhancedBrainEngine:
         self.use_ppo = use_ppo # [Phase 4] PPO Toggle
         self.enable_smc = enable_smc
         self.decision_threshold = 0.75  # Probability threshold for XGBoost
-        self.rl_weight = 0.3  # Weight of RL recommendation
-        self.smc_weight = 0.3  # Weight of SMC score
-        self.xgb_weight = 0.4  # Weight of XGBoost score
+        
+        # [Step 2] Dynamic Weight Tracking
+        self.xgb_weight = 0.4
+        self.rl_weight = 0.3
+        self.smc_weight = 0.3
+        
+        self.performance_history = {
+            'xgboost': deque(maxlen=200),
+            'rl': deque(maxlen=200),
+            'smc': deque(maxlen=200)
+        }
+        
+        self.last_decision_scores = {} # Temp store for log_snapshot
         
         # [v9.9.9] Private Knowledge Layer
         self.risk_manager = StrategicRiskManager()
@@ -134,15 +146,38 @@ class EnhancedBrainEngine:
                 logger.warning(f"BRAIN: SMC Engine initialization failed: {e}")
                 self.enable_smc = False
         
-        # Meta-vetoes (institutional safety checks)
+        # [Institutional Hardening] Dynamic Thresholds
+        self.thresholds = {
+            'basis': 5.0,
+            'vix': 25.0,
+            'volume_min': 1000000,
+            'spread_max': 0.05
+        }
+        
         self.meta_vetoes = {
             'basis_instability': True,
             'vix_spike': True,
+            'volume_check': True,
             'low_liquidity': True,
             'extreme_gex': True
         }
         
-        logger.info(f"BRAIN: Enhanced Brain Engine initialized (RL={enable_rl}, SMC={enable_smc})")
+        # [Phase 4] Versioning & Institutional Logging
+        self.model_version = "TP-BRAIN-P4.0.1"
+        self.code_commit_hash = os.getenv("GIT_COMMIT_HASH", "DEV-UNTRACKED")
+        self.log_path = os.getenv("BRAIN_LOG_PATH", "logs/decision_context.jsonl")
+        
+        # Ensure log directory exists
+        log_dir = os.path.dirname(self.log_path)
+        if log_dir and not os.path.exists(log_dir):
+            os.makedirs(log_dir, exist_ok=True)
+            
+        # [Institutional Phase 6] Async Logging Queue
+        self.log_queue = queue.Queue()
+        self.log_thread = threading.Thread(target=self._async_log_writer, daemon=True)
+        self.log_thread.start()
+            
+        logger.info(f"BRAIN: Enhanced Brain Engine initialized (RL={enable_rl}, SMC={enable_smc}) | Version: {self.model_version}")
     
     def _load_xgboost_model(self):
         """Load pre-trained XGBoost model (Optuna > Legacy)"""
@@ -217,6 +252,54 @@ class EnhancedBrainEngine:
             "smc_status": "ACTIVE" if self.enable_smc else "DISABLED",
             "version": self.LOGIC_VERSION
         }
+
+    def _async_log_writer(self):
+        """Background thread to flush logs to disk without blocking the main engine."""
+        while True:
+            try:
+                # Wait for a log item (blocks until item available)
+                entry = self.log_queue.get()
+                if entry is None: break # Shutdown signal
+                
+                with open(self.log_path, 'a') as f:
+                    f.write(json.dumps(entry) + "\n")
+                
+                self.log_queue.task_done()
+            except Exception as e:
+                logger.error(f"BRAIN: Async log writer error: {e}")
+
+    def _log_decision_context(self, result: Dict, features: Dict, market_data: Dict):
+        """
+        Record the 'Post-Mortem' trace of every decision.
+        Now uses Async Queue to prevent I/O blocking.
+        """
+        try:
+            context = {
+                'timestamp': result['timestamp'],
+                'decision_id': result['decision_id'],
+                'instrument': market_data.get('symbol', 'NIFTY'),
+                'decision': result['decision'],
+                'recommendation': result['recommendation'],
+                'ensemble_score': result['probability'],
+                'weights': result['weights'],
+                'individual_scores': {
+                    'xgboost': result['components']['xgboost'].get('probability', 0.5),
+                    'rl': result['components']['rl'].get('confidence', 0.5) if result['components']['rl'] else 0.5,
+                    'smc': result['components']['smc'].get('confluence_score', 0.0) / 100.0 if result['components']['smc'] else 0.5
+                },
+                'feature_vector': result['components']['xgboost'].get('feature_vector', []),
+                'spread': market_data.get('spread', 0.0),
+                'position_size': market_data.get('quantity', 0),
+                'version': self.model_version,
+                'commit': self.code_commit_hash,
+                'veto_reasons': result['veto_reasons']
+            }
+            
+            # Put in queue instead of writing directly
+            self.log_queue.put(context)
+                
+        except Exception as e:
+            logger.error(f"BRAIN: Failed to queue decision context: {e}")
 
     def decide(self, features: Dict, market_data: Dict = {}, ohlcv_df=None, regime: str = "NEUTRAL", **kwargs) -> Dict:
         """
@@ -375,9 +458,10 @@ class EnhancedBrainEngine:
         if knowledge_hits:
             thoughts.append(f"Knowledge Confluence: {', '.join(knowledge_hits)}")
         
-        # === CONFLUENCE CALCULATION ===
+        # === [Institutional Step 2] Dynamic Sharpe Weighting ===
+        self._recalculate_ensemble_weights()
+        
         # Weighted average of all layers
-        # [v9.9.9] Introducing Knowledge Bias (10% weight)
         final_score = (
             self.xgb_weight * xgb_score +
             self.rl_weight * rl_score +
@@ -386,6 +470,13 @@ class EnhancedBrainEngine:
         )
         # Re-Normalize
         final_score = max(0.0, min(1.0, final_score))
+        
+        # Store scores for outcome tracking
+        self.last_decision_scores[decision_id] = {
+            'xgboost': xgb_score,
+            'rl': rl_score,
+            'smc': smc_score
+        }
         
         # Determine decision
         decision = 'APPROVE' if final_score >= self.decision_threshold else 'BLOCK'
@@ -443,8 +534,13 @@ class EnhancedBrainEngine:
             'source': 'ENHANCED_BRAIN',
             'timestamp': datetime.now().isoformat(),
             'decision_id': decision_id,
-            'thoughts': thoughts
+            'thoughts': thoughts,
+            'version': self.model_version,
+            'commit': self.code_commit_hash
         }
+        
+        # [Institutional Step 1] Log decision context for post-mortem
+        self._log_decision_context(result, features, market_data)
         
         logger.info(f"BRAIN DECISION: {decision} (prob={final_score:.3f}, conf={confidence:.3f}) -> {recommendation}")
         
@@ -582,36 +678,32 @@ class EnhancedBrainEngine:
         hard_veto = False
         reasons = []
         
-        # Veto 1: Basis Instability (spread too wide)
-        if self.meta_vetoes.get('basis_instability'):
-            basis = features.get('basis', 0.0)
-            if abs(basis) > 5.0:  # Basis > 5 points
-                vetoed = True
-                reasons.append(f"BASIS_INSTABILITY: {basis:.2f}")
-        
-        # Veto 2: VIX Spike (market panic)
-        if self.meta_vetoes.get('vix_spike'):
-            vix = features.get('vix', 15.0)
-            if vix > 30.0:
-                vetoed = True
-                hard_veto = True  # VIX spike = hard stop
-                reasons.append(f"VIX_SPIKE: {vix:.2f}")
-        
-        # Veto 3: Low Liquidity (low volume)
-        if self.meta_vetoes.get('low_liquidity'):
-            volume = market_data.get('volume', 0)
-            # Check if volume is significantly below average (simplified)
-            if volume < 100000:
-                vetoed = True
-                reasons.append(f"LOW_LIQUIDITY: {volume}")
-        
-        # Veto 4: Extreme GEX (gamma imbalance)
+        # 1. Basis Instability (Spot vs Future divergence)
+        basis = market_data.get('basis', 0.0)
+        if self.meta_vetoes.get('basis_instability') and abs(basis) > self.thresholds['basis']:
+            vetoed = True
+            reasons.append(f"BASIS_INSTABILITY ({basis:.2f}%)")
+            
+        # 2. VIX Spike (Market Panic)
+        vix = market_data.get('vix', 0.0)
+        if self.meta_vetoes.get('vix_spike') and vix > self.thresholds['vix']:
+            vetoed = True
+            hard_veto = True
+            reasons.append(f"VIX_PANIC ({vix:.1f})")
+            
+        # 3. Liquidity/Volume Check
+        volume = market_data.get('volume', 0)
+        if self.meta_vetoes.get('volume_check') and volume < self.thresholds['volume_min']:
+            vetoed = True
+            reasons.append(f"LOW_VOLUME ({volume})")
+
+        # 4. Extreme GEX (gamma imbalance)
         if self.meta_vetoes.get('extreme_gex'):
             gex = features.get('gex', 0.0)
             if abs(gex) > 10000000:  # 10M+ gamma exposure
                 vetoed = True
                 reasons.append(f"EXTREME_GEX: {gex:.0f}")
-        
+                
         return {
             'vetoed': vetoed,
             'hard_veto': hard_veto,
@@ -669,6 +761,7 @@ class EnhancedBrainEngine:
                 'rl': self.rl_weight,
                 'smc': self.smc_weight
             },
+            'performance_history': {k: list(v) for k, v in self.performance_history.items()},
             'timestamp': datetime.now().isoformat()
         }
         
@@ -696,6 +789,11 @@ class EnhancedBrainEngine:
             self.rl_weight = weights.get('rl', 0.3)
             self.smc_weight = weights.get('smc', 0.3)
             
+            perf = state.get('performance_history', {})
+            for k, v in perf.items():
+                if k in self.performance_history:
+                    self.performance_history[k].extend(v)
+            
             logger.info(f"BRAIN: State loaded from {path}")
             return True
         except FileNotFoundError:
@@ -721,20 +819,70 @@ class EnhancedBrainEngine:
 
     def log_snapshot(self, decision_id: str, outcome: bool, performance: Dict, freeze_authority: bool = False):
         """
-        Log trade outcome and update RL engine if applicable.
+        Log trade outcome and update performance history for dynamic weighting.
         """
         logger.info(f"BRAIN SNAPSHOT: ID={decision_id} | WIN={outcome} | PERF={performance}")
         
+        # [Institutional Step 2] Track Performance for Sharpe Weights
+        pnl = performance.get('pnl', 0.0)
+        if decision_id in self.last_decision_scores:
+            scores = self.last_decision_scores.pop(decision_id)
+            for model in ['xgboost', 'rl', 'smc']:
+                self.performance_history[model].append(pnl) 
+        
         # Update RL Experience if available
-        # Phase 3: Calculate reward and log for offline training
         if self.enable_rl and self.rl_engine:
-            # Reward Calculation: +1 for Win, -1 for Loss
-            # Bonus: +0.1 for every 1% MFE (Maximum Favorable Excursion)
             mfe_bonus = (performance.get('mfe', 0.0) / 100.0) * 0.1
             reward = (1.0 if outcome else -1.0) + mfe_bonus
-            
             logger.info(f"BRAIN: Calculated Reward: {reward:.2f}")
-            # In future: self.rl_engine.update(reward)
+
+    def _recalculate_ensemble_weights(self):
+        """
+        Calculate Softmax Sharpe Weights (Institutional Step 2)
+        """
+        # Minimum samples before dynamic weighting
+        min_samples = 30
+        
+        if any(len(h) < min_samples for h in self.performance_history.values()):
+            # Fallback to base weights
+            self.xgb_weight, self.rl_weight, self.smc_weight = 0.4, 0.3, 0.3
+            return
+
+        def calculate_sharpe(pnls):
+            if not pnls: return 0.0
+            p_arr = np.array(pnls)
+            avg = np.mean(p_arr)
+            # [Step 1] Institutional Sharpe Guard: Min Std & Clipping
+            std = max(np.std(p_arr), 1e-3)
+            sharpe = avg / std
+            return np.clip(sharpe, -3.0, 3.0)
+
+        sharpes = {
+            'xgboost': max(0.0, calculate_sharpe(list(self.performance_history['xgboost']))),
+            'rl': max(0.0, calculate_sharpe(list(self.performance_history['rl']))),
+            'smc': max(0.0, calculate_sharpe(list(self.performance_history['smc'])))
+        }
+        
+        # Softmax
+        exp_s = {k: np.exp(v) for k, v in sharpes.items()}
+        total = sum(exp_s.values())
+        
+        new_weights = {k: v / total for k, v in exp_s.items()}
+        
+        # Cap Dominance (max 0.6)
+        for k in new_weights:
+            if new_weights[k] > 0.6:
+                diff = new_weights[k] - 0.6
+                new_weights[k] = 0.6
+                others = [m for m in new_weights if m != k]
+                for o in others:
+                    new_weights[o] += diff / len(others)
+
+        self.xgb_weight = new_weights['xgboost']
+        self.rl_weight = new_weights['rl']
+        self.smc_weight = new_weights['smc']
+        
+        logger.debug(f"BRAIN: Weights Updated | XGB: {self.xgb_weight:.2f}, RL: {self.rl_weight:.2f}, SMC: {self.smc_weight:.2f}")
 
     def generate_decision(self, features: Dict, regime: str, is_commit: bool = False, pattern_score: float = 0.0, **kwargs) -> Tuple[str, List[str]]:
         """

@@ -137,6 +137,38 @@ class ShoonyaProvider:
             return res if isinstance(res, list) else (res.get('values', []) if isinstance(res, dict) else [])
         except: return []
 
+    def place_order(self, tradingsymbol: str, exchange: str, buy_or_sell: str, quantity: int, price_type: str = 'MKT', price: float = 0.0, trigger_price: float = 0.0):
+        """[Institutional Phase 6] Direct Order Placement via Shoonya API."""
+        if not self.authenticated and not self.login(): 
+            return {"stat": "Fail", "emsg": "Not Authenticated"}
+            
+        try:
+            res = self.api.place_order(
+                buy_or_sell=buy_or_sell, 
+                product_type='M', # Margin (Intraday for Options)
+                exchange=exchange, 
+                tradingsymbol=tradingsymbol, 
+                quantity=quantity, 
+                discloseqty=0, 
+                price_type=price_type,
+                price=price, 
+                trigger_price=trigger_price,
+                retention='DAY', 
+                remarks='TITAN_HF'
+            )
+            if res and res.get('stat') == 'Ok':
+                logger.info(f"SHOONYA_EXEC: Order Placed | {tradingsymbol} | ID: {res.get('norenordno')}")
+            else:
+                logger.error(f"SHOONYA_EXEC: Order Failed | {tradingsymbol} | Error: {res.get('emsg')}")
+            return res
+        except Exception as e:
+            logger.error(f"SHOONYA_EXEC: Exception during order: {e}")
+            return {"stat": "Fail", "emsg": str(e)}
+
+    def get_order_status(self, order_id: str):
+        if not self.authenticated and not self.login(): return None
+        return self.api.single_order_history(orderno=order_id)
+
 # ============================================================================
 # 3. Data Orchestrator (DataProvider)
 # ============================================================================
@@ -206,6 +238,21 @@ class DataProvider:
                     logger.error(f"PARALLEL FETCH FAILED for {sym}: {e}")
                     results[sym] = self.get_market_snapshot(sym) # Simple retry/fallback
         return results
+
+    def execute_order(self, symbol: str, exchange: str, side: str, qty: int, price: float = 0.0, order_type: str = 'MKT') -> Dict:
+        """[Institutional Phase 6] Automated Direct Execution Bridge."""
+        if not self.shoonya.authenticated:
+            return {"stat": "Fail", "emsg": "Shoonya Not Authenticated"}
+            
+        shoonya_side = 'B' if side.upper() == 'BUY' else 'S'
+        return self.shoonya.place_order(
+            tradingsymbol=symbol, 
+            exchange=exchange, 
+            buy_or_sell=shoonya_side, 
+            quantity=qty, 
+            price_type=order_type, 
+            price=price
+        )
 
     def get_status(self) -> Dict:
         """Returns the status of the data source, prioritizing Shoonya."""

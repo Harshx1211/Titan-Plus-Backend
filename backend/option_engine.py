@@ -14,9 +14,9 @@ class OptionEngine:
         self.last_max_pain: float = 0.0
         self.risk_free_rate = 0.07 
         
-    def calculate_gex(self, chain_df: pd.DataFrame, spot: float) -> Dict:
+    def calculate_gex_proxy(self, chain_df: pd.DataFrame, spot: float) -> Dict:
         """
-        [v8.8] Estimates Net Gamma Exposure (GEX).
+        [Institutional Step 4] Estimates Net Gamma Exposure (GEX) Proxy.
         GEX = Gamma * Open Interest.
         Helps identify the 'Gamma Flip' zone where market behavior changes.
         """
@@ -344,39 +344,69 @@ class OptionEngine:
     
     def calculate_iv_percentile(self, current_iv: float, historical_iv: List[float]) -> Dict:
         """
-        [ADVANCED] IV Percentile - Where current IV stands vs 90-day history
-        
-        Returns percentile and regime classification
+        [Institutional Step 5] Smooth IV Percentile Scaling
+        Replaces hard veto with a continuous size-reduction factor.
         """
         if not historical_iv or len(historical_iv) < 30:
-            return {"percentile": 50.0, "regime": "UNKNOWN", "score": 0.0}
+            return {"percentile": 50.0, "regime": "UNKNOWN", "score": 0.0, "scaling_factor": 1.0}
         
         # Calculate percentile
         rank = sum(1 for iv in historical_iv if current_iv > iv)
         percentile = (rank / len(historical_iv)) * 100
         
+        # Smooth scaling factor: 1.0 if IV is low, down to 0.2 if IV is at 100th percentile
+        # size_mult = (100 - percentile) / 100.0, but we cap it at 0.2
+        scaling_factor = max(0.2, (100 - percentile) / 100.0)
+        
         # Classify regime
         if percentile < 20:
             regime = "DEAD_MARKET"
-            score = -0.3  # Avoid trading
         elif percentile < 30:
             regime = "LOW_VOL"
-            score = 0.0
         elif 30 <= percentile <= 70:
             regime = "OPTIMAL"
-            score = 0.3  # Good for scalping
         elif percentile <= 80:
             regime = "ELEVATED"
-            score = 0.1
         else:
             regime = "PANIC"
-            score = -0.5  # Avoid trading
         
         return {
             "percentile": round(percentile, 1),
             "regime": regime,
-            "score": score,
+            "scaling_factor": round(scaling_factor, 2),
             "current_iv": current_iv
+        }
+
+    def calculate_precision_greeks(self, spot: float, strike: float, iv_decimal: float, minutes_to_expiry: int, option_type: str = "CE") -> Dict:
+        """
+        [Institutional Step 5] High-Fidelity Greeks (Minutes-to-Expiry)
+        Crucial for gamma spikes on expiry day.
+        """
+        from scipy.stats import norm
+        
+        # T in years
+        T = max(1 / (365 * 24 * 60), minutes_to_expiry / (365 * 24 * 60))
+        r = self.risk_free_rate
+        sigma = max(0.01, iv_decimal)
+        
+        d1 = (np.log(spot / strike) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+        d2 = d1 - sigma * np.sqrt(T)
+        
+        if option_type == "CE":
+            delta = norm.cdf(d1)
+        else:
+            delta = norm.cdf(d1) - 1
+            
+        gamma = norm.pdf(d1) / (spot * sigma * np.sqrt(T))
+        vega = spot * norm.pdf(d1) * np.sqrt(T) / 100.0 # Per 1% IV change
+        theta = (- (spot * norm.pdf(d1) * sigma) / (2 * np.sqrt(T)) - r * strike * np.exp(-r * T) * norm.cdf(d2 if option_type == "CE" else -d2)) / 365.0
+        
+        return {
+            "delta": round(delta, 3),
+            "gamma": round(gamma, 6),
+            "vega": round(vega, 3),
+            "theta": round(theta, 3),
+            "tte_minutes": minutes_to_expiry
         }
     
     def get_implied_move(self, chain_df: pd.DataFrame, spot: float) -> Dict:

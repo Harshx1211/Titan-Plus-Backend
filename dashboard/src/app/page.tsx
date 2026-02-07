@@ -59,6 +59,7 @@ interface SystemState {
   resistances?: Record<string, number[]>;
   gex_bias?: Record<string, number>;
   market_open?: boolean;
+  direct_execution_active?: boolean;
 }
 
 // ============================================================================
@@ -198,6 +199,92 @@ const SignalCard = ({ signal, onExecute }: { signal: TradeSignal, onExecute: (id
   );
 };
 
+const ExecutionSafetyControl = ({ isActive, onToggle }: { isActive: boolean, onToggle: (active: boolean) => void }) => {
+  const [showModal, setShowModal] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleConfirm = async () => {
+    setIsLoading(true);
+    await onToggle(!isActive);
+    setIsLoading(false);
+    setShowModal(false);
+  };
+
+  return (
+    <>
+      <div className="flex items-center gap-6 px-8 py-4 bg-white/[0.02] rounded-2xl border border-white/5 group/toggle transition-all hover:border-blue-500/20">
+        <div className="flex flex-col">
+          <p className="text-institutional text-slate-500 mb-1">Direct Execution</p>
+          <div className="flex items-center gap-3">
+            <span className={`text-[10px] font-black font-mono tracking-tighter ${isActive ? 'text-emerald-400 animate-pulse' : 'text-rose-500'}`}>
+              {isActive ? 'PROTOCOL_ACTIVE' : 'ADVISORY_ONLY'}
+            </span>
+          </div>
+        </div>
+        <div className="h-10 w-px bg-white/10" />
+        <button
+          onClick={() => setShowModal(true)}
+          className={`relative w-14 h-7 rounded-full transition-all duration-500 p-1 ${isActive ? 'bg-emerald-500/20' : 'bg-slate-800'}`}
+        >
+          <div className={`w-5 h-5 rounded-full transition-all duration-500 shadow-lg ${isActive ? 'bg-emerald-400 translate-x-7 rotate-0' : 'bg-slate-500 translate-x-0 rotate-180'}`}>
+            <Cpu className="w-full h-full p-1 text-[#030305]" />
+          </div>
+        </button>
+      </div>
+
+      {/* Two-Step Confirmation Modal */}
+      {showModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-md animate-in fade-in duration-300" onClick={() => !isLoading && setShowModal(false)} />
+          <div className="relative w-full max-w-md bg-[#0a0a0f] border border-white/10 rounded-[2.5rem] p-10 shadow-3xl animate-in zoom-in-95 duration-300 overflow-hidden">
+            {/* Background Glow */}
+            <div className={`absolute -top-24 -right-24 w-64 h-64 bg-${isActive ? 'rose' : 'emerald'}-500/10 blur-[100px] rounded-full`} />
+
+            <div className="relative z-10 text-center space-y-8">
+              <div className={`mx-auto w-20 h-20 rounded-3xl flex items-center justify-center ${isActive ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'} border border-white/5`}>
+                <Shield className="w-10 h-10" />
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="text-2xl font-black text-white uppercase tracking-tighter">
+                  {isActive ? 'Deactivate Execution?' : 'Activate Systematic Execution?'}
+                </h3>
+                <p className="text-sm text-slate-500 font-medium leading-relaxed italic">
+                  {isActive
+                    ? "Warning: This will halt all automated order placement. The system will revert to manual advisory mode."
+                    : "Caution: This will enable direct capital deployment. Every neural signal will trigger real-world orders in milliseconds."}
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-4">
+                <button
+                  disabled={isLoading}
+                  onClick={handleConfirm}
+                  className={`w-full py-5 rounded-2xl font-black text-sm uppercase tracking-widest transition-all ${isActive
+                    ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-xl shadow-rose-600/20'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-xl shadow-emerald-600/20'
+                    } active:scale-95 disabled:opacity-50`}
+                >
+                  {isLoading ? 'Processing...' : (isActive ? 'Yes, Deactivate Protocol' : 'Yes, Deploy Protocol')}
+                </button>
+                <button
+                  disabled={isLoading}
+                  onClick={() => setShowModal(false)}
+                  className="w-full py-4 text-slate-500 font-black text-[10px] uppercase tracking-widest hover:text-white transition-colors"
+                >
+                  Cancel & Return
+                </button>
+              </div>
+            </div>
+
+            <div className="absolute bottom-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
 // ============================================================================
 // Main Application
 // ============================================================================
@@ -242,6 +329,18 @@ export default function TitanDashboard() {
       });
       if (!res.ok) throw new Error('Execution Declined');
     } catch (err) { setError(err instanceof Error ? err.message : 'Execution Link Failure'); }
+  };
+
+  const handleToggleExecution = async (active: boolean) => {
+    try {
+      const res = await fetch(`${API_URL}/toggle-execution?active=${active}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (!res.ok) throw new Error('Toggle Rejected');
+      const data = await res.json();
+      setState(prev => prev ? { ...prev, direct_execution_active: data.active } : null);
+    } catch (err) { setError('Failed to communicate with Execution Bridge'); }
   };
 
   if (loading) return (
@@ -292,6 +391,12 @@ export default function TitanDashboard() {
           </div>
 
           <div className="flex items-center gap-4 relative z-10">
+            {/* Safety Switch */}
+            <ExecutionSafetyControl
+              isActive={state?.direct_execution_active || false}
+              onToggle={handleToggleExecution}
+            />
+
             <div className="hidden lg:flex flex-col items-end pr-8 border-r border-white/10">
               <p className="text-institutional text-slate-500 mb-1">Grid Status</p>
               <div className="flex items-center gap-3">
@@ -454,8 +559,8 @@ export default function TitanDashboard() {
                     <div key={i} className="group/log relative border-l border-white/5 pl-6 hover:border-violet-500/30 transition-colors">
                       <div className="flex justify-between items-start mb-2">
                         <span className={`text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-widest ${log.type === 'INFO' ? 'text-cyan-400 bg-cyan-400/10' :
-                            log.type === 'TRACE' ? 'text-violet-400 bg-violet-400/10' :
-                              'text-amber-400 bg-amber-400/10'
+                          log.type === 'TRACE' ? 'text-violet-400 bg-violet-400/10' :
+                            'text-amber-400 bg-amber-400/10'
                           }`}>
                           {log.type}
                         </span>
