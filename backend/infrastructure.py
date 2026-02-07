@@ -331,7 +331,27 @@ class SupabaseManager:
 # 4. Database Bridge (Legacy Support)
 # ============================================================================
 
-# ============================================================================
+class DatabaseManager:
+    """
+    [v9.9.9] Unified Data Access Layer.
+    Bridges the gap between Legacy API calls and the new Supabase Cloud Memory.
+    """
+    def __init__(self):
+        self.cloud_db = SupabaseManager()
+        logging.getLogger("infrastructure").info("DB: Database Bridge initialized.")
+
+    def log_intent(self, signal: Dict, patterns: List[str]):
+        """Proxies intent logging to Cloud Memory."""
+        signal['patterns'] = patterns
+        self.cloud_db.log_intent(signal)
+
+    def log_outcome(self, signal_id: str, outcome: str):
+        """Proxies outcome logging to Cloud Memory."""
+        self.cloud_db.log_outcome(signal_id, outcome)
+
+    def get_accuracy_report(self) -> Dict:
+        return self.cloud_db.get_accuracy_report()
+
 # 5. [Institutional Phase 6] Market State (Atomic Snapshot)
 # ============================================================================
 
