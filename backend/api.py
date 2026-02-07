@@ -120,7 +120,7 @@ shadow_mode_enabled = os.getenv("SHADOW_MODE", "false").lower() == "true"
 admin_token = os.getenv("ADMIN_TOKEN", "titan_admin_123") # Simple auth
 
 # State & Monitoring
-from infrastructure import IST
+from infrastructure import IST, global_sentinel
 live_state = LiveState()
 
 # ============================================================================
