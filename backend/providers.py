@@ -123,15 +123,17 @@ class ShoonyaProvider:
                 year_code = datetime.now().strftime("%y") # 25
                 exch = "BFO" if symbol == "SENSEX" else "NFO"
                 
-                # Broad search for the symbol in the Derivative exchange
-                res = self.api.searchscrip(exchange=exch, searchtext=symbol)
+                # Broad but targeted search (e.g. "NIFTY FEB FUT")
+                search_text = f"{symbol} {month_code} FUT"
+                res = self.api.searchscrip(exchange=exch, searchtext=search_text)
+                if not res or res.get('stat') != 'Ok':
+                    # Fallback to just symbol if text search fails
+                    res = self.api.searchscrip(exchange=exch, searchtext=symbol)
+                
                 if res and res.get('stat') == 'Ok' and res.get('values'):
-                    # Sort by expiry if possible (tsym usually contains expiry), but we just need current month
-                    # Shoonya TSym pattern: SYMBOL + DAY + MONTH + YEAR + FUT
-                    # e.g. NIFTY27FEB25FUT
+                    # Filter for FUTIDX or FUTSTK
                     for v in res['values']:
                         tsym = v['tsym']
-                        # Must contain month and year, and be a future
                         if (month_code in tsym and year_code in tsym) and \
                            (v['instname'] in ['FUTIDX', 'FUTSTK']):
                             self.future_tokens[symbol] = (exch, v['token'])

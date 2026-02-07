@@ -23,8 +23,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the backend code contents into /app
 COPY backend/ .
 
-# Ensure required state files exist or are initialized
-RUN touch brain_state_ml.json brain_state.json rl_state.pt
+# Ensure required state files exist or are initialized without overwriting
+RUN [ ! -f brain_state_ml.json ] && touch brain_state_ml.json || true
+RUN [ ! -f brain_state.json ] && touch brain_state.json || true
+RUN [ ! -f rl_state.pt ] && touch rl_state.pt || true
 
 # Environment variable for Hugging Face Default Port
 ENV PORT=7860
