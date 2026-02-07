@@ -346,12 +346,12 @@ class EnhancedBrainEngine:
         if ohlcv_df is not None:
             try:
                 # 1. Hammer S1
-                if chetan_hammer_s1(ohlcv_df, smc_result['zones'] if smc_result else {}, datetime.now().isoformat()).iloc[-1]:
+                if chetan_hammer_s1(ohlcv_df, smc_result.get('zones', {}) if smc_result else {}, datetime.now().isoformat()).iloc[-1]:
                     knowledge_hits.append("CHETAN_HAMMER_S1")
                     knowledge_score += 0.15
                 
                 # 2. Engulfing R1
-                if chetan_engulfing_r1(ohlcv_df, smc_result['zones'] if smc_result else {}, datetime.now().isoformat()).iloc[-1]:
+                if chetan_engulfing_r1(ohlcv_df, smc_result.get('zones', {}) if smc_result else {}, datetime.now().isoformat()).iloc[-1]:
                     knowledge_hits.append("CHETAN_ENGULFING_R1")
                     knowledge_score += 0.10
                 
@@ -509,10 +509,11 @@ class EnhancedBrainEngine:
         }
         vector.extend(regime_map.get(regime, [0, 0, 0, 0, 1]))
         
-        # === [v9.9.9] NaN Guard ===
+        # === [v9.9.9] Nuclear NaN Guard ===
         final_vector = np.array(vector, dtype=np.float32)
         if np.isnan(final_vector).any():
-            logger.warning("BRAIN: NaN detected in RL feature vector. Interpolating zeros.")
+            # Source breakdown for debugging
+            logger.warning(f"BRAIN: NaN detected in RL feature vector. Interpolating zeros. Vector Preview: {vector[:10]}...")
             final_vector = np.nan_to_num(final_vector, nan=0.0, posinf=1.0, neginf=-1.0)
             
         return final_vector
@@ -621,13 +622,13 @@ class EnhancedBrainEngine:
         """Build RL state dictionary from features and market data"""
         return {
             'indicators': {
-                'rsi': features.get('rsi', 50.0),
-                'adx': features.get('adx', 20.0),
-                'atr': features.get('atr', 100.0),
-                'basis': features.get('basis', 0.0),
-                'pcr': features.get('pcr', 1.0),
-                'vix': features.get('vix', 15.0),
-                'iv_skew': features.get('iv_skew', 1.0)
+                'rsi': features.get('rsi', 50.0) if not np.isnan(features.get('rsi', 50.0)) else 50.0,
+                'adx': features.get('adx', 20.0) if not np.isnan(features.get('adx', 20.0)) else 20.0,
+                'atr': features.get('atr', 100.0) if not np.isnan(features.get('atr', 100.0)) else 100.0,
+                'basis': features.get('basis', 0.0) if not np.isnan(features.get('basis', 0.0)) else 0.0,
+                'pcr': features.get('pcr', 1.0) if not np.isnan(features.get('pcr', 1.0)) else 1.0,
+                'vix': features.get('vix', 15.0) if not np.isnan(features.get('vix', 15.0)) else 15.0,
+                'iv_skew': features.get('iv_skew', 1.0) if not np.isnan(features.get('iv_skew', 1.0)) else 1.0
             },
             'price': {
                 'close': market_data.get('spot_price', 25000.0),

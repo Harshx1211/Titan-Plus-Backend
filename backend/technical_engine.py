@@ -27,7 +27,7 @@ class TechnicalEngine:
         levels = {
             'fractals': self._find_fractal_zones(ohlcv_df),
             'fibs': self._calculate_fibonacci(ohlcv_df),
-            'oi_walls': self._find_oi_walls(oi_data) if oi_data else [],
+            'oi_walls': self._find_oi_walls(oi_data) if (oi_data is not None and len(oi_data) > 0) else [],
             'pivots': self._calculate_pivot_points(ohlcv_df),
             'order_blocks': self._find_order_blocks(ohlcv_df)
         }
