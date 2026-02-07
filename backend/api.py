@@ -304,7 +304,7 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Heartbeat endpoint with Brain metrics for observability."""
-    if brain is None:
+    if core.brain is None:
         return {
             "status": "initializing",
             "message": "Titan Plus engines are powering up...",
@@ -317,14 +317,14 @@ async def health_check():
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "cloud_memory": "Supabase Linked",
         "brain": {
-            "health": brain.health_check(),
+            "health": core.brain.health_check(),
             "metrics": {
-                "total_decisions": brain.metrics.total_decisions,
-                "approvals": brain.metrics.approvals,
-                "blocks": brain.metrics.blocks,
-                "avg_confidence": round(brain.metrics.avg_confidence, 3),
-                "nan_rejections": brain.metrics.nan_rejections,
-                "version": brain.LOGIC_VERSION
+                "total_decisions": core.brain.metrics.total_decisions,
+                "approvals": core.brain.metrics.approvals,
+                "blocks": core.brain.metrics.blocks,
+                "avg_confidence": round(core.brain.metrics.avg_confidence, 3),
+                "nan_rejections": core.brain.metrics.nan_rejections,
+                "version": core.brain.LOGIC_VERSION
             }
         }
     }
@@ -333,7 +333,7 @@ async def health_check():
 async def get_state():
     return SystemState(
         regime=live_state.current_regime,
-        is_in_recovery=risk_engine.is_in_recovery() if risk_engine else False,
+        is_in_recovery=core.risk_engine.is_in_recovery() if core.risk_engine else False,
         data_latency=(datetime.now(timezone.utc) - live_state.last_update).total_seconds() * 1000 if is_market_open() else 0.0,
         integrity_status=live_state.integrity,
         active_signals=live_state.active_signals,
@@ -370,7 +370,7 @@ async def post_intent(signal: TradeSignal, patterns: List[str] = []):
 @app.post("/signals/outcome")
 async def post_outcome(signal_id: str, outcome: str):
     """Appends an outcome to an existing signal intent."""
-    if db is None:
+    if core.db is None:
         raise HTTPException(status_code=503, detail="Database engine initializing")
     core.db.log_outcome(signal_id, outcome)
     return {"status": "outcome_logged"}
@@ -378,22 +378,22 @@ async def post_outcome(signal_id: str, outcome: str):
 @app.get("/history")
 async def get_history():
     """Returns the Truth Ledger (Immutable Records) from Supabase."""
-    if db is None:
+    if core.db is None:
         return [] # Return empty list during initialization
-    return db.cloud_db.get_history()
+    return core.db.cloud_db.get_history()
 
 @app.get("/accuracy")
 async def get_accuracy():
-    if db is None:
+    if core.db is None:
         return {"win_rate": 0.0, "accuracy": 0.0, "total_trades": 0, "status": "INITIALIZING"}
-    return db.get_accuracy_report()
+    return core.db.get_accuracy_report()
 
 @app.get("/audit")
 async def get_session_audit(date: Optional[str] = None):
     """Returns the Institutional Session Audit report."""
-    if session_auditor is None:
+    if core.session_auditor is None:
         raise HTTPException(status_code=503, detail="Session Auditor initializing")
-    return session_auditor.generate_daily_report(date)
+    return core.session_auditor.generate_daily_report(date)
 
 @app.post("/feedback")
 async def post_feedback(signal_id: int, outcome: str, override: bool = False):

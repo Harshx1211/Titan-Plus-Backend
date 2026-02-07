@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from NorenRestApiPy.NorenApi import NorenApi
 from growwapi import GrowwAPI
 from models_v3 import MarketData
+from infrastructure import CircuitBreaker
 
 load_dotenv()
 logger = logging.getLogger("providers")
