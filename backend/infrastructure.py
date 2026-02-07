@@ -13,6 +13,10 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 from models import TradeSignal
 
+class DataHealthError(Exception):
+    """[v9.9.9] Raised when no valid real-time data sources are available."""
+    pass
+
 load_dotenv()
 
 # ============================================================================
@@ -50,6 +54,8 @@ APP_CONFIG = {
     "MARKET_END_MINUTE": int(os.getenv("MARKET_END_MINUTE", "30")),
     "ENGINE_ERROR_SLEEP_TIME": int(os.getenv("ENGINE_ERROR_SLEEP_TIME", "5")),
     "DIRECT_EXECUTION_ENABLED": os.getenv("DIRECT_EXECUTION_ENABLED", "FALSE").upper() == "TRUE",
+    "MAX_DAILY_LOSS": float(os.getenv("MAX_DAILY_LOSS", "-500.0")),
+    "MAX_TRADES_PER_DAY": int(os.getenv("MAX_TRADES_PER_DAY", "20")),
 }
 
 # ============================================================================
@@ -74,6 +80,7 @@ class TelegramNotifier:
             self._test_connection()
             # [v9.9.9] Anti-Spam Gate
             self.sent_messages: Dict[str, int] = {}
+            self.circuit = CircuitBreaker("TELEGRAM", threshold=5, recovery_timeout=3600) # Reset after 1hr if failed
         else:
             logging.warning("TELEGRAM: Notifications DISABLED (Check .env for TOKEN/CHAT_ID)")
 
@@ -138,7 +145,7 @@ class TelegramNotifier:
         return False
 
     def send_signal(self, signal: Dict, dashboard_url: str = "") -> bool:
-        if not self.enabled: return False
+        if not self.enabled or not self.circuit.can_proceed(): return False
         # [Anti-Spam] Track signals by decision_id or content
         msg_id = f"SIGNAL_{signal.get('decision_id', 'UNKNOWN')}"
         if not self._should_send(msg_id): return False
@@ -172,9 +179,12 @@ class TelegramNotifier:
             resp = requests.post(url, json={"chat_id": self.chat_id, "text": message, "parse_mode": "HTML"}, timeout=10)
             if resp.status_code != 200:
                 logging.error(f"TELEGRAM: Signal failed ({resp.status_code}): {resp.text}")
+                self.circuit.record_failure()
                 return False
+            self.circuit.record_success()
             return True
         except Exception as e:
+            self.circuit.record_failure()
             msg = f"TELEGRAM: Signal exception: {e}"
             if "NameResolutionError" in str(e) or "ConnectionError" in str(e):
                 logging.warning(msg)
@@ -183,7 +193,7 @@ class TelegramNotifier:
             return False
 
     def send_alert(self, message: str) -> bool:
-        if not self.enabled: return False
+        if not self.enabled or not self.circuit.can_proceed(): return False
         if not self._should_send(message): return False
         try:
             url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
@@ -197,9 +207,12 @@ class TelegramNotifier:
             resp = requests.post(url, json={"chat_id": self.chat_id, "text": rich_message, "parse_mode": "HTML"}, timeout=10)
             if resp.status_code != 200:
                 logging.getLogger("infrastructure").error(f"TELEGRAM: Alert failed ({resp.status_code}): {resp.text}")
+                self.circuit.record_failure()
                 return False
+            self.circuit.record_success()
             return True
         except Exception as e:
+            self.circuit.record_failure()
             msg = f"TELEGRAM: Alert exception: {e}"
             if "NameResolutionError" in str(e) or "ConnectionError" in str(e):
                 logging.warning(msg)
@@ -398,3 +411,88 @@ class MarketState:
         """Quick lookup for a single price."""
         with self.lock:
             return self.data.get(symbol, {}).get('lp', 0.0)
+
+# ============================================================================
+# 6. Circuit Breaker (Stability Pattern)
+# ============================================================================
+
+class CircuitBreaker:
+    """
+    [v9.9.9] Prevents cascading failures by tripping when an API is unstable.
+    States: CLOSED (Normal), OPEN (Failed, Bypassed), HALF-OPEN (Testing)
+    """
+    def __init__(self, name: str, threshold: int = 5, recovery_timeout: int = 60):
+        self.name = name
+        self.threshold = threshold
+        self.recovery_timeout = recovery_timeout
+        self.failures = 0
+        self.state = "CLOSED"
+        self.last_failure_time = 0
+        self.lock = threading.Lock()
+
+    def record_failure(self):
+        with self.lock:
+            self.failures += 1
+            self.last_failure_time = time.time()
+            if self.failures >= self.threshold:
+                if self.state != "OPEN":
+                    logging.error(f"CIRCUIT_BREAKER: {self.name} tripped! Switching to OPEN (Bypass).")
+                    self.state = "OPEN"
+
+    def record_success(self):
+        with self.lock:
+            if self.state == "HALF-OPEN":
+                logging.info(f"CIRCUIT_BREAKER: {self.name} recovered. Switching to CLOSED.")
+                self.state = "CLOSED"
+                self.failures = 0
+            elif self.state == "CLOSED":
+                self.failures = max(0, self.failures - 1)
+
+    def can_proceed(self) -> bool:
+        with self.lock:
+            if self.state == "CLOSED":
+                return True
+            
+            # Check for recovery timeout
+            if self.state == "OPEN":
+                if (time.time() - self.last_failure_time) > self.recovery_timeout:
+                    logging.warning(f"CIRCUIT_BREAKER: {self.name} in HALF-OPEN state. Testing recovery...")
+                    self.state = "HALF-OPEN"
+                    return True
+                return False
+            
+            return True # HALF-OPEN
+
+# ============================================================================
+# 7. System Health Monitor (Observability)
+# ============================================================================
+
+class SystemHealthMonitor:
+    """
+    [v9.9.9] Tracks aggregate loop latency and health metrics for the dashboard.
+    """
+    def __init__(self, window_size: int = 100):
+        self.latency_samples = deque(maxlen=window_size)
+        self.last_healthy_time = time.time()
+        self.errors = {"API": 0, "DB": 0, "ML": 0}
+        self.lock = threading.Lock()
+
+    def record_latency(self, ms: float):
+        with self.lock:
+            self.latency_samples.append(ms)
+            self.last_healthy_time = time.time()
+
+    def record_error(self, category: str):
+        with self.lock:
+            if category in self.errors:
+                self.errors[category] += 1
+
+    def get_stats(self) -> Dict:
+        with self.lock:
+            avg_lat = sum(self.latency_samples) / len(self.latency_samples) if self.latency_samples else 0.0
+            return {
+                "avg_latency_ms": round(avg_lat, 2),
+                "last_health_check": datetime.fromtimestamp(self.last_healthy_time).isoformat(),
+                "error_counts": self.errors,
+                "uptime_status": "STABLE" if avg_lat < 500 else "DEGRADED"
+            }

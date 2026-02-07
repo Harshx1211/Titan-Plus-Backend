@@ -76,18 +76,24 @@ class ShoonyaProvider:
         self._login_lock = threading.Lock() if 'threading' in globals() else None
         self.index_tokens = {"NIFTY": ("NSE", "26000"), "BANKNIFTY": ("NSE", "26009"), "SENSEX": ("BSE", "1")}
         self.future_tokens = {}
+        self.circuit = CircuitBreaker("SHOONYA", threshold=3, recovery_timeout=120)
 
     def login(self):
         if not self.totp_secret: return False
+        if not self.circuit.can_proceed():
+            return False
+            
         totp = pyotp.TOTP(self.totp_secret.replace(" ", "").upper())
         try:
             res = self.api.login(userid=self.user_id, password=self.password, twoFA=totp.now(),
                                vendor_code=self.vendor_code, api_secret=self.api_key, imei=self.imei)
             if res and res.get('stat') == 'Ok':
                 self.authenticated = True
+                self.circuit.record_success()
                 self.refresh_futures_mapping()
                 return True
-        except: pass
+        except: 
+            self.circuit.record_failure()
         return False
 
     def refresh_futures_mapping(self):
@@ -107,23 +113,35 @@ class ShoonyaProvider:
                          if v['tsym'] == symbol or v['tsym'] == f"{symbol} INDEX":
                              self.index_tokens[symbol] = (idx_exch, v['token'])
                              break
-        except: pass
+        except Exception as e:
+            logger.error(f"SHOONYA_INIT: Error refreshing futures mapping: {e}")
 
     def get_market_data(self, symbol: str) -> Optional[Dict]:
         if not self.authenticated and not self.login(): return None
+        if not self.circuit.can_proceed(): return None
+        
+        mapping = self.index_tokens.get(symbol)
+        if not mapping: return None
+        
         try:
-            mapping = self.index_tokens.get(symbol)
-            if not mapping: return None
             res = self.api.get_quotes(exchange=mapping[0], token=mapping[1])
             if res and res.get('stat') == 'Ok':
-                data = {'symbol': symbol, 'lp': float(res.get('lp', 0)), 'v': int(res.get('v', 0)), 'future_lp': 0}
+                self.circuit.record_success()
+                data = {
+                    'symbol': symbol,
+                    'lp': float(res.get('lp', 0)),
+                    'oi': int(res.get('oi', 0)),
+                    'timestamp': time.time()
+                }
                 fut = self.future_tokens.get(symbol)
                 if fut:
                     res_f = self.api.get_quotes(exchange=fut[0], token=fut[1])
                     if res_f and res_f.get('stat') == 'Ok':
                         data['future_lp'] = float(res_f.get('lp', 0))
                 return data
-        except: pass
+        except Exception as e:
+            logger.error(f"SHOONYA_DATA: Error getting market data for {symbol}: {e}")
+            self.circuit.record_failure()
         return None
 
     def get_historical_data(self, symbol: str, interval: int = 5, start_time: datetime = None, end_time: datetime = None) -> List[Dict]:
@@ -135,12 +153,18 @@ class ShoonyaProvider:
                                               starttime=str(int(start_time.timestamp())),
                                               endtime=str(int(end_time.timestamp())), interval=str(interval))
             return res if isinstance(res, list) else (res.get('values', []) if isinstance(res, dict) else [])
-        except: return []
+        except Exception as e:
+            logger.error(f"SHOONYA_DATA: Error getting historical data for {symbol}: {e}")
+            self.circuit.record_failure()
+            return []
 
     def place_order(self, tradingsymbol: str, exchange: str, buy_or_sell: str, quantity: int, price_type: str = 'MKT', price: float = 0.0, trigger_price: float = 0.0):
         """[Institutional Phase 6] Direct Order Placement via Shoonya API."""
         if not self.authenticated and not self.login(): 
             return {"stat": "Fail", "emsg": "Not Authenticated"}
+        
+        if not self.circuit.can_proceed():
+            return {"stat": "Fail", "emsg": "Circuit Breaker OPEN"}
             
         try:
             res = self.api.place_order(
@@ -158,16 +182,25 @@ class ShoonyaProvider:
             )
             if res and res.get('stat') == 'Ok':
                 logger.info(f"SHOONYA_EXEC: Order Placed | {tradingsymbol} | ID: {res.get('norenordno')}")
+                self.circuit.record_success()
             else:
                 logger.error(f"SHOONYA_EXEC: Order Failed | {tradingsymbol} | Error: {res.get('emsg')}")
             return res
+        except Exception as e:
+            logger.error(f"SHOONYA_EXEC: Exception during order placement: {e}")
+            self.circuit.record_failure()
+            return {"stat": "Fail", "emsg": str(e)}
         except Exception as e:
             logger.error(f"SHOONYA_EXEC: Exception during order: {e}")
             return {"stat": "Fail", "emsg": str(e)}
 
     def get_order_status(self, order_id: str):
         if not self.authenticated and not self.login(): return None
-        return self.api.single_order_history(orderno=order_id)
+        try:
+            return self.api.single_order_history(orderno=order_id)
+        except Exception as e:
+            logger.error(f"SHOONYA_EXEC: Error getting order status for {order_id}: {e}")
+            return None
 
 # ============================================================================
 # 3. Data Orchestrator (DataProvider)
@@ -182,9 +215,11 @@ GrowwAPI._build_headers = staticmethod(_masked_groww_headers)
 
 class DataProvider:
     def __init__(self):
+        from infrastructure import CircuitBreaker
         self.shoonya = ShoonyaProvider()
         self.groww_key = os.getenv("GROWW_API_KEY")
         self.groww_secret = os.getenv("GROWW_API_SECRET")
+        self.circuit_groww = CircuitBreaker("GROWW", threshold=3, recovery_timeout=180)
         self.bot = None
         self.use_groww = False
         if self.groww_key and self.groww_secret:
@@ -192,7 +227,10 @@ class DataProvider:
                 token = GrowwAPI.get_access_token(api_key=self.groww_key, secret=self.groww_secret)
                 self.bot = GrowwAPI(token=token)
                 self.use_groww = True
-            except: pass
+                self.circuit_groww.record_success()
+            except Exception as e:
+                logger.error(f"GROWW_INIT: Failed to initialize Groww API: {e}")
+                self.circuit_groww.record_failure()
         self.shoonya.login()
 
     def get_market_snapshot(self, symbol: str) -> MarketData:
@@ -206,7 +244,7 @@ class DataProvider:
             )
         
         # Fallback 1: Groww (if Shoonya fails)
-        if self.use_groww and self.bot:
+        if self.use_groww and self.bot and self.circuit_groww.can_proceed():
             try:
                 # Groww get_quote implementation
                 exchange = "BSE" if symbol == "SENSEX" else "NSE"
@@ -214,11 +252,14 @@ class DataProvider:
                 quote = self.bot.get_quote(trading_symbol=symbol, exchange=exchange, segment=segment)
                 if quote and 'ltp' in quote:
                     lp = float(quote['ltp'])
+                    self.circuit_groww.record_success()
                     return MarketData(
                         symbol=symbol, spot_price=lp, future_price=lp+5.0,
                         oi=0, pcr=0.95, timestamp=datetime.now(), source="GROWW_API"
                     )
-            except: pass
+            except Exception as e:
+                logger.error(f"GROWW_DATA: Quote fetch failed for {symbol}: {e}")
+                self.circuit_groww.record_failure()
 
         # Fallback 2: Historical Close (Pre-Market / Weekend Fix)
         try:
@@ -228,16 +269,15 @@ class DataProvider:
                 last_close = float(hist_df['close'].iloc[-1])
                 return MarketData(
                     symbol=symbol, spot_price=last_close, 
-                    future_price=last_close+5.0,
-                    oi=0, pcr=0.95, timestamp=datetime.now(), source="HISTORY_CLOSE"
+                    future_price=last_close,
+                    oi=0, pcr=0.95, timestamp=datetime.now(), source="HIST_CLOSE"
                 )
         except Exception as e:
             logger.warning(f"Fallback history fetch failed: {e}")
 
-        # Fallback 3: Realistic Hard-coded Fallbacks
-        prices = {"NIFTY": 25727.0, "SENSEX": 83739.0, "BANKNIFTY": 51200.0}
-        base = prices.get(symbol, 25000.0)
-        return MarketData(symbol=symbol, spot_price=base, future_price=base+5.0, oi=0, pcr=0.95, timestamp=datetime.now(), source="FALLBACK")
+        # [v9.9.9] Institutional Safety: No Mock Data!
+        from infrastructure import DataHealthError
+        raise DataHealthError(f"CRITICAL: All data sources failed for {symbol}. No mock fallback allowed.")
 
     def get_multiple_market_snapshots(self, symbols: List[str]) -> Dict[str, MarketData]:
         """[v9.9.9] High-Frequency Parallel Fetcher. Reduces latency by up to 3x."""
@@ -283,7 +323,8 @@ class DataProvider:
         noren_interval = interval_map.get(interval, 5)
         
         end_time = datetime.now()
-        start_time = end_time - timedelta(days=2) # 2 days for enough context
+        # [v9.9.9] Audit Fix: Extend lookback to 7 days for indicator stability (prev: 2 days)
+        start_time = end_time - timedelta(days=7) 
         
         return self.get_intraday_history(symbol, start_time, end_time, noren_interval)
 
@@ -296,7 +337,8 @@ class DataProvider:
              if self.shoonya.authenticated:
                  # Real logic would go here
                  pass
-        except: pass
+        except Exception as e:
+             logger.warning(f"OPTION_DATA: Real chain fetch failed for {symbol}: {e}")
         
         # Fallback Structure (Avoid Empty DF crashes)
         strikes = []
@@ -312,6 +354,8 @@ class DataProvider:
                 "call_iv": 20.0, "put_iv": 20.0,
                 "call_gamma": 0.002, "put_gamma": 0.002 # prevent GM crash
             })
+        
+        logger.warning(f"DATA_FETCH: Using SYNTHETIC option chain for {symbol} (Market Closed or Data Lag)")
         return pd.DataFrame(strikes), True
 
     def get_vix(self) -> float:
@@ -338,6 +382,7 @@ class DataProvider:
             raw = self.shoonya.get_historical_data(symbol, interval, start_time, end_time)
             if raw:
                 # Found data in Shoonya, proceed
+                logger.info(f"DATA_FETCH: Successfully retrieved {len(raw)} candles for {symbol} from Shoonya")
                 pass
         
         # Priority 2: Groww Fallback (if Shoonya is empty or unauth)
@@ -367,14 +412,9 @@ class DataProvider:
                 pass
 
         if not raw:
-            # Fallback: Create mock history if both providers fail
-            dates = pd.date_range(end=datetime.now(), periods=100, freq=f'{interval}min')
-            df = pd.DataFrame({
-                'datetime': dates,
-                'open': 25000.0, 'high': 25050.0, 'low': 24950.0, 'close': 25000.0, 'volume': 1000
-            })
-            df.set_index('datetime', inplace=True)
-            return df
+            # [v9.9.9] Institutional Safety: Raise error instead of mock history
+            from infrastructure import DataHealthError
+            raise DataHealthError(f"CRITICAL: History retrieval failed for {symbol} across all providers.")
         
         df = pd.DataFrame(raw)
         df.rename(columns={'into': 'open', 'inth': 'high', 'intl': 'low', 'intc': 'close', 'v': 'volume'}, inplace=True)

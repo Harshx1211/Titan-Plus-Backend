@@ -224,25 +224,34 @@ class TechnicalEngine:
     def _calculate_pivot_points(self, df: pd.DataFrame) -> Dict:
         """
         Calculate Standard Daily Pivot Points (P, R1, S1, R2, S2).
-        Uses the *previous* day's High, Low, Close.
-        Assuming daily data or resampling is passed, but for intraday we often take High/Low of prev day.
-        Here we approximate with last closed candle if it represents a day, or pass prev day explicitly.
-        For safety, we'll calculate based on the LAST candle in the DF assuming it's the prev period.
+        [Audit Fix] Uses the *previous day's* resampled OHLC data instead of the previous candle.
         """
         try:
-            last_candle = df.iloc[-1] # This is current. We need prev.
-            if len(df) > 1:
-                prev = df.iloc[-2]
-                H, L, C = prev['high'], prev['low'], prev['close']
+            if df.empty or len(df) < 2: return {}
+            
+            # Resample to Daily to get true Prev High/Low/Close
+            daily_df = df.resample('D').agg({
+                'high': 'max', 'low': 'min', 'close': 'last'
+            }).dropna()
+            
+            if len(daily_df) < 2:
+                # If we don't have a full previous day in the slice, 
+                # fallback to just the previous available day's data
+                prev_day = daily_df.iloc[-1]
+            else:
+                # Ideal: Previous day's data
+                prev_day = daily_df.iloc[-2]
                 
-                P = (H + L + C) / 3
-                R1 = (2 * P) - L
-                S1 = (2 * P) - H
-                R2 = P + (H - L)
-                S2 = P - (H - L)
-                
-                return {'P': P, 'R1': R1, 'S1': S1, 'R2': R2, 'S2': S2}
-            return {}
+            H, L, C = prev_day['high'], prev_day['low'], prev_day['close']
+            
+            P = (H + L + C) / 3
+            R1 = (2 * P) - L
+            S1 = (2 * P) - H
+            R2 = P + (H - L)
+            S2 = P - (H - L)
+            
+            return {'P': P, 'R1': R1, 'S1': S1, 'R2': R2, 'S2': S2}
         except Exception as e:
+            logger.error(f"Pivot Calc Failed: {e}")
             return {}
 

@@ -20,12 +20,15 @@ class PatternEngine:
         patterns, last, prev = [], df.iloc[-1], df.iloc[-2]
         
         # v9.8: Body must be significantly larger than noise (0.1 * ATR)
-        body = abs(last.close - last.open)
-        is_significant = body > (0.1 * atr) if atr > 0 else True
+        body = abs(float(last.close) - float(last.open))
+        is_significant = body > (0.1 * float(atr)) if atr > 0 else True
+        
+        last_open, last_close = float(last.open), float(last.close)
+        prev_open, prev_close = float(prev.open), float(prev.close)
         
         if is_significant:
-            if last.close > prev.open and last.open < prev.close and prev.close < prev.open: patterns.append("BULLISH_ENGULFING")
-            if (min(last.open, last.close) - last.low) > (2 * body): patterns.append("HAMMER")
+            if last_close > prev_open and last_open < prev_close and prev_close < prev_open: patterns.append("BULLISH_ENGULFING")
+            if (min(last_open, last_close) - float(last.low)) > (2 * body): patterns.append("HAMMER")
         return patterns
 
     def detect_structural(self, df: pd.DataFrame) -> List[str]:
@@ -87,9 +90,10 @@ class RiskEngine:
         self.last_loss_time = 0
         self.win_streak = 0
         self.daily_pnl = 0.0
-        self.max_daily_loss = -500.0 
+        from infrastructure import APP_CONFIG
+        self.max_daily_loss = APP_CONFIG.get("MAX_DAILY_LOSS", -500.0)
         self.trades_today = 0
-        self.max_trades_per_day = 20 
+        self.max_trades_per_day = APP_CONFIG.get("MAX_TRADES_PER_DAY", 20)
         self.last_reset_date = datetime.now().date() # [Institutional Phase 6]
 
     def reset(self):
@@ -304,13 +308,53 @@ class DataSentinel:
 # ============================================================================
 
 class SessionAuditor:
+    """
+    [v9.9.9] Institutional Auditor: Tracks Signal Drift, Slippage, and Alpha Decay.
+    """
     def __init__(self):
         self.db = SupabaseManager()
+        self.audit_log = []
+
+    def record_execution(self, signal: Dict, fill_price: float, t_fill: datetime):
+        """Calculates drift and slippage for a trade."""
+        try:
+            t_signal = datetime.fromisoformat(signal['timestamp'].replace('Z', '+00:00'))
+            drift = (t_fill - t_signal).total_seconds()
+            
+            # Slippage: Diff between Entry Price (Signal) and Fill Price (Actual)
+            expected = signal['entry_price']
+            slippage = abs(fill_price - expected)
+            slippage_pct = (slippage / expected) * 100 if expected > 0 else 0
+            
+            audit_entry = {
+                "decision_id": signal['decision_id'],
+                "symbol": signal['symbol'],
+                "drift_sec": round(drift, 3),
+                "slippage_pts": round(slippage, 2),
+                "slippage_pct": round(slippage_pct, 4),
+                "timestamp": t_fill.isoformat()
+            }
+            self.audit_log.append(audit_entry)
+            logger.info(f"AUDIT: Recorded execution for {signal['symbol']} | Drift: {drift:.2f}s | Slippage: {slippage:.2f}pts")
+            
+            # Persist to cloud if possible
+            # self.db.log_audit(audit_entry) 
+        except Exception as e:
+            logger.error(f"AUDIT ERROR: {e}")
 
     def generate_daily_report(self, date_str: str = None) -> Dict:
-        history = self.db.get_history(limit=100)
-        if not history: return {"status": "NO_DATA"}
-        return {"status": "REPORT_PENDING", "trades": len(history)}
+        if not self.audit_log: return {"status": "NO_TRADES_AUDITED"}
+        
+        avg_drift = sum(d['drift_sec'] for d in self.audit_log) / len(self.audit_log)
+        avg_slip = sum(d['slippage_pts'] for d in self.audit_log) / len(self.audit_log)
+        
+        return {
+            "date": date_str or datetime.now().strftime("%Y-%m-%d"),
+            "total_trades": len(self.audit_log),
+            "avg_drift_sec": round(avg_drift, 3),
+            "avg_slippage_pts": round(avg_slip, 2),
+            "efficiency_score": round(max(0, 100 - (avg_drift * 10) - (avg_slip * 5)), 2)
+        }
 
 # ============================================================================
 # 5. Trap Hunter (Sidecar Execution)

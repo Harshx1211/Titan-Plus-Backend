@@ -57,6 +57,7 @@ class LiveState:
         self.option_chains = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
         self.supports = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
         self.resistances = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
+        self.history_cache = {"NIFTY": None, "BANKNIFTY": None, "SENSEX": None} # [v9.9.9] Architecture 10/10
         
         # v8.1: Statistical Discipline
         self.resets_today = 0
@@ -118,75 +119,119 @@ admin_token = os.getenv("ADMIN_TOKEN", "titan_admin_123") # Simple auth
 IST = pytz.timezone('Asia/Kolkata')
 live_state = LiveState()
 
-# Engines (Global placeholders initialized lazily in background thread)
-sentinel = None
-strategist = None
-skirmisher = None
-sr_engine = None
-brain = None
-evolver = None
-pattern_engine = None
-risk_engine = None
-tech_engine = None # [Phase 5]
-trap_hunter = None
-option_engine = None
-session_auditor = None
-db = None
-telegram_notifier = None
-data_provider = None
-shadow_engine = None
+# ============================================================================
+# Core Intelligence Orchestrator (Phase 3 Multi-Process Scaffolding)
+# ============================================================================
+
+class CoreEngine:
+    """
+    [v9.9.9] Central Orchestrator for all sub-engines.
+    Encapsulated to allow for future multi-process spawning.
+    """
+    def __init__(self, state: LiveState):
+        self.state = state
+        self.sentinel = None
+        self.strategist = None
+        self.sr_engine = None
+        self.brain = None
+        self.evolver = None
+        self.pattern_engine = None
+        self.risk_engine = None
+        self.tech_engine = None
+        self.trap_hunter = None
+        self.option_engine = None
+        self.session_auditor = None
+        self.health_monitor = None
+        self.db = None
+        self.telegram_notifier = None
+        self.data_provider = None
+        self.shadow_engine = None
+        self.is_initialized = False
+
+    def initialize(self):
+        """Lazy initialization of heavy engines with staggered loading."""
+        logger.info("CORE: Initializing institutional engines...")
+        import gc
+        from infrastructure import APP_CONFIG, SupabaseManager, DatabaseManager, TelegramNotifier, SystemHealthMonitor
+        from providers import DataProvider
+        from engines import DataSentinel, RiskEngine, PatternEngine, TrapHunter, SessionAuditor
+        from brain_engine_enhanced import EnhancedBrainEngine
+        from evolution_engine import EvolutionEngine
+        from strategist import MarketStrategist
+        from support_resistance import SupportResistanceEngine
+        from option_engine import OptionEngine
+        from technical_engine import TechnicalEngine
+        
+        self.db = DatabaseManager()
+        time.sleep(1)
+        self.telegram_notifier = TelegramNotifier()
+        time.sleep(1)
+        self.data_provider = DataProvider()
+        time.sleep(1)
+        
+        # Start Decoupled Heartbeats
+        threading.Thread(target=history_refresher_loop, args=(self.data_provider, self.state), daemon=True).start()
+        
+        self.sentinel = DataSentinel()
+        self.strategist = MarketStrategist()
+        self.sr_engine = SupportResistanceEngine()
+        self.health_monitor = SystemHealthMonitor()
+        self.session_auditor = SessionAuditor()
+        
+        # Heavy ML (Staggered)
+        self.brain = EnhancedBrainEngine(enable_rl=True, enable_smc=True)
+        gc.collect(); time.sleep(1)
+        self.evolver = EvolutionEngine(self.brain)
+        gc.collect(); time.sleep(1)
+        
+        self.pattern_engine = PatternEngine()
+        self.risk_engine = RiskEngine()
+        self.trap_hunter = TrapHunter()
+        self.option_engine = OptionEngine()
+        self.tech_engine = TechnicalEngine()
+        
+        if os.getenv("SHADOW_MODE", "false").lower() == "true":
+            from shadow_mode import ShadowMode
+            self.shadow_engine = ShadowMode()
+            
+        self.is_initialized = True
+        logger.info("CORE: System Fully Operational.")
+
+# Global instance for API routes
+core = CoreEngine(live_state)
+
 # Helper: Safe Brain Interface
 def call_brain_safely(action: str, **kwargs):
-    if brain is None:
+    if core.brain is None:
         return None, []
     
     try:
         if action == "DECIDE":
-            # [v3.0] Enhanced Brain Interface
-            res = brain.decide(
+            res = core.brain.decide(
                 features=kwargs.get("features"),
                 market_data=kwargs.get("market_data"),
                 ohlcv_df=kwargs.get("ohlcv_df"),
                 regime=kwargs.get("regime")
             )
-            
-            # Compatibility: api.py expects Tuple[str, List[str]] for DECIDE
             if isinstance(res, dict):
                 return res.get('decision_id', 'ERR'), res.get('thoughts', [])
             return res if res is not None else (None, [])
         elif action == "BOOST":
-            if shadow_mode_enabled and shadow_engine:
-                shadow_engine.compare_predictions(kwargs.get("features"), kwargs.get("regime"))
+            if core.shadow_engine:
+                core.shadow_engine.compare_predictions(kwargs.get("features"), kwargs.get("regime"))
             
-            res = brain.get_confidence_boost_ml(
+            res = core.brain.get_confidence_boost_ml(
                 features=kwargs.get("features"),
                 regime_val=kwargs.get("regime").value if hasattr(kwargs.get("regime"), 'value') else kwargs.get("regime"),
                 signal_intent=kwargs.get("signal_intent"),
                 iv_skew=kwargs.get("iv_skew", 1.0)
             )
-            
-            # Compatibility: api.py expects Tuple[float, List[str]] for BOOST
             if isinstance(res, dict):
                 return res.get('probability', 0.5), res.get('thoughts', [])
             if isinstance(res, tuple): return res
             return 0.5, []
-    except TypeError:
-        # Fallback to V1 signatures
-        try:
-            if action == "DECIDE":
-                return brain.generate_decision(
-                    features=kwargs.get("features"),
-                    regime=kwargs.get("regime"),
-                    is_commit=kwargs.get("is_commit", False),
-                    pattern_score=kwargs.get("pattern_score", 0.0)
-                )
-            elif action == "BOOST":
-                return brain.get_confidence_boost_ml(
-                    features=kwargs.get("features"),
-                    regime_val=kwargs.get("regime").value if hasattr(kwargs.get("regime"), 'value') else kwargs.get("regime")
-                )
-        except Exception as e:
-            logger.error(f"BRAIN: V1 fallback failed: {e}")
+    except Exception as e:
+        logger.error(f"BRAIN_PROXY_ERROR: {e}")
             
     return None, []
 
@@ -327,7 +372,7 @@ async def post_outcome(signal_id: str, outcome: str):
     """Appends an outcome to an existing signal intent."""
     if db is None:
         raise HTTPException(status_code=503, detail="Database engine initializing")
-    db.log_outcome(signal_id, outcome)
+    core.db.log_outcome(signal_id, outcome)
     return {"status": "outcome_logged"}
 
 @app.get("/history")
@@ -374,13 +419,13 @@ async def trigger_evolution(date: Optional[str] = None, token: str = None):
     """Triggers the Overnight Learning (Evolution) process."""
     if token != admin_token:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    if evolver is None:
+    if core.evolver is None:
         raise HTTPException(status_code=503, detail="Evolution engine initializing")
     
     live_state.is_learning = True
     live_state.add_thought("LEARN", f"Starting Overnight Evolutionary Audit for {date or 'today'}...")
     try:
-        result = evolver.evolve_session(date)
+        result = core.evolver.evolve_session(date)
 
         # Add specific learning results to thoughts
         for feat, rep in result.get("reputation_updates", {}).items():
@@ -417,13 +462,35 @@ async def toggle_execution(active: bool, token: str = None):
     logger.info(f"SYSTEM: Direct execution {msg}")
     return {"status": "Ok", "active": active}
 
+def history_refresher_loop(data_provider, state):
+    """[v9.9.9] Background thread to keep History Cache fresh (Architecture 10/10)."""
+    logger.info("ENGINE_BG: History Refresher Thread Started.")
+    while True:
+        try:
+            # Only refresh during market hours or if cache is empty
+            for symbol in state.symbols:
+                df = data_provider.get_history(symbol, interval="5minute")
+                if df is not None and not df.empty:
+                    state.history_cache[symbol] = df
+                    if random.random() < 0.01: # Rare log
+                        logger.info(f"CACHE: History refreshed for {symbol}")
+            
+            # Logic: Refresh every 5 minutes
+            time.sleep(300)
+        except Exception as e:
+            logger.error(f"ENGINE_BG: History refresh error: {e}")
+            time.sleep(30)
+
 def run_engine_loop():
     """
-    The background loop that handles extreme lazy initialization AND the analysis loop.
-    This ensures the API starts instantly while heavy work happens in the background.
+    [v9.9.9] Multi-Process Ready Main Loop.
+    Uses core instance for all business logic and execution.
     """
+    if not core.is_initialized:
+        core.initialize()
+    
     global sentinel, strategist, skirmisher, sr_engine, brain, evolver, pattern_engine, risk_engine, trap_hunter, shadow_engine
-    global option_engine, db, telegram_notifier, data_provider, session_auditor, APP_CONFIG, evolution_done_date
+    global option_engine, db, telegram_notifier, data_provider, session_auditor, health_monitor, APP_CONFIG, evolution_done_date
     
     logger.info("ENGINE: Initializing background services (Lazy Phase)...")
     
@@ -452,6 +519,9 @@ def run_engine_loop():
         from support_resistance import SupportResistanceEngine
         from option_engine import OptionEngine
         from technical_engine import TechnicalEngine # [Phase 5]
+        from infrastructure import SystemHealthMonitor, DataHealthError
+        
+        health_monitor = SystemHealthMonitor()
         
         # Sequence initialization with GC to prevent peak RAM spikes
         db = DatabaseManager()
@@ -460,6 +530,9 @@ def run_engine_loop():
         time.sleep(1)
         data_provider = DataProvider()
         time.sleep(1)
+        
+        # [v9.9.9] Start Decoupled Heartbeats
+        threading.Thread(target=history_refresher_loop, args=(data_provider, live_state), daemon=True).start()
         
         if data_provider.use_groww:
             live_state.data_source = "GROWW_API"
@@ -538,6 +611,8 @@ def run_engine_loop():
 
     while True:
         try:
+            # [Institutional Phase 6] WebSocket Atomic Snapshot
+            now = datetime.now(IST)
             # [v9.9.9] Connectivity Heartbeat
             source_info = data_provider.get_status()
             live_state.add_thought("MONITOR", f"Data Source Status: {source_info['status']} ({source_info['name']})")
@@ -586,7 +661,7 @@ def run_engine_loop():
                             logger.info(f"INTELLIGENCE: Evolution skipped: {reason}")
                             
                         if results and results.get("governor_status"):
-                            telegram_notifier.send_alert(f"🧠 *Overnight Intelligence*: Evolution process finished for {today_str}.\nStatus: {results.get('governor_status')}")
+                            core.telegram_notifier.send_alert(f"🧠 *Overnight Intelligence*: Evolution process finished for {today_str}.\nStatus: {results.get('governor_status')}")
                     except Exception as e:
                         live_state.is_learning = False
                         logger.error(f"INTELLIGENCE: Evolution failed: {e}")
@@ -619,6 +694,8 @@ def run_engine_loop():
 
                 time.sleep(60)
                 continue
+            
+            t_loop_start = time.time()
 
             # [Institutional Phase 6] WebSocket Atomic Snapshot
             # Transitioned from 1s Polling to 200ms Reactive Cycle
@@ -646,6 +723,14 @@ def run_engine_loop():
                         source="SHOONYA_WS"
                     )
                     
+                    # [v9.9.9] Audit Fix: Stale Data Guard
+                    data_age_seconds = (datetime.now() - market_data.timestamp).total_seconds()
+                    if data_age_seconds > 10:
+                        if random.random() < 0.1: # Throttle logs
+                            logger.warning(f"STALE_DATA: {symbol} data is {data_age_seconds:.1f}s old. Skipping analysis.")
+                        live_state.market_message = f"STALE DATA VETO: {symbol} Lag detected ({data_age_seconds:.1f}s)"
+                        continue
+
                     live_state.prices[symbol] = market_data.spot_price
                     detected_patterns = []
                     signal_type = None
@@ -660,7 +745,7 @@ def run_engine_loop():
                         continue
 
                     # 2. Triangulation (Sentinel v2)
-                    live_state.integrity = sentinel.check_integrity(
+                    live_state.integrity = core.sentinel.check_integrity(
                         market_data.spot_price, 
                         market_data.future_price,
                         vix=live_state.vix
@@ -678,9 +763,18 @@ def run_engine_loop():
                         continue
 
                     # 3. Regime Detection & Indicators
-                    hist_df = data_provider.get_history(symbol, interval="5minute")
-                    if hist_df.empty:
-                        continue
+                    # [v9.9.9] Decoupled: Read from History Cache instead of synchronous API call
+                    hist_df = live_state.history_cache.get(symbol)
+                    
+                    if hist_df is None or hist_df.empty:
+                        # Fallback for initial startup ONLY (Synchronous fetch if cache empty)
+                        if random.random() < 0.05: # Rare logging
+                            logger.info(f"CACHE_MISS: Priming history for {symbol}...")
+                        hist_df = data_provider.get_history(symbol, interval="5minute")
+                        if hist_df is not None:
+                            live_state.history_cache[symbol] = hist_df
+                        else:
+                            continue
 
                     # [v9.9.9] Technical Indicators Calculation
                     # ADX
@@ -701,7 +795,7 @@ def run_engine_loop():
                     # [Institutional Step 4] Realized Volatility (StdDev)
                     std_dev_val = hist_df['close'].tail(20).std() if len(hist_df) >= 20 else 0.0
 
-                    live_state.current_regime = strategist.classify_regime(hist_df)
+                    live_state.current_regime = core.strategist.classify_regime(hist_df)
                     curr_strength = (market_data.spot_price - hist_df.open.iloc[0]) / hist_df.open.iloc[0] * 100
                     live_state.index_strengths[symbol] = curr_strength
 
@@ -723,30 +817,16 @@ def run_engine_loop():
                     macro_zones = pattern_engine.detect_macro_zones(macro_df)
                     
                     # Pattern Recognition
-                    pattern_results = pattern_engine.get_signal_confirmation(
+                    pattern_results = core.pattern_engine.get_signal_confirmation(
                         hist_df, macro_bias=macro_bias, macro_zones=macro_zones, atr=atr_val
                     )
                     live_state.add_thought("ANALYSIS", f"[{symbol}] Pattern Score: {pattern_results['score']:.2f}. Found: {', '.join(pattern_results.get('patterns') or ['NONE'])}")
 
                     # Option Chain
-
-                    # [Phase 3.5] Killzone Logic
-                    now_time_obj = datetime.now(IST).time() # IST
-                    killzone_1_start = datetime.strptime("09:15", "%H:%M").time()
-                    killzone_1_end = datetime.strptime("10:00", "%H:%M").time()
-                    killzone_2_start = datetime.strptime("14:30", "%H:%M").time()
-                    killzone_2_end = datetime.strptime("15:00", "%H:%M").time()
-                    
-                    in_killzone = (killzone_1_start <= now_time_obj <= killzone_1_end) or (killzone_2_start <= now_time_obj <= killzone_2_end)
-                    if in_killzone:
-                        live_state.add_thought("RISK", f"Inside Volatility Killzone ({now_time_obj.strftime('%H:%M')}). Suppressing Signals.")
-                        pattern_results["score"] *= 0.25 # Severe penalty
-
-                    # Option Chain
                     chain_df, is_synthetic = data_provider.get_option_chain(symbol)
                     if not chain_df.empty:
                         live_state.max_pain[symbol] = option_engine.calculate_max_pain(chain_df)
-                        live_state.option_battles[symbol] = option_engine.detect_strike_battles(chain_df)
+                        live_state.option_battles[symbol] = core.option_engine.detect_strike_battles(chain_df)
                         live_state.option_chains[symbol] = chain_df.to_dict('records')
                         gex_data = option_engine.calculate_gex_proxy(chain_df, market_data.spot_price)
                         live_state.gex_bias[symbol] = gex_data["gex_bias"]
@@ -877,8 +957,8 @@ def run_engine_loop():
                         
                         if is_takeover and live_signal:
                             live_signal.is_live = False
-                            db.log_outcome(live_signal.decision_id, "SWAP_EXIT")
-                            telegram_notifier.send_alert(f"🔄 SWAP: Closing {live_signal.symbol} for better setup in {symbol}.")
+                            core.db.log_outcome(live_signal.decision_id, "SWAP_EXIT")
+                            core.telegram_notifier.send_alert(f"🔄 SWAP: Closing {live_signal.symbol} for better setup in {symbol}.")
 
                         if signal_type == "BULLISH" and any(abs(market_data.spot_price - r) < 25 for r in live_state.resistances.get(symbol, [])): continue
                         if signal_type == "BEARISH" and any(abs(market_data.spot_price - s) < 25 for s in live_state.supports.get(symbol, [])): continue
@@ -925,7 +1005,7 @@ def run_engine_loop():
                             
                             # Calculate potential edge (Target)
                             # We need target and SL from risk engine first to calculate edge
-                            smart_risk = risk_engine.calculate_dynamic_stops(
+                            smart_risk = core.risk_engine.calculate_dynamic_stops(
                                 entry_price=market_data.spot_price,
                                 signal_type=signal_type,
                                 atr=atr_val,
@@ -951,7 +1031,7 @@ def run_engine_loop():
                                 logic_version="v9.9.9_HF", spread_at_entry=current_spread,
                                 slippage_est=slippage_est, expected_edge=expected_edge,
                                 iv_scaling=iv_scaling, greeks=greeks,
-                                quantity=round(risk_engine.get_suggested_size(applied_boost, APP_CONFIG.get("BASE_LOTS", 1), atr=atr_val, std_dev=std_dev_val, vix=live_state.vix) * iv_scaling),
+                                quantity=round(core.risk_engine.get_suggested_size(applied_boost, APP_CONFIG.get("BASE_LOTS", 1), atr=atr_val, std_dev=std_dev_val, vix=live_state.vix) * iv_scaling),
                                 score=pattern_results["score"], **opt_trade
                             )
                             # [Institutional Phase 6] Automated Order Bridge & Latency Monitor
@@ -976,6 +1056,16 @@ def run_engine_loop():
                                             new_signal.latency_ms = (t_order_ack - t_signal) * 1000
                                             new_signal.fill_time = datetime.now(timezone.utc)
                                             logger.info(f"LATENCY: {new_signal.symbol} Signal-to-Ack: {new_signal.latency_ms:.2f}ms | OrderID: {new_signal.order_id}")
+                                            
+                                            # [v9.9.9] Performance Audit
+                                            try:
+                                                core.session_auditor.record_execution(
+                                                    signal=new_signal.dict(),
+                                                    fill_price=market_data.spot_price, # Assuming spot as fill reference for now
+                                                    t_fill=new_signal.fill_time
+                                                )
+                                            except Exception as ae:
+                                                logger.warning(f"AUDIT_FAILURE: {ae}")
                                         else:
                                             emsg = order_res.get('emsg', 'Unknown Broker Error')
                                             new_signal.rejection_reasons.append(f"BROKER_REJECT: {emsg}")
@@ -988,7 +1078,7 @@ def run_engine_loop():
                                     new_signal.rejection_reasons.append("DIRECT_EXECUTION_DISABLED")
 
                             live_state.active_signals.append(new_signal)
-                            telegram_notifier.send_signal(new_signal.dict(), dashboard_url=APP_CONFIG.get("DASHBOARD_URL", ""))
+                            core.telegram_notifier.send_signal(new_signal.dict(), dashboard_url=APP_CONFIG.get("DASHBOARD_URL", ""))
 
                     # 7. Management
                     for sig in live_state.active_signals:
@@ -1005,24 +1095,33 @@ def run_engine_loop():
                         if not sig.is_tsl_active and p_delta >= (0.5 * sig.target):
                             sig.is_tsl_active = True
                             sig.stop_loss = 0.0
-                            telegram_notifier.send_alert(f"🛡️ TSL: {sig.symbol} at Break-Even.")
+                            core.telegram_notifier.send_alert(f"🛡️ TSL: {sig.symbol} at Break-Even.")
 
                         is_target, is_sl = p_delta >= sig.target, p_adv >= (sig.stop_loss if not sig.is_tsl_active else 0.0)
                         if is_target or is_sl:
                             sig.is_live = False
                             is_win = p_delta > 0
-                            brain.log_snapshot(sig.decision_id, outcome=is_win, performance={"mfe": sig.mfe, "mae": sig.mae}, freeze_authority=is_passive)
-                            db.log_outcome(sig.decision_id, "WIN" if is_win else "LOSS")
-                            telegram_notifier.send_alert(f"{'✅' if is_win else '❌'} EXIT: {sig.symbol} | PnL: {p_delta:.1f}")
+                            core.brain.log_snapshot(sig.decision_id, outcome=is_win, performance={"mfe": sig.mfe, "mae": sig.mae}, freeze_authority=is_passive)
+                            core.db.log_outcome(sig.decision_id, "WIN" if is_win else "LOSS")
+                            core.telegram_notifier.send_alert(f"{'✅' if is_win else '❌'} EXIT: {sig.symbol} | PnL: {p_delta:.1f}")
 
                 except Exception as e:
                     logger.error(f"ENGINE SYMBOL ERROR [{symbol}]: {e}", exc_info=True)
+                
+                # [v9.9.9] Record Loop Health
+                loop_lat = (time.time() - t_loop_start) * 1000
+                core.health_monitor.record_latency(loop_lat)
 
             if len(live_state.active_signals) > 20:
                 live_state.active_signals = live_state.active_signals[-20:]
             
             # [Institutional Phase 6] Tight 200ms reactive cycle
             time.sleep(0.2)
+        except DataHealthError as de:
+            logger.critical(f"HEALTH_HALT: {de}")
+            core.telegram_notifier.send_alert(f"🚨 <b>CRITICAL SYSTEM HALT</b>\nAll data sources down. Engine entering SAFE_MODE.\nReason: {de}")
+            live_state.market_message = "🔴 EMERGENCY HALT: DATA LOSS"
+            time.sleep(300) # Cooldown before retry
         except Exception as e:
             logger.error(f"ENGINE CRITICAL: {e}", exc_info=True)
             time.sleep(10)

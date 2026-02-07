@@ -22,6 +22,8 @@ from datetime import datetime, timezone
 import json
 import threading
 import queue
+import gc
+import time
 from collections import deque
 
 # [v9.9.9] Suppress legacy model version warnings
@@ -118,6 +120,8 @@ class EnhancedBrainEngine:
         # Initialize XGBoost model
         self.model: Optional[XGBClassifier] = None
         self._load_xgboost_model()
+        gc.collect() # [v9.9.9] Staggered RAM Management
+        time.sleep(1)
         
         # Initialize RL Engine
         self.rl_engine = None
@@ -132,6 +136,8 @@ class EnhancedBrainEngine:
                     self.rl_engine = RLEvolutionEngine()
                     self.rl_engine.load_state("rl_state.pt")
                     logger.info("BRAIN: RL Engine (DQN) activated")
+                gc.collect()
+                time.sleep(1)
             except Exception as e:
                 logger.warning(f"BRAIN: RL Engine initialization failed: {e}")
                 self.enable_rl = False
@@ -142,6 +148,8 @@ class EnhancedBrainEngine:
             try:
                 self.smc_engine = GrandmasterSMCEngine()
                 logger.info("BRAIN: SMC Engine activated")
+                gc.collect()
+                time.sleep(1)
             except Exception as e:
                 logger.warning(f"BRAIN: SMC Engine initialization failed: {e}")
                 self.enable_smc = False
