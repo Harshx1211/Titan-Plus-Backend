@@ -288,11 +288,14 @@ class TradeSignal(BaseModel):
     action: Action
     strike: Optional[float] = None
     option_type: Optional[str] = None  # CE or PE
+    option_symbol: Optional[str] = None
     quantity: int
     entry_price: float
     stop_loss: float
     target: float
     confidence: SignalConfidence
+    regime: Optional[Regime] = None
+    reasoning: Optional[str] = None
     decision_id: str
     timestamp: datetime
     divergence: DivergenceType = DivergenceType.NONE
@@ -301,7 +304,18 @@ class TradeSignal(BaseModel):
     mae: float = 0.0
     is_tsl_active: bool = False
     
+    # Audit & Tracking
+    score: float = 0.0
+    logic_version: str = "v9.9.9"
+    spread_at_entry: float = 0.0
+    
+    # Premium Fields
+    premium_entry: Optional[float] = None
+    premium_sl: Optional[float] = None
+    premium_target: Optional[float] = None
+    
     class Config:
+        extra = "allow"
         json_encoders = {
             datetime: lambda v: v.isoformat()
         }
