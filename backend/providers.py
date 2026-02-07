@@ -122,6 +122,9 @@ class ShoonyaProvider:
                 year_code = datetime.now().strftime("%y") # 26
                 exch = "BFO" if symbol == "SENSEX" else "NFO"
                 
+                # [Phase 17] Ensure session is alive before heavy derivatives scan
+                time.sleep(1) # Stagger to avoid API overwhelm
+                
                 # Try multiple search patterns (Ordered by probability)
                 searches = [
                     f"{symbol} {month_code} FUT",        # Generic: "NIFTY FEB FUT"
@@ -133,11 +136,13 @@ class ShoonyaProvider:
                 found_fut = False
                 for pattern in searches:
                     try:
+                        # Extra robustness: Check if search returns None (Hanging)
                         res = self.api.searchscrip(exchange=exch, searchtext=pattern)
-                        if res and res.get('stat') == 'Ok' and res.get('values'):
+                        
+                        if res and isinstance(res, dict) and res.get('stat') == 'Ok' and res.get('values'):
                             # Log what we found for diagnostics
                             sample = [f"{v.get('tsym')}:{v.get('instname')}" for v in res['values'][:5]]
-                            logger.info(f"VALIDATION_PULSE: Search [{pattern}] in {exch} found: {sample}")
+                            logger.info(f"VALIDATION_PULSE: Search [{pattern}] in {exch} success. Found {len(res['values'])} items. Samples: {sample}")
                             
                             for v in res['values']:
                                 tsym = v.get('tsym', '')
@@ -149,20 +154,23 @@ class ShoonyaProvider:
                                     found_fut = True
                                     break
                         else:
-                            # [Essential] Log why the search failed at INFO level
-                            logger.info(f"VALIDATION_PULSE: Search [{pattern}] in {exch} failed. Stat: {res.get('stat') if res else 'None'}. Full: {res}")
+                            # Log raw failure to identify "None" or "Not_Ok"
+                            logger.info(f"VALIDATION_PULSE: Search [{pattern}] in {exch} -> Stat: {res.get('stat') if res and isinstance(res, dict) else 'None'}. Full: {res}")
                     except Exception as e:
-                        logger.error(f"VALIDATION_PULSE: Error during search [{pattern}]: {e}")
+                        logger.error(f"VALIDATION_PULSE: Search [{pattern}] Exception: {e}")
                     
                     if found_fut: break
+                    time.sleep(0.5) # Slight pause between retries
                 
                 if not found_fut:
-                    logger.warning(f"VALIDATION_PULSE: Critical failure to map {symbol} Future.")
+                    logger.warning(f"VALIDATION_PULSE: Critical failure to map {symbol} Future (Derivative Segment may be offline/maintenance).")
             
-            # 3. Verify India VIX
+            # 3. Verify India VIX (NSE Index - usually very stable)
+            time.sleep(1)
             vix_res = self.api.searchscrip(exchange="NSE", searchtext="INDIA VIX")
-            if vix_res and vix_res.get('stat') == 'Ok' and vix_res.get('values'):
+            if vix_res and isinstance(vix_res, dict) and vix_res.get('stat') == 'Ok' and vix_res.get('values'):
                 self.index_tokens["INDIA VIX"] = ("NSE", vix_res['values'][0]['token'])
+                logger.info(f"VALIDATION_PULSE: INDIA VIX verified -> {vix_res['values'][0]['token']}")
                 
             logger.info(f"VALIDATION_PULSE: All tokens verified. Indices: {len(self.index_tokens)}, Futures: {len(self.future_tokens)}")
         except Exception as e:
