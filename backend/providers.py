@@ -134,11 +134,16 @@ class ShoonyaProvider:
                 for pattern in searches:
                     res = self.api.searchscrip(exchange=exch, searchtext=pattern)
                     if res and res.get('stat') == 'Ok' and res.get('values'):
+                        # [Diagnostic] Log first 3 results to see format
+                        sample = [f"{v.get('tsym')}:{v.get('instname')}" for v in res['values'][:3]]
+                        logger.debug(f"SEARCH_DIAG [{pattern}]: {sample}")
+                        
                         for v in res['values']:
-                            tsym = v['tsym']
+                            tsym = v.get('tsym', '')
+                            inst = v.get('instname', '')
                             # Must contain month and year OR just be the most liquid future
                             if (month_code in tsym and year_code in tsym) and \
-                               (v['instname'] in ['FUTIDX', 'FUTSTK']):
+                               (inst in ['FUTIDX', 'FUTSTK', 'FUTCOM', 'FUTCUR']):
                                 self.future_tokens[symbol] = (exch, v['token'])
                                 logger.info(f"VALIDATION_PULSE: Mapped {symbol} Future -> {tsym} ({v['token']})")
                                 found_fut = True
