@@ -112,7 +112,37 @@ This document contains the proprietary institutional logic, mathematical formula
 
 ---
 
+## Phase 6: Chetan Singh Institutional Integration
+*Based on Strategy Deployment Pack (Feb 5, 2026)*
+
+Integration of 5 core intraday/scalping setups from Chetan Singh's Nifty/BankNifty literature, reinforced with Titan Plus SMC filters.
+
+### 1. Hammer Reversal Scalp (S1 Support)
+*   **Killzone**: 09:15 - 10:30 IST.
+*   **Trigger**: Hammer at S1 Pivot (±0.5%).
+*   **Nuclear Filter**: `Wick > 2.5x Body` AND `RSI < 35` AND `Volume > 2.5x 20MA`.
+*   **Alignment**: Bullish Order Block touch or proximity.
+
+### 2. Bullish Engulfing R1 Rejection
+*   **Killzone**: 14:15 - 15:00 IST.
+*   **Condition**: Prior bearish candle fully engulfed at R1 resistance level.
+*   **Bias**: Counter-trend rejection or breakout support flip.
+
+### 3. Doji Central Pivot Reversal
+*   **Logic**: Doji formation within 0.2% of Central Pivot.
+*   **Confirmation**: Next candle close above Doji high + Positive MACD Histogram.
+
+### 4. Three White Soldiers (Institutional Breakout)
+*   **Pattern**: 3 consecutive bullish candles with closes > 70% of candle range.
+*   **Confluence**: Price above VWAP + RSI Divergence resolution.
+
+### 5. Evening Star R2 Rejection (Bearish)
+*   **Setup**: Evening star sequence (Large Bull -> Star -> Large Bear) at R2.
+*   **Filter**: `RSI > 70` AND `Volume Declining` on Star candle.
+
+---
+
 ### Implementation Target
 *   **Input Layer**: 127 Features (42 SMC, 35 Vol, 25 Options, 15 Macro, 10 Time).
-*   **Architecture**: Transformer + LSTM (Sequence Context).
-*   **Backtest Metrics**: 67.2% Win Rate, 2.1 Profit Factor (2024-2026 data).
+*   **Strategy Core**: `book_strategies.py` (Hammer, Engulfing, Doji, Soldiers, Evening Star).
+*   **Backtest Goal**: >70% Combined Win Rate (SMC + Chetan Hybrid).
