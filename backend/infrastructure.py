@@ -469,6 +469,9 @@ class DatabaseManager:
     def get_accuracy_report(self) -> Dict:
         return self.cloud_db.get_accuracy_report()
 
+    def get_active_signals(self) -> List[Dict]:
+        return self.cloud_db.get_active_signals()
+
 # 5. [Institutional Phase 6] Market State (Atomic Snapshot)
 # ============================================================================
 
