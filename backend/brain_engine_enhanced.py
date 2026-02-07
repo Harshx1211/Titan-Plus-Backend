@@ -180,10 +180,12 @@ class EnhancedBrainEngine:
         if log_dir and not os.path.exists(log_dir):
             os.makedirs(log_dir, exist_ok=True)
             
-        # [Institutional Phase 6] Async Logging Queue
-        self.log_queue = queue.Queue()
+        # [Institutional Step 1] Log decision context for post-mortem
         self.log_thread = threading.Thread(target=self._async_log_writer, daemon=True)
         self.log_thread.start()
+        
+        # [v9.9.9] Persistence Pulse: Load existing state
+        self.load_state()
             
         logger.info(f"BRAIN: Enhanced Brain Engine initialized (RL={enable_rl}, SMC={enable_smc}) | Version: {self.model_version}")
     

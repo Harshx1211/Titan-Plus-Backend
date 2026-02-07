@@ -203,9 +203,6 @@ IST = pytz.timezone('Asia/Kolkata')
 live_state = LiveState()
 core = CoreEngine(live_state)
 
-# Global instance for API routes
-core = CoreEngine(live_state)
-
 # Helper: Safe Brain Interface
 def call_brain_safely(action: str, **kwargs):
     if core.brain is None:
