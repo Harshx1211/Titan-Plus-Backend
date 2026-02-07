@@ -149,7 +149,8 @@ class ShoonyaProvider:
                                     found_fut = True
                                     break
                         else:
-                            logger.debug(f"VALIDATION_PULSE: Search [{pattern}] in {exch} returned no values or error: {res.get('stat') if res else 'None'}")
+                            # [Essential] Log why the search failed at INFO level
+                            logger.info(f"VALIDATION_PULSE: Search [{pattern}] in {exch} failed. Stat: {res.get('stat') if res else 'None'}. Full: {res}")
                     except Exception as e:
                         logger.error(f"VALIDATION_PULSE: Error during search [{pattern}]: {e}")
                     
