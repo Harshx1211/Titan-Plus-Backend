@@ -185,18 +185,19 @@ const SignalCard = ({ signal, onExecute }: { signal: TradeSignal, onExecute: (id
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.02] to-transparent -translate-x-full group-hover/matrix:animate-shimmer pointer-events-none" />
           </div>
 
-          <div className="flex flex-row md:flex-col gap-4 min-w-[280px]">
-            <button
-              onClick={() => signal.decision_id && onExecute(signal.decision_id)}
-              className={`flex-1 md:flex-none h-full md:h-24 bg-${accentColor}-600 hover:bg-${accentColor}-500 text-white font-black rounded-2xl shadow-lg shadow-${accentColor}-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-4 group/btn overflow-hidden relative`}
-            >
-              <Zap className="w-6 h-6 fill-white group-hover/btn:scale-125 transition-transform" />
-              <span className="text-sm tracking-[0.2em] font-black uppercase">Deploy Capital</span>
-              <div className="absolute inset-x-0 h-full w-24 bg-white/20 skew-x-[-20deg] -translate-x-full group-hover/btn:animate-shimmer" />
-            </button>
-            <button className="flex-1 md:flex-none md:h-14 bg-white/5 hover:bg-rose-500/10 hover:text-rose-400 text-slate-500 font-black rounded-xl border border-white/5 text-[10px] tracking-widest uppercase transition-all">
-              Veto Protocol
-            </button>
+          <div className="flex flex-col justify-center gap-4 min-w-[280px] premium-glass p-6 md:p-8 rounded-2xl border border-blue-500/20 bg-blue-500/[0.02]">
+            <div className="flex items-center gap-4">
+              <div className="w-4 h-4 rounded-full bg-blue-500 animate-pulse shadow-[0_0_15px_rgba(59,130,246,0.8)]" />
+              <div className="space-y-1">
+                <span className="text-xs sm:text-sm font-black text-white uppercase tracking-[0.2em]">Auto-Approved</span>
+                <p className="text-[9px] text-blue-400 font-mono font-bold uppercase tracking-widest">Logic Authority Locked</p>
+              </div>
+            </div>
+            <div className="h-px bg-white/5 w-full" />
+            <div className="flex items-center gap-3">
+              <Shield className="w-4 h-4 text-slate-500" />
+              <p className="text-[10px] text-slate-500 font-bold italic">Full Responsibility Mode Active</p>
+            </div>
           </div>
         </div>
       </div>
