@@ -99,157 +99,80 @@ class TelegramNotifier:
         else:
             logging.warning("TELEGRAM: Notifications DISABLED (Check .env for TOKEN/CHAT_ID)")
 
-    def _should_send(self, content: str) -> bool:
-        """[v9.9.9] Prevents sending the same message more than twice."""
-        if not self.enabled: return False
-        count = self.sent_messages.get(content, 0)
-        if count >= 2:
-            logging.warning(f"TELEGRAM SPAM VETO: Message already sent {count} times.")
-            return False
-        self.sent_messages[content] = count + 1
-        return True
+from notifier import TitanNotifier
 
-    def _test_connection(self):
-        # [v9.9.9] Atomic DNS Bypass: If standard DNS fails, use DoH fallback
-        try:
-            socket.gethostbyname("api.telegram.org")
-        except socket.gaierror:
-            self._apply_doh_bypass()
-            
-        try:
-            url = f"https://api.telegram.org/bot{self.bot_token}/getMe"
-            response = requests.get(url, timeout=5)
-            if response.status_code != 200:
-                self.enabled = False
-                logging.error(f"TELEGRAM: Connection failed ({response.status_code}): {response.text}")
-            else:
-                logging.info("TELEGRAM: Connection verified successfully.")
-        except requests.exceptions.ConnectionError:
-            # [v9.9.9] Silently handle DNS/Connection issues - typical in Restricted/HF Environments
-            pass
-        except Exception as e:
-            self.enabled = False
-            logging.error(f"TELEGRAM: Permanent initialization failure: {e}")
-
-    def _apply_doh_bypass(self):
-        """[v9.9.9] Nuclear DNS Fix: Resolves api.telegram.org via DoH and patches socket layer."""
-        try:
-            logging.info("TELEGRAM: Standard DNS failed. Attempting Institutional DNS Bypass (DoH)...")
-            doh_url = "https://cloudflare-dns.com/dns-query"
-            params = {"name": "api.telegram.org", "type": "A"}
-            headers = {"Accept": "application/dns-json"}
-            resp = requests.get(doh_url, params=params, headers=headers, timeout=5)
-            
-            if resp.status_code == 200:
-                data = resp.json()
-                ips = [a["data"] for a in data.get("Answer", []) if a["type"] == 1]
-                if ips:
-                    target_ip = ips[0]
-                    # Patching socket for this specific domain
-                    import socket
-                    orig_getaddrinfo = socket.getaddrinfo
-                    def patched_getaddrinfo(host, port, *args, **kwargs):
-                        if host == "api.telegram.org":
-                            return orig_getaddrinfo(target_ip, port, *args, **kwargs)
-                        return orig_getaddrinfo(host, port, *args, **kwargs)
-                    socket.getaddrinfo = patched_getaddrinfo
-                    logging.info(f"TELEGRAM: Institutional DNS Bypass SUCCESS. Mapped to {target_ip}")
-                    return True
-        except Exception as e:
-            logging.error(f"TELEGRAM: DNS Bypass Failed: {e}")
-        return False
-
-    def send_signal(self, signal: Dict, dashboard_url: str = "") -> bool:
-        if not self.enabled or not self.circuit.can_proceed(): return False
-        # [Anti-Spam] Track signals by decision_id or content
-        msg_id = f"SIGNAL_{signal.get('decision_id', 'UNKNOWN')}"
-        if not self._should_send(msg_id): return False
+class TelegramNotifier:
+    """
+    [v9.9.9] High-Level Notifier Wrapper.
+    Proxies to the specialized notifier package for premium formatting.
+    """
+    def __init__(self):
+        self.bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        self.chat_id = os.getenv("TELEGRAM_CHAT_ID")
+        self.enabled = all([self.bot_token, self.chat_id])
+        self.engine = TitanNotifier(self.bot_token, self.chat_id) if self.enabled else None
         
+        if self.enabled:
+            # Check DNS stability for Hugging Face
+            self._verify_dns()
+
+    def _verify_dns(self):
+        """Institutional DNS Bypass for Hugging Face."""
         try:
-            direction = "🟢 BULLISH" if "BULLISH" in signal.get('reasoning', '') or "BULLISH" in signal.get('type', '') else "🔴 BEARISH"
-            conf_val = signal.get('confidence_val', 0.85)
-            conf_pct = f"({conf_val*100:.0f}%)" if conf_val else ""
-            
-            message = (
-                f"💎 <b>TITAN INSTITUTIONAL SIGNAL</b> 💎\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"📟 <b>ID:</b> #{signal.get('decision_id', 'N/A')}\n"
-                f"📈 <b>Direction:</b> {direction}\n"
-                f"🏦 <b>Symbol:</b> {signal.get('symbol', 'NIFTY')}\n"
-                f"📦 <b>Instrument:</b> {signal.get('option_symbol', 'OPTION')}\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"💰 <b>EXECUTION MATRIX</b>\n"
-                f"├─ <b>Entry:</b> ₹{(signal.get('premium_entry') or 0.0):.2f}\n"
-                f"├─ <b>SL:</b> ₹{(signal.get('premium_sl') or 0.0):.2f}\n"
-                f"└─ <b>Target:</b> ₹{(signal.get('premium_target') or 0.0):.2f}\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"🧠 <b>BRAIN INTELLIGENCE</b>\n"
-                f"├─ <b>Confidence:</b> {signal.get('confidence', 'MEDIUM')} {conf_pct}\n"
-                f"└─ <b>Regime:</b> {signal.get('regime', 'TRENDING')}\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-            )
-            if dashboard_url: message += f"🔗 <a href='{dashboard_url}'>COMMAND CENTER</a>"
-            
-            url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
-            resp = requests.post(url, json={"chat_id": self.chat_id, "text": message, "parse_mode": "HTML"}, timeout=10)
-            if resp.status_code != 200:
-                logging.error(f"TELEGRAM: Signal failed ({resp.status_code}): {resp.text}")
-                self.circuit.record_failure()
-                return False
-            self.circuit.record_success()
-            return True
-        except Exception as e:
-            self.circuit.record_failure()
-            msg = f"TELEGRAM: Signal exception: {e}"
-            if "NameResolutionError" in str(e) or "ConnectionError" in str(e):
-                logging.warning(msg)
-            else:
-                logging.error(msg)
-            return False
+            import socket
+            socket.gethostbyname("api.telegram.org")
+            logging.info("TELEGRAM: DNS resolved normally.")
+        except Exception:
+            logging.info("TELEGRAM: Standard DNS failed. Attempting Institutional DNS Bypass (DoH)...")
+            try:
+                import requests
+                doh_url = "https://1.1.1.1/dns-query?name=api.telegram.org"
+                resp = requests.get(doh_url, headers={"accept": "application/dns-json"}, timeout=5)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for answer in data.get("Answer", []):
+                        if answer["type"] == 1:
+                            target_ip = answer["data"]
+                            import socket
+                            orig_getaddrinfo = socket.getaddrinfo
+                            def patched_getaddrinfo(host, port, *args, **kwargs):
+                                if host == "api.telegram.org":
+                                    return orig_getaddrinfo(target_ip, port, *args, **kwargs)
+                                return orig_getaddrinfo(host, port, *args, **kwargs)
+                            socket.getaddrinfo = patched_getaddrinfo
+                            logging.info(f"TELEGRAM: Institutional DNS Bypass SUCCESS. Mapped to {target_ip}")
+                            break
+            except Exception as e:
+                logging.error(f"TELEGRAM: DNS Bypass Failed: {e}")
+
+    def send_signal(self, signal: dict, dashboard_url: str = ""):
+        if not self.enabled: return
+        # Inject dashboard URL link text
+        if dashboard_url:
+            signal['reasoning'] += f"\n• <a href='{dashboard_url}'>COMMAND CENTER</a>"
+        self.engine.send_entry(signal)
+
+    def send_exit(self, signal_data: dict, reason: str, analysis: str):
+        if not self.enabled: return
+        self.engine.send_exit(signal_data, reason, analysis)
 
     def send_alert(self, message: str):
-        """Standard alert dispatch."""
-        self._dispatch(message)
+        if not self.enabled: return
+        self.engine.send_alert("SYSTEM ALERT", message)
 
-    def send_personalized_greeting(self, name: str):
-        """[v9.9.9] Personal morning touch."""
-        msg = f"🌅 <b>Good morning {name}!</b>\nMay the trend be with you today. Have a productive and green day ahead! 🚀"
-        self._dispatch(msg)
+    def send_personalized_greeting(self, name: str, stats: dict = None):
+        if not self.enabled: return
+        # INSTITUTIONAL_WISDOM is already defined globally in infrastructure.py
+        import random
+        wisdom = random.choice(INSTITUTIONAL_WISDOM)
+        self.engine.send_greeting(stats or {}, wisdom)
 
     def send_random_wisdom(self):
-        """[v9.9.9] Institutional psychology reminder."""
+        if not self.enabled: return
         import random
         wisdom = random.choice(INSTITUTIONAL_WISDOM)
         msg = f"💡 <b>Institutional Wisdom</b>\n\n<i>\"{wisdom}\"</i>"
-        self._dispatch(msg)
-
-    def _dispatch(self, message: str) -> bool:
-        if not self.enabled or not self.circuit.can_proceed(): return False
-        if not self._should_send(message): return False
-        try:
-            url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
-            rich_message = (
-                f"🛡️ <b>TITAN SYSTEM ALERT</b> 🛡️\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"📝 <b>MESSAGE:</b>\n"
-                f"{message}\n"
-                f"━━━━━━━━━━━━━━━━━━"
-            )
-            resp = requests.post(url, json={"chat_id": self.chat_id, "text": rich_message, "parse_mode": "HTML"}, timeout=10)
-            if resp.status_code != 200:
-                logging.getLogger("infrastructure").error(f"TELEGRAM: Alert failed ({resp.status_code}): {resp.text}")
-                self.circuit.record_failure()
-                return False
-            self.circuit.record_success()
-            return True
-        except Exception as e:
-            self.circuit.record_failure()
-            msg = f"TELEGRAM: Alert exception: {e}"
-            if "NameResolutionError" in str(e) or "ConnectionError" in str(e):
-                logging.warning(msg)
-            else:
-                logging.error(msg)
-            return False
+        self.engine.client.send(msg)
 
 # ============================================================================
 # 3. Supabase Cloud Memory

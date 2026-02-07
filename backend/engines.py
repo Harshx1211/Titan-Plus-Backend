@@ -123,20 +123,78 @@ class RiskEngine:
         self.trades_today += 1
 
     def is_blown_today(self, current_balance: float = 100000.0) -> bool:
-        """[v9.8.5] Daily Circuit Breaker with 5% Max Drawdown Cap"""
-        # [Institutional Phase 6] Ensure metrics are for today
+        """[v9.9.9] Institutional Circuit Breaker"""
         self._check_day_reset()
         
-        # 1. PnL Check
-        max_loss_limit = -(current_balance * 0.05) # 5% cap
-        effective_limit = max(max_loss_limit, self.max_daily_loss) 
-        if self.daily_pnl <= effective_limit: return True
-        
-        # 2. [Institutional Step 2] Frequency Check
-        if self.trades_today >= self.max_trades_per_day:
-            logger.warning(f"RISK: Daily trade cap hit ({self.trades_today}/{self.max_trades_per_day}). Blocking.")
+        # 1. Daily Loss Cap (-3% or 3R)
+        # Using a conservative 3% of balance as a hard stop
+        hard_limit = -(current_balance * 0.03)
+        if self.daily_pnl <= hard_limit:
+            logger.critical(f"RISK: Hard Daily Loss Cap hit ({self.daily_pnl:.2f}). SYSTEM HALT.")
             return True
             
+        # 2. Max Trades Check
+        if self.trades_today >= self.max_trades_per_day:
+            return True
+            
+        return False
+
+    def evaluate_exit(self, signal: TradeSignal, market_data: Any, hist_df: pd.DataFrame) -> Optional[Dict]:
+        """
+        [v9.9.9] Priority-Based Exit Engine
+        Returns {reason, priority, analysis} or None
+        """
+        if not signal.is_live: return None
+        
+        # 1. HARD STOP (Priority 100)
+        p_adv = (signal.entry_price - market_data.spot_price) if "BULLISH" in signal.reasoning else (market_data.spot_price - signal.entry_price)
+        sl_buffer = signal.stop_loss if not signal.is_tsl_active else 0.0
+        if p_adv >= sl_buffer:
+            return {"reason": "HARD_STOP", "priority": 100, "analysis": "Price hit strict stop loss."}
+            
+        # 2. TARGET REACHED (Priority 20)
+        p_delta = (market_data.spot_price - signal.entry_price) if "BULLISH" in signal.reasoning else (signal.entry_price - market_data.spot_price)
+        if p_delta >= signal.target:
+             return {"reason": "TARGET", "priority": 20, "analysis": "Profit target achieved."}
+
+        # 3. SAFE EXIT: Reversal Detection (Priority 80)
+        if self._detect_reversal(hist_df, signal):
+            return {"reason": "SAFE_EXIT (Reversal)", "priority": 80, "analysis": "Counter-trend pattern detected."}
+
+        # 4. SAFE EXIT: Institutional Climax (Priority 70)
+        if self._detect_climax(hist_df):
+            return {"reason": "SAFE_EXIT (Climax)", "priority": 70, "analysis": "Exhaustion volume detected."}
+
+        # 5. TIME DECAY (Priority 60)
+        duration_min = (datetime.now(timezone.utc) - signal.timestamp.replace(tzinfo=timezone.utc)).total_seconds() / 60
+        if duration_min > 45: # Hard cap 45 mins for intraday
+            return {"reason": "TIME_DECAY", "priority": 60, "analysis": "Time limit exceeded."}
+
+        return None
+
+    def _detect_reversal(self, df: pd.DataFrame, signal: TradeSignal) -> bool:
+        if len(df) < 3: return False
+        last, prev = df.iloc[-1], df.iloc[-2]
+        is_bullish = "BULLISH" in signal.reasoning
+        
+        # Engulfing Reversal
+        if is_bullish:
+            # Look for bearish engulfing
+            if last.close < prev.open and last.open > prev.close and prev.close > prev.open: return True
+        else:
+            # Look for bullish engulfing
+            if last.close > prev.open and last.open < prev.close and prev.close < prev.open: return True
+        return False
+
+    def _detect_climax(self, df: pd.DataFrame) -> bool:
+        if len(df) < 20: return False
+        last = df.iloc[-1]
+        avg_vol = df.volume.tail(20).mean()
+        
+        # Climax: Volume > 3x average AND high-to-low range > 2x average ATR
+        # Simplified: Volume > 4x average is a strong signal of exhaustion
+        if last.volume > (4.0 * avg_vol):
+            return True
         return False
 
     def calculate_atr_size(self, account_balance: float, risk_pct: float, atr: float, lot_size_value: float = 25.0) -> int:
