@@ -139,22 +139,33 @@ def call_brain_safely(action: str, **kwargs):
     try:
         if action == "DECIDE":
             # [v3.0] Enhanced Brain Interface
-            return brain.decide(
+            res = brain.decide(
                 features=kwargs.get("features"),
                 market_data=kwargs.get("market_data"),
                 ohlcv_df=kwargs.get("ohlcv_df"),
                 regime=kwargs.get("regime")
             )
+            
+            # Compatibility: api.py expects Tuple[str, List[str]] for DECIDE
+            if isinstance(res, dict):
+                return res.get('decision_id', 'ERR'), res.get('thoughts', [])
+            return res if res is not None else (None, [])
         elif action == "BOOST":
             if shadow_mode_enabled and shadow_engine:
                 shadow_engine.compare_predictions(kwargs.get("features"), kwargs.get("regime"))
             
-            return brain.get_confidence_boost_ml(
+            res = brain.get_confidence_boost_ml(
                 features=kwargs.get("features"),
                 regime_val=kwargs.get("regime").value if hasattr(kwargs.get("regime"), 'value') else kwargs.get("regime"),
                 signal_intent=kwargs.get("signal_intent"),
                 iv_skew=kwargs.get("iv_skew", 1.0)
             )
+            
+            # Compatibility: api.py expects Tuple[float, List[str]] for BOOST
+            if isinstance(res, dict):
+                return res.get('probability', 0.5), res.get('thoughts', [])
+            if isinstance(res, tuple): return res
+            return 0.5, []
     except TypeError:
         # Fallback to V1 signatures
         try:

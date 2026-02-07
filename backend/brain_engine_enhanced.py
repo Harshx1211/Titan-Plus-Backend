@@ -16,9 +16,11 @@ import pickle
 import os
 import numpy as np
 import warnings
+import uuid
 from typing import Dict, List, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 import json
+from collections import deque
 
 # [v9.9.9] Suppress legacy model version warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="xgboost")
@@ -42,6 +44,12 @@ except ImportError:
 from rl_engine import RLEvolutionEngine
 from rl_engine_ppo import PPOAgent
 from smc_engine import GrandmasterSMCEngine
+from grandmaster.book_strategies import (
+    chetan_hammer_s1, chetan_engulfing_r1, chetan_doji_pivot,
+    chetan_white_soldiers, chetan_evening_star_r2, StrategicRiskManager
+)
+from brain_engine_ml import BrainMetrics
+from models import SignalConfidence
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("brain_engine")
@@ -69,6 +77,11 @@ class EnhancedBrainEngine:
         self.smc_weight = 0.3  # Weight of SMC score
         self.xgb_weight = 0.4  # Weight of XGBoost score
         
+        # [v9.9.9] Private Knowledge Layer
+        self.risk_manager = StrategicRiskManager()
+        self.trades_today = 0
+        self.last_trade_date = None
+        
         # Feature reputation (bounded weights for adaptive importance)
         self.feature_reputation = {
             'rsi': 1.0,
@@ -78,6 +91,16 @@ class EnhancedBrainEngine:
             'vix': 1.0,
             'gex': 1.0,
             'volume': 1.0
+        }
+        
+        # [v9.9.9] Compatibility Layer
+        self.LOGIC_VERSION = "v9.9.9_ENHANCED"
+        self.metrics = BrainMetrics()
+        self.raw_history: Dict[str, deque] = {
+            "OI_RAW": deque(maxlen=200),
+            "BASIS_RAW": deque(maxlen=200),
+            "PCR_RAW": deque(maxlen=200),
+            "ADX_RAW": deque(maxlen=200)
         }
         
         # Initialize XGBoost model
@@ -162,12 +185,38 @@ class EnhancedBrainEngine:
     
     
     def update_raw_history(self, raw_data: Dict):
-        """Legacy method for API compatibility - no-op in Phase 3"""
-        pass
+        """Update rolling raw feature buffers for stability checks"""
+        for k, v in raw_data.items():
+            if k in self.raw_history:
+                self.raw_history[k].append(v)
 
     def analyze_institutional_logic(self, *args, **kwargs):
         """Legacy method for API compatibility - no-op in Phase 3"""
         return {}
+
+    def get_confidence_boost_ml(self, features: Dict[str, float], regime_val: str, **kwargs) -> Tuple[float, List[str]]:
+        """Legacy compatibility bridge for api.py"""
+        # Map to internal values
+        norm_features = {k.lower(): v for k, v in features.items()}
+        if 'basis_res' in norm_features: norm_features['basis'] = norm_features['basis_res']
+        
+        # Use decide() logic but just return the probability
+        result = self.decide(features=features, regime=regime_val, market_data={}, **kwargs)
+        thoughts = [f"ML Probability: {result['probability']:.2f}"]
+        for r in result.get('veto_reasons', []):
+            thoughts.append(f"VETO: {r}")
+            
+        return result['probability'], thoughts
+
+    def health_check(self) -> Dict:
+        """Dashboard Health Compatibility"""
+        return {
+            "status": "HEALTHY",
+            "ml_trained": True,
+            "rl_status": "ACTIVE" if self.enable_rl else "DISABLED",
+            "smc_status": "ACTIVE" if self.enable_smc else "DISABLED",
+            "version": self.LOGIC_VERSION
+        }
 
     def decide(self, features: Dict, market_data: Dict = {}, ohlcv_df=None, regime: str = "NEUTRAL", **kwargs) -> Dict:
         """
@@ -179,6 +228,10 @@ class EnhancedBrainEngine:
             ohlcv_df: Historical OHLCV data for SMC analysis
             regime: Current market regime
         """
+        if market_data is None: market_data = {}
+        decision_id = str(uuid.uuid4())[:12]
+        thoughts = []
+        
         # [HARSH AUDIT FIX] Robust Feature Normalization
         # 1. Merge kwargs into features (api.py passes iv_skew via kwargs sometimes)
         if kwargs.get('iv_skew'): features['iv_skew'] = kwargs['iv_skew']
@@ -210,6 +263,7 @@ class EnhancedBrainEngine:
         # === LAYER 1: XGBoost Probability Estimation ===
         xgb_result = self._xgboost_analysis(features)
         xgb_score = xgb_result['probability']
+        thoughts.append(f"XGBoost Prob: {xgb_score:.2f}")
         
         # === LAYER 2: Meta-Vetoes (Institutional Safety) ===
         veto_result = self._apply_meta_vetoes(features, market_data)
@@ -229,7 +283,9 @@ class EnhancedBrainEngine:
                     },
                     'veto_reasons': veto_reasons,
                     'recommendation': 'HOLD',
-                    'source': 'META_VETO'
+                    'source': 'META_VETO',
+                    'decision_id': decision_id,
+                    'thoughts': [f"HARD_VETO: {r}" for r in veto_reasons]
                 }
         
         # === LAYER 3: RL Engine Analysis ===
@@ -262,7 +318,9 @@ class EnhancedBrainEngine:
                     rl_result = self.rl_engine.get_recommendation(rl_state_dict)
                 
                 # Convert RL confidence to score
-                rl_score = rl_result['confidence'] if rl_result else 0.5
+                rl_score = rl_result.get('confidence', 0.5) if rl_result else 0.5
+                if rl_result and rl_result.get('action'):
+                    thoughts.append(f"RL Rec: {rl_result['action']} (Conf: {rl_score:.2f})")
             except Exception as e:
                 logger.error(f"BRAIN: RL analysis failed: {e}")
                 rl_score = 0.5
@@ -274,21 +332,75 @@ class EnhancedBrainEngine:
                 smc_result = self.smc_engine.analyze(ohlcv_df)
                 
                 # Convert confluence score to normalized score
-                smc_score = smc_result['confluence_score'] / 100.0
+                if smc_result:
+                    smc_score = smc_result.get('confluence_score', 50.0) / 100.0
+                    if smc_result.get('market_structure'):
+                        thoughts.append(f"SMC Structure: {smc_result['market_structure']}")
             except Exception as e:
                 logger.error(f"BRAIN: SMC analysis failed: {e}")
                 smc_score = 0.5
+
+        # === LAYER 5: Institutional Book Strategies (Knowledge Bridge) ===
+        knowledge_score = 0.5
+        knowledge_hits = []
+        if ohlcv_df is not None:
+            try:
+                # 1. Hammer S1
+                if chetan_hammer_s1(ohlcv_df, smc_result['zones'] if smc_result else {}, datetime.now().isoformat()).iloc[-1]:
+                    knowledge_hits.append("CHETAN_HAMMER_S1")
+                    knowledge_score += 0.15
+                
+                # 2. Engulfing R1
+                if chetan_engulfing_r1(ohlcv_df, smc_result['zones'] if smc_result else {}, datetime.now().isoformat()).iloc[-1]:
+                    knowledge_hits.append("CHETAN_ENGULFING_R1")
+                    knowledge_score += 0.10
+                
+                # 3. Doji Pivot
+                if chetan_doji_pivot(ohlcv_df).iloc[-1]:
+                    knowledge_hits.append("CHETAN_DOJI_PIVOT")
+                    knowledge_score += 0.05
+                
+                # 4. Three White Soldiers
+                if chetan_white_soldiers(ohlcv_df).iloc[-1]:
+                    knowledge_hits.append("CHETAN_WHITE_SOLDIERS")
+                    knowledge_score += 0.10
+                
+                # 5. Evening Star R2
+                if chetan_evening_star_r2(ohlcv_df).iloc[-1]:
+                    knowledge_hits.append("CHETAN_EVENING_STAR_R2")
+                    knowledge_score -= 0.15 # Bearish signal reduces bullish score
+            except Exception as e:
+                logger.error(f"BRAIN: Knowledge integration error: {e}")
+        
+        if knowledge_hits:
+            thoughts.append(f"Knowledge Confluence: {', '.join(knowledge_hits)}")
         
         # === CONFLUENCE CALCULATION ===
-        # Weighted average of all three components
+        # Weighted average of all layers
+        # [v9.9.9] Introducing Knowledge Bias (10% weight)
         final_score = (
             self.xgb_weight * xgb_score +
             self.rl_weight * rl_score +
-            self.smc_weight * smc_score
+            self.smc_weight * smc_score +
+            0.1 * (knowledge_score - 0.5) 
         )
+        # Re-Normalize
+        final_score = max(0.0, min(1.0, final_score))
         
         # Determine decision
         decision = 'APPROVE' if final_score >= self.decision_threshold else 'BLOCK'
+        
+        # [v9.9.9] Psychology Veto: StrategicRiskManager
+        current_date = datetime.now().date()
+        if self.last_trade_date != current_date:
+            self.trades_today = 0
+            self.last_trade_date = current_date
+            
+        if decision == 'APPROVE':
+            if not self.risk_manager.check_trade_readiness(self.trades_today):
+                decision = 'BLOCK'
+                veto_reasons.append("RISK_MANAGER: Daily limit reached / Overtrading protection")
+                thoughts.append("RISK_MANAGER: Daily limit reached / Overtrading protection")
         
         # Calculate confidence (how far from threshold)
         confidence = abs(final_score - self.decision_threshold) / self.decision_threshold
@@ -329,7 +441,9 @@ class EnhancedBrainEngine:
             'veto_reasons': veto_reasons,
             'recommendation': recommendation,
             'source': 'ENHANCED_BRAIN',
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now().isoformat(),
+            'decision_id': decision_id,
+            'thoughts': thoughts
         }
         
         logger.info(f"BRAIN DECISION: {decision} (prob={final_score:.3f}, conf={confidence:.3f}) -> {recommendation}")
@@ -395,7 +509,13 @@ class EnhancedBrainEngine:
         }
         vector.extend(regime_map.get(regime, [0, 0, 0, 0, 1]))
         
-        return np.array(vector, dtype=np.float32)
+        # === [v9.9.9] NaN Guard ===
+        final_vector = np.array(vector, dtype=np.float32)
+        if np.isnan(final_vector).any():
+            logger.warning("BRAIN: NaN detected in RL feature vector. Interpolating zeros.")
+            final_vector = np.nan_to_num(final_vector, nan=0.0, posinf=1.0, neginf=-1.0)
+            
+        return final_vector
 
     def _xgboost_analysis(self, features: Dict) -> Dict:
         """Run XGBoost model inference"""

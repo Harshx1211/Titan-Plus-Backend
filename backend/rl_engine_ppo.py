@@ -84,6 +84,10 @@ class PPOAgent:
     def get_action(self, state_vector):
         """Select action using the current policy (Actor)"""
         if isinstance(state_vector, np.ndarray):
+            # [v9.9.9] Nuclear NaN Guard
+            if np.isnan(state_vector).any():
+                logger.warning("PPO: NaN detected in state vector. Sanitizing.")
+                state_vector = np.nan_to_num(state_vector, nan=0.0)
             state_vector = torch.FloatTensor(state_vector).to(device)
         
         with torch.no_grad():
