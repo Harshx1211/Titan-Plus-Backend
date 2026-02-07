@@ -117,7 +117,11 @@ class ShoonyaProvider:
                                  self.index_tokens[symbol] = new_token
                              break
 
-                # 2. Map Current Month Futures
+                # 2. Map Current Month Futures (e.g. NIFTY26FEB26FUT)
+                month_code = datetime.now().strftime("%b").upper() # FEB
+                year_code = datetime.now().strftime("%y") # 26
+                exch = "BFO" if symbol == "SENSEX" else "NFO"
+                
                 # Try multiple search patterns (Ordered by probability)
                 searches = [
                     f"{symbol} {month_code} FUT",        # Generic: "NIFTY FEB FUT"
