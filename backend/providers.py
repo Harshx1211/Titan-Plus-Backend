@@ -153,17 +153,27 @@ class ShoonyaProvider:
                                     logger.info(f"VALIDATION_PULSE: Mapped {symbol} Future -> {tsym} ({v['token']})")
                                     found_fut = True
                                     break
+                        elif res is None:
+                            # [Institutional Weekend Logic] None means the segment is likely offline
+                            logger.info(f"VALIDATION_PULSE: Segment {exch} is SILENT (None). Maintenance expected.")
+                            break # No point retrying other patterns if segment is dead
                         else:
-                            # Log raw failure to identify "None" or "Not_Ok"
-                            logger.info(f"VALIDATION_PULSE: Search [{pattern}] in {exch} -> Stat: {res.get('stat') if res and isinstance(res, dict) else 'None'}. Full: {res}")
+                            # Log raw failure to identify "Not_Ok"
+                            logger.info(f"VALIDATION_PULSE: Search [{pattern}] in {exch} -> Stat: {res.get('stat') if res and isinstance(res, dict) else 'Unknown'}. Full: {res}")
                     except Exception as e:
                         logger.error(f"VALIDATION_PULSE: Search [{pattern}] Exception: {e}")
                     
                     if found_fut: break
                     time.sleep(0.5) # Slight pause between retries
                 
+                # Weekend check to suppress alerts
+                is_weekend = datetime.now().weekday() >= 5
                 if not found_fut:
-                    logger.warning(f"VALIDATION_PULSE: Critical failure to map {symbol} Future (Derivative Segment may be offline/maintenance).")
+                    msg = f"VALIDATION_PULSE: {symbol} Future mapping skipped (Segment Offline/Maintenance)."
+                    if is_weekend:
+                        logger.info(msg) # Expected on Saturday/Sunday
+                    else:
+                        logger.warning(f"CRITICAL: {msg}") # Bad on workdays
             
             # 3. Verify India VIX (NSE Index - usually very stable)
             time.sleep(1)
