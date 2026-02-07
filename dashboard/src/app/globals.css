@@ -20,7 +20,7 @@
 
 @layer components {
   .premium-glass {
-    @apply bg-white/[0.03] backdrop-blur-3xl border border-white/10 shadow-[inner_0_1px_1px_rgba(255, 255, 255, 0.05)];
+    @apply bg-white/[0.03] backdrop-blur-3xl border border-white/10;
     box-shadow:
       0 0 0 1px rgba(255, 255, 255, 0.05) inset,
       0 20px 50px -12px rgba(0, 0, 0, 0.5);
