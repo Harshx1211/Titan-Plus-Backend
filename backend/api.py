@@ -1003,7 +1003,7 @@ def run_engine_loop():
                                 confidence=SignalConfidence.HIGH if pattern_results["score"] > 0.9 else SignalConfidence.MEDIUM,
                                 regime=live_state.current_regime, reasoning=f"{signal_type} | {', '.join(detected_patterns)}",
                                 timestamp=datetime.now(timezone.utc), decision_id=decision_id,
-                                logic_version="v9.9.9_HF", spread_at_entry=current_spread,
+                                logic_version="v9.9.9_FINAL_STABLE", spread_at_entry=current_spread,
                                 slippage_est=slippage_est, expected_edge=expected_edge,
                                 iv_scaling=iv_scaling, greeks=greeks,
                                 quantity=round(core.risk_engine.get_suggested_size(applied_boost, APP_CONFIG.get("BASE_LOTS", 1), atr=atr_val, std_dev=std_dev_val, vix=live_state.vix) * iv_scaling),
@@ -1172,15 +1172,19 @@ def personalized_service_loop(notifier):
             logger.error(f"PERSONAL_SERVICE_ERROR: {e}")
             time.sleep(300)
 
+# Startup Version Identifier [v9.9.9_FINAL_STABLE]
+LOGIC_VERSION = "v9.9.9_FINAL_STABLE"
+
 @app.on_event("startup")
 async def startup_event():
+    logger.info(f"API: Starting Titan Plus Institutional Engine [{LOGIC_VERSION}]")
     logger.info("API: Launching background engine loop...")
     thread = threading.Thread(target=run_engine_loop, daemon=True)
     thread.start()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8004))
-    logger.info(f"API: Initializing server on port {port}...")
+    logger.info(f"API: Initializing server on port {port} for Version {LOGIC_VERSION}...")
     try:
         uvicorn.run(app, host="0.0.0.0", port=port)
     except Exception as e:
