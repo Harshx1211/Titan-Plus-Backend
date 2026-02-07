@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 # from sklearn.preprocessing import StandardScaler
 
 from infrastructure import SupabaseManager, APP_CONFIG
-from models import TradeSignal, SignalConfidence, DecisionObject, Regime
+from models_v3 import TradeSignal, SignalConfidence, DecisionObject, Regime
 
 # [v3.0] Grandmaster Engine Integration
 from grandmaster import SMCAnalyzer, GammaEngine, MacroRegime, NuclearScorecard

@@ -12,7 +12,7 @@ from datetime import datetime
 # import pandas as pd (Moved to local scope)
 from supabase import create_client, Client
 from dotenv import load_dotenv
-from models import TradeSignal
+from models_v3 import TradeSignal
 
 class DataHealthError(Exception):
     """[v9.9.9] Raised when no valid real-time data sources are available."""

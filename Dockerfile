@@ -37,4 +37,4 @@ ENV OPENBLAS_NUM_THREADS=1
 
 # Run the FastAPI app using uvicorn
 # We use --workers 1 to minimize memory footprint
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "7860", "--log-level", "info", "--workers", "1"]
+CMD uvicorn api:app --host 0.0.0.0 --port $PORT --log-level info --workers 1

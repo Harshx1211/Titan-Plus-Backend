@@ -38,9 +38,11 @@ class Action(str, Enum):
 
 class Regime(str, Enum):
     """Market regime types"""
+    TRENDING = "TRENDING"
     TRENDING_UP = "TRENDING_UP"
     TRENDING_DOWN = "TRENDING_DOWN"
     SIDEWAYS_STRONG = "SIDEWAYS_STRONG"
+    SIDEWAYS_NORMAL = "SIDEWAYS_NORMAL"
     SIDEWAYS_WEAK = "SIDEWAYS_WEAK"
     NEUTRAL = "NEUTRAL"
     UNCERTAIN = "UNCERTAIN"
@@ -281,6 +283,25 @@ class BrainDecision(BaseModel):
 # ============================================================================
 # Trading Signal Models
 # ============================================================================
+
+class DecisionObject(BaseModel):
+    """Legacy binder of causality for brain engines."""
+    decision_id: str
+    symbol: str
+    timestamp: datetime
+    features: Dict[str, float]
+    regime: Regime
+    threshold: float
+    confidence_boost: float
+    decision: str
+    is_actionable: bool = True
+    efficacy: Optional[int] = None
+
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
 
 class TradeSignal(BaseModel):
     """Trading signal for execution"""

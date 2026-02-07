@@ -271,7 +271,7 @@ class DataProvider:
                 return MarketData(
                     symbol=symbol, spot_price=last_close, 
                     future_price=last_close,
-                    oi=0, pcr=0.95, timestamp=datetime.now(), source="HIST_CLOSE"
+                    oi=0, pcr=0.95, timestamp=datetime.now(), source="FALLBACK"
                 )
         except Exception as e:
             logger.warning(f"Fallback history fetch failed: {e}")

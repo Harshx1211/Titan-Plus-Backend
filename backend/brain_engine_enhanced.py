@@ -53,7 +53,7 @@ from grandmaster.book_strategies import (
     chetan_white_soldiers, chetan_evening_star_r2, StrategicRiskManager
 )
 from brain_engine_ml import BrainMetrics
-from models import SignalConfidence
+from models_v3 import SignalConfidence
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("brain_engine")

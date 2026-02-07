@@ -3,7 +3,7 @@ import pandas_ta as ta
 from typing import List, Optional, Dict, Any, Tuple
 from dataclasses import dataclass
 import logging
-from models import Regime
+from models_v3 import Regime
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
