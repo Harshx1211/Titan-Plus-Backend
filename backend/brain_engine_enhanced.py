@@ -180,7 +180,8 @@ class EnhancedBrainEngine:
         if log_dir and not os.path.exists(log_dir):
             os.makedirs(log_dir, exist_ok=True)
             
-        # [Institutional Step 1] Log decision context for post-mortem
+        # [Institutional Phase 6] Async Logging Queue
+        self.log_queue = queue.Queue()
         self.log_thread = threading.Thread(target=self._async_log_writer, daemon=True)
         self.log_thread.start()
         
