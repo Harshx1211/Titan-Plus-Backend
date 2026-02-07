@@ -118,19 +118,24 @@ class ShoonyaProvider:
                              break
 
                 # 2. Map Current Month Futures
+                # 2. Map Current Month Futures (e.g. NIFTY27FEB25FUT)
                 month_code = datetime.now().strftime("%b").upper() # FEB
                 year_code = datetime.now().strftime("%y") # 25
                 exch = "BFO" if symbol == "SENSEX" else "NFO"
                 
-                # Try generic search first
-                search_pattern = f"{symbol}{year_code}{month_code}" # NIFTY25FEB
-                res = self.api.searchscrip(exchange=exch, searchtext=search_pattern)
+                # Broad search for the symbol in the Derivative exchange
+                res = self.api.searchscrip(exchange=exch, searchtext=symbol)
                 if res and res.get('stat') == 'Ok' and res.get('values'):
-                    # Filter for FUTIDX or FUTSTK
+                    # Sort by expiry if possible (tsym usually contains expiry), but we just need current month
+                    # Shoonya TSym pattern: SYMBOL + DAY + MONTH + YEAR + FUT
+                    # e.g. NIFTY27FEB25FUT
                     for v in res['values']:
-                        if 'FUT' in v['instname'] and symbol in v['tsym']:
+                        tsym = v['tsym']
+                        # Must contain month and year, and be a future
+                        if (month_code in tsym and year_code in tsym) and \
+                           (v['instname'] in ['FUTIDX', 'FUTSTK']):
                             self.future_tokens[symbol] = (exch, v['token'])
-                            logger.info(f"VALIDATION_PULSE: Mapped {symbol} Future to {v['tsym']} ({v['token']})")
+                            logger.info(f"VALIDATION_PULSE: Mapped {symbol} Future to {tsym} ({v['token']})")
                             break
             
             # 3. Verify India VIX
