@@ -175,9 +175,6 @@ class CoreEngine:
         self.data_provider = DataProvider()
         time.sleep(1)
         
-        # Start Decoupled Heartbeats
-        threading.Thread(target=history_refresher_loop, args=(self.data_provider, self.state), daemon=True).start()
-        threading.Thread(target=personalized_service_loop, args=(self.telegram_notifier,), daemon=True).start()
         
         self.sentinel = DataSentinel()
         self.strategist = MarketStrategist()
