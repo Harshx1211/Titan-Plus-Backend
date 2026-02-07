@@ -211,7 +211,7 @@ class RiskEngine:
         raw_quantity = risk_amount / stop_loss_value
         return max(1, round(raw_quantity))
 
-    def get_suggested_size(self, confidence: Any, base_lots: int = 1, atr: float = 0.0, std_dev: float = 0.0, vix: float = 15.0, account_balance: float = 100000.0) -> int:
+    def get_suggested_size(self, confidence: Any, base_lots: int = 1, atr: float = 0.0, std_dev: float = 0.0, vix: float = 15.0, account_balance: float = 100000.0, active_symbols: List[str] = []) -> int:
         """
         [Institutional Step 4] Volatility Targeting Position Sizing
         Formula: size = base * (20 / VIX) * (target_vol / realized_vol)
@@ -222,22 +222,30 @@ class RiskEngine:
             conf_mult = 1.25 if confidence > 0.8 else (1.0 if confidence > 0.6 else 0.5)
         
         # 2. Hybrid Realized Volatility
-        # ATR captures gaps, StdDev captures chop. Max captures worst of both.
         realized_vol = max(atr, std_dev) if (atr > 0 and std_dev > 0) else (atr or std_dev or 20.0)
         
         # 3. Volatility Targeting Factor
-        vix_factor = 20.0 / max(10.0, vix) # Normalized to VIX 20
-        target_vol = 25.0 # Typical institutional volatility target points
+        vix_factor = 20.0 / max(10.0, vix) 
+        target_vol = 25.0 
         vol_factor = target_vol / max(5.0, realized_vol)
         
-        # 4. Final Calculation
-        calculated_lots = base_lots * conf_mult * vix_factor * vol_factor
+        # 4. Correlated Risk (Institutional Wave 3)
+        # If NIFTY is active and we are taking BANKNIFTY, reduce size to 50%
+        # If BANKNIFTY is active and we are taking NIFTY, reduce size to 50%
+        correlated_mult = 1.0
+        if ("NIFTY" in active_symbols and "BANKNIFTY" in active_symbols) or \
+           ("SENSEX" in active_symbols and "NIFTY" in active_symbols):
+            correlated_mult = 0.5
+            logger.info("RISK: Correlated assets detected. Reducing size by 50%.")
+            
+        # 5. Final Calculation
+        calculated_lots = base_lots * conf_mult * vix_factor * vol_factor * correlated_mult
         
-        # 5. Recovery Mode Safety
+        # 6. Recovery Mode Safety
         if self.is_in_recovery():
             calculated_lots *= 0.5
             
-        # 6. Streak Adjustment
+        # 7. Streak Adjustment
         if self.win_streak >= 5:
             calculated_lots *= 0.8 # De-risk on hot streaks
             
@@ -339,14 +347,19 @@ class RiskEngine:
             if not final_targets:
                 final_targets = [min_target_price, min_target_price + atr*2]
 
+            # Final Safety: Guard against zero RR or crash
+            rr = 0.0
+            if final_targets and (entry_price - stop_loss) != 0:
+                rr = round((final_targets[0] - entry_price) / (entry_price - stop_loss), 2)
+
             return {
                 "stop_loss": round(stop_loss, 2),
                 "targets": [round(t, 2) for t in final_targets],
-                "risk_reward": round((final_targets[0] - entry_price) / (entry_price - stop_loss), 2) if is_buy and final_targets else 0.0
+                "risk_reward": rr
             }
         except Exception as e:
             logger.error(f"Dynamic Stop Calc Failed: {e}")
-            return {"stop_loss": entry_price, "targets": []}
+            return {"stop_loss": entry_price, "targets": [], "risk_reward": 0.0}
 
 # ============================================================================
 # 3. Data Sentinel (Truth Triangulation)
@@ -377,11 +390,21 @@ class SessionAuditor:
     def record_execution(self, signal: Dict, fill_price: float, t_fill: datetime):
         """Calculates drift and slippage for a trade."""
         try:
-            t_signal = datetime.fromisoformat(signal['timestamp'].replace('Z', '+00:00'))
+            # Handle both string and datetime objects
+            if isinstance(signal['timestamp'], str):
+                t_signal = datetime.fromisoformat(signal['timestamp'].replace('Z', '+00:00'))
+            else:
+                t_signal = signal['timestamp']
+            
+            # Ensure t_fill is also aware
+            if t_fill.tzinfo is None:
+                from infrastructure import IST
+                t_fill = IST.localize(t_fill)
+
             drift = (t_fill - t_signal).total_seconds()
             
             # Slippage: Diff between Entry Price (Signal) and Fill Price (Actual)
-            expected = signal['entry_price']
+            expected = signal.get('entry_price', 0)
             slippage = abs(fill_price - expected)
             slippage_pct = (slippage / expected) * 100 if expected > 0 else 0
             

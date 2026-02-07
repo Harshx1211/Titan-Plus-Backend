@@ -24,7 +24,7 @@ class MetaGovernor:
     def audit_threshold_proposal(self, current_threshold: float, performance_metrics: Dict) -> float:
         """
         Evaluating whether to tighten or keep the threshold.
-        Loosening is aggressively blocked.
+        [Wave 3] Intelligent Mean Reversion: Loosening allowed ONLY if performance is elite.
         """
         win_rate = performance_metrics.get("win_rate", 50.0)
         missed_alpha = performance_metrics.get("missed_alpha", 0.0)
@@ -35,11 +35,16 @@ class MetaGovernor:
             self.lock_status = "STRICT"
             return min(0.95, current_threshold + 0.05)
             
-        # Rule 2: Block Auto-Loosening based on missed moves alone
-        # Institutional Doctrine: Silence > False Confidence.
+        # Rule 2: [Wave 3] Controlled Loosening (Anti-Veto Fatigue)
+        # If WR is elite (>65%) AND we are missing too much alpha, allow a tiny loosening (-0.01)
+        if win_rate > 65.0 and missed_alpha > self.max_missed_alpha:
+            logger.info(f"GOVERNOR: Elite performance ({win_rate}%). Relaxing threshold slightly (-0.01) to capture alpha.")
+            return max(0.50, current_threshold - 0.01)
+
+        # Rule 3: Block Auto-Loosening otherwise
         if missed_alpha > self.max_missed_alpha:
-            logger.info(f"GOVERNOR: High Missed Alpha ({missed_alpha}%). Loosening BLOCKED by Safety Valve.")
-            return current_threshold # Return existing, do not lower.
+            logger.info(f"GOVERNOR: High Missed Alpha ({missed_alpha}%). Loosening BLOCKED (Performance not elite).")
+            return current_threshold 
 
         return current_threshold
 

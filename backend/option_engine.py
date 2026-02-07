@@ -347,15 +347,15 @@ class OptionEngine:
         [Institutional Step 5] Smooth IV Percentile Scaling
         Replaces hard veto with a continuous size-reduction factor.
         """
-        if not historical_iv or len(historical_iv) < 30:
-            return {"percentile": 50.0, "regime": "UNKNOWN", "score": 0.0, "scaling_factor": 1.0}
+        # [Institutional Wave 3] Baseline Fallback: If not enough data, assume neutral 35th percentile
+        if not historical_iv or len(historical_iv) < 20:
+            return {"percentile": 35.0, "regime": "STABLE", "score": 0.0, "scaling_factor": 1.0, "current_iv": current_iv}
         
         # Calculate percentile
         rank = sum(1 for iv in historical_iv if current_iv > iv)
         percentile = (rank / len(historical_iv)) * 100
         
         # Smooth scaling factor: 1.0 if IV is low, down to 0.2 if IV is at 100th percentile
-        # size_mult = (100 - percentile) / 100.0, but we cap it at 0.2
         scaling_factor = max(0.2, (100 - percentile) / 100.0)
         
         # Classify regime
@@ -385,12 +385,16 @@ class OptionEngine:
         from scipy.stats import norm
         
         # T in years
-        T = max(1 / (365 * 24 * 60), minutes_to_expiry / (365 * 24 * 60))
+        # [Wave 3] Numerical Lockdown: Add epsilon to prevent division by zero at T=0
+        EPSILON = 1e-8
+        T = max(EPSILON, (minutes_to_expiry / (365.0 * 24.0 * 60.0)))
         r = self.risk_free_rate
-        sigma = max(0.01, iv_decimal)
+        sigma = max(EPSILON, iv_decimal)
         
-        d1 = (np.log(spot / strike) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
-        d2 = d1 - sigma * np.sqrt(T)
+        # d1 = [ln(S/K) + (r + 0.5*sigma^2)*T] / (sigma * sqrt(T))
+        sqrt_T = np.sqrt(T)
+        d1 = (np.log(spot / strike) + (r + 0.5 * sigma**2) * T) / (sigma * sqrt_T)
+        d2 = d1 - sigma * sqrt_T
         
         if option_type == "CE":
             delta = norm.cdf(d1)

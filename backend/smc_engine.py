@@ -119,15 +119,18 @@ class GrandmasterSMCEngine:
         self._detect_liquidity_sweeps(df)
         self._analyze_market_structure(df)
         
-        # Generate confluence score
-        confluence = self._calculate_confluence(df)
+        # [v11.0.0] Signed Confluence Model
+        confluence_bullish, confluence_bearish = self._calculate_directional_confluence(df)
+        net_confluence = confluence_bullish - confluence_bearish
         
         return {
             'order_blocks': self._serialize_order_blocks(),
             'fair_value_gaps': self._serialize_fvgs(),
             'liquidity_sweeps': self._serialize_sweeps(),
             'market_structure': self.market_structure,
-            'confluence_score': confluence,
+            'confluence_score': net_confluence,
+            'confluence_bullish': confluence_bullish,
+            'confluence_bearish': confluence_bearish,
             'signals': self._generate_signals(df),
             'timestamp': datetime.now().isoformat()
         }
@@ -401,44 +404,49 @@ class GrandmasterSMCEngine:
         else:
             self.market_structure = "NEUTRAL"
     
-    def _calculate_confluence(self, df: pd.DataFrame) -> float:
+    def _calculate_directional_confluence(self, df: pd.DataFrame) -> Tuple[float, float]:
         """
-        Calculate confluence score (0-100)
-        
-        Higher score = more institutional signals aligning
+        [v11.0.0] Signed Confluence Math.
+        Separates institutional pressure into Bullish and Bearish components.
         """
-        score = 0.0
-        max_score = 100.0
-        
+        bull_score = 0.0
+        bear_score = 0.0
         current_price = df['close'].iloc[-1]
         
-        # Order Block confluence (30 points max)
-        for ob in self.order_blocks[:3]:  # Top 3 OBs
-            if ob.direction == 'BULLISH' and current_price >= ob.price_low and current_price <= ob.price_high:
-                score += 10 * ob.confidence
-            elif ob.direction == 'BEARISH' and current_price >= ob.price_low and current_price <= ob.price_high:
-                score += 10 * ob.confidence
+        # 1. Order Block confluence
+        for ob in self.order_blocks[:3]:
+            # Check price proximity to OB
+            in_zone = (current_price >= ob.price_low and current_price <= ob.price_high)
+            if ob.direction == 'BULLISH':
+                if in_zone: bull_score += 15 * ob.confidence
+                else: bull_score += 5 * ob.confidence # Nearby support
+            else:
+                if in_zone: bear_score += 15 * ob.confidence
+                else: bear_score += 5 * ob.confidence # Nearby resistance
         
-        # FVG confluence (20 points max)
+        # 2. FVG confluence
         for fvg in self.fvgs:
             if not fvg.filled:
                 if fvg.direction == 'BULLISH' and current_price >= fvg.gap_low:
-                    score += 10
+                    bull_score += 10
                 elif fvg.direction == 'BEARISH' and current_price <= fvg.gap_high:
-                    score += 10
+                    bear_score += 10
         
-        # Liquidity sweep confluence (30 points max)
+        # 3. Liquidity sweep confluence
         for sweep in self.liquidity_sweeps:
             if sweep.reversal:
-                score += 15
+                if sweep.sweep_type == 'LONG_LIQUIDITY': # Swept lows (Bullish reversal)
+                    bull_score += 20
+                else: # Swept highs (Bearish reversal)
+                    bear_score += 20
         
-        # Market structure alignment (20 points max)
+        # 4. Market structure alignment
         if self.market_structure == "BULLISH":
-            score += 20
+            bull_score += 25
         elif self.market_structure == "BEARISH":
-            score += 20
-        
-        return min(max_score, score)
+            bear_score += 25
+            
+        return min(100.0, bull_score), min(100.0, bear_score)
     
     def _generate_signals(self, df: pd.DataFrame) -> Dict:
         """Generate actionable SMC signals"""

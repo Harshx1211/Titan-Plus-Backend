@@ -18,10 +18,43 @@ from dotenv import load_dotenv
 from NorenRestApiPy.NorenApi import NorenApi
 from growwapi import GrowwAPI
 from models_v3 import MarketData
-from infrastructure import CircuitBreaker, IST
+from infrastructure import CircuitBreaker, IST, global_sentinel
 
 load_dotenv()
 logger = logging.getLogger("providers")
+
+# ============================================================================
+# 1. API Rate Limiter (Institutional Burst Protection)
+# ============================================================================
+
+class RateLimiter:
+    """[v9.9.9] Ensures we don't exceed the Shoonya rate limit (10 req/sec per user)."""
+    def __init__(self, max_calls: int = 10, period: float = 1.0):
+        self.max_calls = max_calls
+        self.period = period
+        self.calls = []
+        self.lock = threading.Lock()
+
+    def throttle(self):
+        with self.lock:
+            now = time.time()
+            # Remove calls older than the window
+            self.calls = [c for c in self.calls if now - c < self.period]
+            
+            if len(self.calls) >= self.max_calls:
+                sleep_time = self.period - (now - self.calls[0])
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+            
+            self.calls.append(time.time())
+
+global_rate_limiter = RateLimiter(max_calls=9) # Conservative 9 instead of 10
+
+def rate_limited(func):
+    def wrapper(*args, **kwargs):
+        global_rate_limiter.throttle()
+        return func(*args, **kwargs)
+    return wrapper
 
 # ============================================================================
 # 1. Shoonya API Internal Helper
@@ -51,6 +84,7 @@ class ShoonyaApiPy(NorenApi):
     def __init__(self):
         NorenApi.__init__(self, host='https://api.shoonya.com/NorenWClientTP/', websocket='wss://api.shoonya.com/NorenWSTP/')        
 
+    @rate_limited
     def get_quotes(self, exchange, token):
         url = f"https://api.shoonya.com/NorenWClientTP/GetQuotes"
         values = {"uid": getattr(self, '_NorenApi__username', None), "exch": exchange, "token": token}
@@ -59,6 +93,14 @@ class ShoonyaApiPy(NorenApi):
         res = requests.post(url, data=payload)
         try: return json.loads(res.text)
         except: return {"stat": "Fail", "emsg": "JSON_ERR"}
+
+    @rate_limited
+    def searchscrip(self, exchange, searchtext):
+        return super().searchscrip(exchange, searchtext)
+
+    @rate_limited
+    def place_order(self, *args, **kwargs):
+        return super().place_order(*args, **kwargs)
 
 # ============================================================================
 # 2. Shoonya Provider
@@ -186,12 +228,14 @@ class ShoonyaProvider:
         except Exception as e:
             logger.error(f"VALIDATION_PULSE: Error during token verification: {e}")
 
-    def get_market_data(self, symbol: str) -> Optional[Dict]:
-        if not self.authenticated and not self.login(): return None
-        if not self.circuit.can_proceed(): return None
+    def get_market_data(self, symbol: str) -> Dict:
+        """[v9.9.9] Optimized snapshot fetcher with future matching."""
+        global_sentinel.record_heartbeat("shoonya_data_fetch")
+        if not self.authenticated: return {}
+        if not self.circuit.can_proceed(): return {}
         
         mapping = self.index_tokens.get(symbol)
-        if not mapping: return None
+        if not mapping: return {}
         
         try:
             res = self.api.get_quotes(exchange=mapping[0], token=mapping[1])
@@ -212,7 +256,7 @@ class ShoonyaProvider:
         except Exception as e:
             logger.error(f"SHOONYA_DATA: Error getting market data for {symbol}: {e}")
             self.circuit.record_failure()
-        return None
+        return {}
 
     def get_historical_data(self, symbol: str, interval: int = 5, start_time: datetime = None, end_time: datetime = None) -> List[Dict]:
         if not self.authenticated and not self.login(): return []
@@ -369,10 +413,13 @@ class DataProvider:
     def execute_order(self, symbol: str, exchange: str, side: str, qty: int, price: float = 0.0, order_type: str = 'MKT') -> Dict:
         """[Institutional Phase 6] Automated Direct Execution Bridge."""
         if not self.shoonya.authenticated:
-            return {"stat": "Fail", "emsg": "Shoonya Not Authenticated"}
+            return {"stat": "Fail", "emsg": "Not Authenticated", "order_id": None}
+            
+        if not self.shoonya.circuit.can_proceed():
+            return {"stat": "Fail", "emsg": "Circuit Breaker OPEN", "order_id": None}
             
         shoonya_side = 'B' if side.upper() == 'BUY' else 'S'
-        return self.shoonya.place_order(
+        res = self.shoonya.place_order(
             tradingsymbol=symbol, 
             exchange=exchange, 
             buy_or_sell=shoonya_side, 
@@ -380,6 +427,34 @@ class DataProvider:
             price_type=order_type, 
             price=price
         )
+        if res and res.get('stat') == 'Ok':
+            return {"stat": "Ok", "order_id": res.get('norenordno'), "message": "Order placed successfully"}
+        else:
+            return {"stat": "Fail", "emsg": res.get('emsg', 'Unknown error'), "order_id": None}
+
+    def verify_order_status(self, order_id: str) -> str:
+        """
+        [v10.0.0] Mission-Critical: Reality Check.
+        Polls the order book to ensure the order isn't just 'Accepted' but 'COMPLETE'.
+        """
+        if not order_id or not self.shoonya.authenticated: 
+            return "REJECTED"
+            
+        for _ in range(3): # 3 attempts, 1s apart
+            try:
+                res = self.shoonya.api.get_order_book()
+                if res and isinstance(res, list):
+                    for order in res:
+                        if order.get('norenordno') == order_id:
+                            status = order.get('status', '').upper()
+                            if status == 'COMPLETE': return 'COMPLETE'
+                            if status in ['REJECTED', 'CANCELLED']: return 'REJECTED'
+                            break
+            except Exception as e:
+                logger.error(f"SHOONYA_VERIFY: Error checking order {order_id}: {e}")
+            time.sleep(1)
+            
+        return "PENDING"
 
     def get_status(self) -> Dict:
         """Returns the status of the data source, prioritizing Shoonya."""
@@ -450,6 +525,18 @@ class DataProvider:
         logger.warning(f"DATA_FETCH: Using SYNTHETIC option chain for {symbol} (Market Closed or Data Lag)")
         return pd.DataFrame(strikes), True
 
+    def _watchdog_loop(self):
+        """Monitors the connection state and force-restarts if dead."""
+        while True:
+            try:
+                time.sleep(30) # Check every 30 seconds
+                global_sentinel.record_heartbeat("shoonya_ws_watchdog")
+                if not self.is_connected:
+                    logger.warning("SHOONYA_WS: WebSocket connection lost. Attempting reconnect.")
+                    self.start_websocket() # Reconnect
+            except Exception as e:
+                logger.error(f"SHOONYA_WS: Watchdog error: {e}")
+            
     def get_vix(self) -> float:
         """Returns the India VIX value with historical fallback."""
         try:

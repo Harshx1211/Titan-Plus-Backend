@@ -24,7 +24,9 @@ import threading
 import queue
 import gc
 import time
+import tempfile
 from collections import deque
+from infrastructure import global_sentinel
 
 # [v9.9.9] Suppress legacy model version warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="xgboost")
@@ -306,6 +308,14 @@ class EnhancedBrainEngine:
                 'veto_reasons': result['veto_reasons']
             }
             
+            # [Audit Fix] RAM Memory Leak Prevention: Keep only last 1000 decisions
+            if len(self.last_decision_scores) > 1000:
+                # Remove the oldest 100 items to avoid frequent small pops
+                oldest_keys = list(self.last_decision_scores.keys())[:100]
+                for k in oldest_keys:
+                    self.last_decision_scores.pop(k, None)
+                logger.info("BRAIN: Pruned decision history to prevent RAM bloat.")
+
             # Put in queue instead of writing directly
             self.log_queue.put(context)
             
@@ -428,9 +438,11 @@ class EnhancedBrainEngine:
                 elif self.rl_engine:
                     rl_result = self.rl_engine.get_recommendation(rl_state_dict)
                 
-                # Convert RL confidence to score
+                # Convert RL confidence to score (Range 0.0 - 1.0)
                 rl_score = rl_result.get('confidence', 0.5) if rl_result else 0.5
                 if rl_result and rl_result.get('action'):
+                    # Reward alignment: If RL rec is Bearish, score should reflect that for net ensemble
+                    if rl_result['action'] == 'BUY_PUT': rl_score = 1.0 - rl_score
                     thoughts.append(f"RL Rec: {rl_result['action']} (Conf: {rl_score:.2f})")
             except Exception as e:
                 logger.error(f"BRAIN: RL analysis failed: {e}")
@@ -442,11 +454,13 @@ class EnhancedBrainEngine:
             try:
                 smc_result = self.smc_engine.analyze(ohlcv_df)
                 
-                # Convert confluence score to normalized score
+                # [v11.0.0] Signed Confluence Guard
                 if smc_result:
-                    smc_score = smc_result.get('confluence_score', 50.0) / 100.0
+                    # Map -100 to +100 range to 0.0 to 1.0
+                    raw_smc = smc_result.get('confluence_score', 0.0)
+                    smc_score = (raw_smc + 100.0) / 200.0
                     if smc_result.get('market_structure'):
-                        thoughts.append(f"SMC Structure: {smc_result['market_structure']}")
+                        thoughts.append(f"SMC Struct: {smc_result['market_structure']} (Net: {raw_smc:.1f})")
             except Exception as e:
                 logger.error(f"BRAIN: SMC analysis failed: {e}")
                 smc_score = 0.5
@@ -543,6 +557,16 @@ class EnhancedBrainEngine:
                 elif regime == 'TRENDING_DOWN':
                     recommendation = 'BUY_PUT'
         
+        # [v11.0.0] Neural Nucleus: Intent Veto
+        # If the weighted ensemble score is high, ensure the recommendation matches the dominant engine
+        if decision == 'APPROVE':
+            if recommendation == 'BUY_CALL' and final_score < 0.6: # Weak bullish
+                decision = 'BLOCK'
+                veto_reasons.append("ML_CONVICTION_LOW")
+            elif recommendation == 'BUY_PUT' and final_score > 0.4: # Score is bullish but Rec is bearish
+                decision = 'BLOCK'
+                veto_reasons.append("DIRECTIONAL_MISMATCH")
+        
         result = {
             'decision': decision,
             'probability': final_score,
@@ -570,7 +594,7 @@ class EnhancedBrainEngine:
         # [Institutional Step 1] Log decision context for post-mortem
         self._log_decision_context(result, features, market_data)
         
-        logger.info(f"BRAIN DECISION: {decision} (prob={final_score:.3f}, conf={confidence:.3f}) -> {recommendation}")
+        logger.info(f"BRAIN DECISION: {decision} ({recommendation}) | Conf={confidence:.2f} | P={final_score:.2f}")
         
         return result
     
@@ -779,57 +803,65 @@ class EnhancedBrainEngine:
         logger.warning(f"BRAIN: Threshold updated {old_threshold:.2f} -> {self.decision_threshold:.2f}")
     
     def save_state(self, path: str = "brain_state.json"):
-        """Save brain state to disk"""
+        """[v10.0.0] Atomic Persistence: Write-to-Temp then Rename."""
+        global_sentinel.record_heartbeat("brain_persistence")
         state = {
-            'decision_threshold': self.decision_threshold,
-            'feature_reputation': self.feature_reputation,
-            'meta_vetoes': self.meta_vetoes,
-            'weights': {
-                'xgboost': self.xgb_weight,
-                'rl': self.rl_weight,
-                'smc': self.smc_weight
+            "model_version": self.model_version,
+            "decision_threshold": self.decision_threshold,
+            "weights": {
+                "xgboost": self.xgb_weight,
+                "rl": self.rl_weight,
+                "smc": self.smc_weight
             },
-            'performance_history': {k: list(v) for k, v in self.performance_history.items()},
-            'timestamp': datetime.now().isoformat()
+            "feature_reputation": self.feature_reputation,
+            "trades_today": self.trades_today,
+            "last_trade_date": self.last_trade_date.isoformat() if isinstance(self.last_trade_date, datetime) else self.last_trade_date
         }
         
-        with open(path, 'w') as f:
-            json.dump(state, f, indent=2)
-        
-        # Save RL state if enabled
-        if self.enable_rl and self.rl_engine:
-            self.rl_engine.save_state("rl_state.pt")
-        
-        logger.info(f"BRAIN: State saved to {path}")
-    
-    def load_state(self, path: str = "brain_state.json"):
-        """Load brain state from disk"""
         try:
-            with open(path, 'r') as f:
+            dir_name = os.path.dirname(os.path.abspath(path))
+            fd, temp_path = tempfile.mkstemp(dir=dir_name, prefix="brain_", suffix=".tmp")
+            with os.fdopen(fd, 'w') as f:
+                json.dump(state, f, indent=4)
+            
+            os.replace(temp_path, path)
+            logger.info(f"BRAIN: State saved ATOMICALLY to {path}")
+        except Exception as e:
+            logger.error(f"BRAIN: Atomic save failed: {e}")
+
+    def load_state(self, path: str = "brain_state.json"):
+        """[v10.0.0] Schema-Aware Recovery: Validates keys before loading."""
+        if not os.path.exists(path): return
+        
+        try:
+            with open(path, "r") as f:
                 state = json.load(f)
             
-            self.decision_threshold = state.get('decision_threshold', 0.75)
-            self.feature_reputation = state.get('feature_reputation', self.feature_reputation)
-            self.meta_vetoes = state.get('meta_vetoes', self.meta_vetoes)
+            # Schema Validation
+            required_keys = ["model_version", "weights", "feature_reputation"]
+            if not all(k in state for k in required_keys):
+                logger.warning(f"BRAIN: State file {path} schema mismatch. Bypassing load.")
+                return
+
+            self.model_version = state.get("model_version", "v1.0")
+            self.decision_threshold = state.get("decision_threshold", 0.75)
             
-            weights = state.get('weights', {})
-            self.xgb_weight = weights.get('xgboost', 0.4)
-            self.rl_weight = weights.get('rl', 0.3)
-            self.smc_weight = weights.get('smc', 0.3)
+            weights = state.get("weights", {})
+            self.xgb_weight = weights.get("xgboost", 0.4)
+            self.rl_weight = weights.get("rl", 0.3)
+            self.smc_weight = weights.get("smc", 0.3)
             
-            perf = state.get('performance_history', {})
-            for k, v in perf.items():
-                if k in self.performance_history:
-                    self.performance_history[k].extend(v)
+            self.feature_reputation = state.get("feature_reputation", self.feature_reputation)
+            self.trades_today = state.get("trades_today", 0)
             
-            logger.info(f"BRAIN: State loaded from {path}")
-            return True
-        except FileNotFoundError:
-            logger.warning(f"BRAIN: No saved state found at {path}")
-            return False
+            ltd = state.get("last_trade_date")
+            if ltd:
+                try: self.last_trade_date = datetime.fromisoformat(ltd)
+                except: self.last_trade_date = ltd
+            
+            logger.info(f"BRAIN: State loaded and VALIDATED from {path}")
         except Exception as e:
-            logger.error(f"BRAIN: Error loading state: {e}")
-            return False
+            logger.error(f"BRAIN: Load failed: {e}. Starting clean.")
 
     def check_basis_stability(self, basis: float) -> Dict:
         """
@@ -897,7 +929,16 @@ class EnhancedBrainEngine:
         
         new_weights = {k: v / total for k, v in exp_s.items()}
         
-        # Cap Dominance (max 0.6)
+        # [v11.0.0] Cap Dominance (max 0.6) & Weight Floor (min 0.15)
+        # Ensuring no individual engine is ever silenced.
+        FLOOR = 0.15
+        for k in new_weights:
+            new_weights[k] = max(FLOOR, new_weights[k])
+            
+        # Re-normalize after floor
+        total_after_floor = sum(new_weights.values())
+        new_weights = {k: v / total_after_floor for k, v in new_weights.items()}
+        
         for k in new_weights:
             if new_weights[k] > 0.6:
                 diff = new_weights[k] - 0.6
@@ -910,7 +951,7 @@ class EnhancedBrainEngine:
         self.rl_weight = new_weights['rl']
         self.smc_weight = new_weights['smc']
         
-        logger.debug(f"BRAIN: Weights Updated | XGB: {self.xgb_weight:.2f}, RL: {self.rl_weight:.2f}, SMC: {self.smc_weight:.2f}")
+        logger.info(f"BRAIN: Weights Re-calibrated | XGB: {self.xgb_weight:.2f}, RL: {self.rl_weight:.2f}, SMC: {self.smc_weight:.2f}")
 
     def generate_decision(self, features: Dict, regime: str, is_commit: bool = False, pattern_score: float = 0.0, **kwargs) -> Tuple[str, List[str]]:
         """

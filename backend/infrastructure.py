@@ -8,6 +8,7 @@ import time
 import json
 import requests
 import socket
+import random
 from typing import Dict, List, Optional, Set, Tuple
 from datetime import datetime
 # import pandas as pd (Moved to local scope)
@@ -23,8 +24,33 @@ load_dotenv()
 IST = pytz.timezone('Asia/Kolkata')
 
 # ============================================================================
-# Institutional Wisdom & Greetings
+# 0. System Sentinel (Watchdog for Background Threads)
 # ============================================================================
+
+class SystemSentinel:
+    """[v10.0.0] The Overseer. Monitors thread health and heartbeats."""
+    _instance = None
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(SystemSentinel, cls).__new__(cls)
+            cls._instance.heartbeats = {}
+            cls._instance.lock = threading.Lock()
+        return cls._instance
+
+    def record_heartbeat(self, thread_name: str):
+        with self.lock:
+            self.heartbeats[thread_name] = time.time()
+
+    def get_status(self) -> Dict[str, bool]:
+        now = time.time()
+        status = {}
+        with self.lock:
+            for name, last_time in self.heartbeats.items():
+                # If more than 5 minutes since last heartbeat, consider dead
+                status[name] = (now - last_time) < 300
+        return status
+
+global_sentinel = SystemSentinel()
 INSTITUTIONAL_WISDOM = [
     "Greed makes you loss money at the end.",
     "The winner is the one who does not know when and how to win; the true winner is the one who know when to stop.",
@@ -193,20 +219,84 @@ class SupabaseManager:
     def __init__(self):
         if self._initialized: return
         self.supabase: Optional[Client] = None
-        self.table_columns = {"signal_ledger": set(), "trade_snapshots": set()}
+        self.table_columns = {"signal_ledger": set(), "trade_snapshots": set(), "system_heartbeat": set()}
         self.queue = queue.Queue(maxsize=10000)
         self.seq_id = 0
         self.seq_lock = threading.Lock()
+        self.instance_id = str(uuid.uuid4())[:8]
+        self.is_leader = False
         
         url, key = os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY")
         if url and key:
             try:
                 self.supabase = create_client(url, key)
                 self._check_schema()
+                self._elect_leader()
                 threading.Thread(target=self._worker, daemon=True).start()
+                threading.Thread(target=self._heartbeat_loop, daemon=True).start()
                 self._initialized = True
             except Exception as e:
                 logging.getLogger("infrastructure").error(f"SUPABASE: Init failed: {e}")
+
+    def _elect_leader(self):
+        """[v12.0.0] Hardened 2-Phase Leader Election with Jitter."""
+        try:
+            # 1. Broad query for active leaders (Lease concept)
+            threshold = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
+            res = self.supabase.table("system_heartbeat").select("*").gt("last_heartbeat", threshold).execute()
+            
+            # 2. Check for LEADER status explicitly
+            active_leaders = [r['instance_id'] for r in res.data if r.get('status') == 'LEADER']
+            if active_leaders:
+                self.is_leader = False
+                logging.warning(f"SUPABASE: Active LEADER {active_leaders[0]} detected. Staying in FOLLOWER mode.")
+                return
+
+            # 3. Phase 1: Announce Candidacy
+            self.supabase.table("system_heartbeat").upsert({
+                "instance_id": self.instance_id,
+                "last_heartbeat": datetime.now(timezone.utc).isoformat(),
+                "status": "CANDIDATE"
+            }).execute()
+
+            # 4. Randomized Jitter to break simultaneous start ties (2-Phase Commit concept)
+            jitter = random.uniform(0.5, 2.5)
+            time.sleep(jitter)
+
+            # 5. Phase 2: Verify Candidacy
+            res = self.supabase.table("system_heartbeat").select("*").gt("last_heartbeat", threshold).execute()
+            # Sort by instance_id as a deterministic tie-breaker
+            potential_leaders = sorted([r for r in res.data if r.get('status') in ['LEADER', 'CANDIDATE']], 
+                                        key=lambda x: x['instance_id'])
+            
+            if potential_leaders and potential_leaders[0]['instance_id'] == self.instance_id:
+                self.is_leader = True
+                self.supabase.table("system_heartbeat").update({
+                    "status": "LEADER",
+                    "last_heartbeat": datetime.now(timezone.utc).isoformat()
+                }).eq("instance_id", self.instance_id).execute()
+                logging.info(f"SUPABASE: Instance {self.instance_id} WON election. Promoted to LEADER.")
+            else:
+                self.is_leader = False
+                winner = potential_leaders[0]['instance_id'] if potential_leaders else "Unknown"
+                logging.warning(f"SUPABASE: Instance {self.instance_id} LOST election to {winner}. Staying FOLLOWER.")
+
+        except Exception as e:
+            logging.error(f"SUPABASE: Leader election failure: {e}. Defaulting to FOLLOWER safety.")
+            self.is_leader = False
+
+    def _heartbeat_loop(self):
+        """Keeps the lease alive."""
+        while True:
+            try:
+                if self.is_leader:
+                    self.supabase.table("system_heartbeat").update({
+                        "last_heartbeat": datetime.now(timezone.utc).isoformat()
+                    }).eq("instance_id", self.instance_id).execute()
+                time.sleep(60)
+            except Exception as e:
+                logging.error(f"SUPABASE: Heartbeat failed: {e}")
+                time.sleep(10)
 
     def _check_schema(self):
         for table in self.table_columns.keys():
@@ -219,12 +309,31 @@ class SupabaseManager:
         while True:
             try:
                 task_type, data = self.queue.get()
-                table = "signal_ledger" if task_type in ["intent", "outcome"] else "trade_snapshots"
+                global_sentinel.record_heartbeat("supabase_worker")
+                table = "signal_ledger" if task_type in ["intent", "outcome", "update"] else "trade_snapshots"
+                
+                # Dynamic Schema filtering
                 allowed = self.table_columns.get(table, set())
                 safe_data = {k: v for k, v in data.items() if k in allowed} if allowed else data
-                self.supabase.table(table).insert(safe_data).execute()
+                
+                # [v10.0.0] Ghost-Instance Safety: Only LEADER can write Intents
+                if task_type == "intent" and not self.is_leader:
+                    logging.warning(f"SUPABASE: FOLLOWER instance tried to log intent. BLOCKING.")
+                    self.queue.task_done()
+                    continue
+
+                # Logic Switch: Insert vs Update
+                if task_type == "update":
+                    sig_id = safe_data.pop("signal_id", None)
+                    if sig_id:
+                        self.supabase.table(table).update(safe_data).eq("signal_id", sig_id).execute()
+                else:
+                    self.supabase.table(table).insert(safe_data).execute()
+                
                 self.queue.task_done()
-            except: time.sleep(1)
+            except Exception as e:
+                logging.getLogger("infrastructure").warning(f"SUPABASE: Write failed (Retrying in 5s): {e}")
+                time.sleep(5) # Backoff
 
     def log_intent(self, signal_data: Dict):
         with self.seq_lock: self.seq_id += 1
@@ -240,6 +349,13 @@ class SupabaseManager:
         with self.seq_lock: self.seq_id += 1
         data = {"signal_id": signal_id, "timestamp": datetime.now().isoformat(), "seq_id": self.seq_id, "state": "OUTCOME", "value": outcome}
         self.queue.put(("outcome", data))
+
+    def update_signal_state(self, signal_id: str, state: str, value: Any = None):
+        """Update an existing signal record instead of inserting a new row."""
+        data = {"signal_id": signal_id, "state": state, "timestamp": datetime.now().isoformat()}
+        if value is not None:
+            data["value"] = value
+        self.queue.put(("update", data))
 
     def log_snapshot(self, signal_data: Dict, outcome: int, stage: int = 1, efficacy: Optional[int] = None):
         with self.seq_lock: self.seq_id += 1
@@ -279,6 +395,26 @@ class SupabaseManager:
             res = self.supabase.table("trade_snapshots").select("*").order("timestamp", desc=True).limit(limit).execute()
             return res.data or []
         except: return []
+
+    def get_active_signals(self) -> List[Dict]:
+        """Recovers signals that haven't been CLOSED or given an OUTCOME."""
+        try:
+            # Fetch last 100 signals and filter locally for simplicity/resilience
+            res = self.supabase.table("signal_ledger").select("*").order("timestamp", desc=True).limit(100).execute()
+            if not res.data: return []
+            
+            # Map by ID to find ones without OUTCOME state
+            id_map = {}
+            for row in res.data:
+                sid = row['signal_id']
+                if sid not in id_map: id_map[sid] = []
+                id_map[sid].append(row['state'])
+            
+            active_ids = [sid for sid, states in id_map.items() if "OUTCOME" not in states]
+            return [row for row in res.data if row['signal_id'] in active_ids and row['state'] == "INTENT"]
+        except Exception as e:
+            logging.getLogger("infrastructure").error(f"SUPABASE: Signal recovery failed: {e}")
+            return []
 
     def get_last_known_prices(self) -> Dict[str, float]:
         """Recovers the most recent prices from trade snapshots."""

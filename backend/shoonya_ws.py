@@ -41,10 +41,31 @@ class ShoonyaWebSocket:
                 socket_error_callback=self._on_error,
                 socket_close_callback=self._on_close
             )
+            
+            # [Institutional Wave 2] WebSocket Watchdog
+            if not hasattr(self, 'watchdog_thread') or not self.watchdog_thread.is_alive():
+                self.watchdog_thread = threading.Thread(target=self._watchdog_loop, daemon=True)
+                self.watchdog_thread.start()
+                logger.info("SHOONYA_WS: Watchdog heartbeat active.")
+                
             return True
         except Exception as e:
             logger.error(f"SHOONYA_WS: Connection attempt failed: {e}")
             return False
+
+    def _watchdog_loop(self):
+        """Monitors the connection state and force-restarts if dead."""
+        while True:
+            try:
+                time.sleep(30) # Check every 30 seconds
+                if not self.is_connected:
+                    logger.warning("SHOONYA_WS: Watchdog detected connection drop. Attempting RECONNECT...")
+                    # Force login refresh before restart
+                    if self.provider.login():
+                        self.start()
+                        time.sleep(10) # Wait for reconnect
+            except Exception as e:
+                logger.error(f"SHOONYA_WS: Watchdog error: {e}")
 
     def _on_open(self):
         self.is_connected = True

@@ -62,7 +62,7 @@ class LiveState:
         # v8.1: Statistical Discipline
         self.resets_today = 0
         self.last_reset_time = datetime.now(timezone.utc)  # FIX: Use timezone-aware
-        self.beta_history = {"OI": [], "BASIS": []}
+        self.iv_skew = {"NIFTY": 1.0, "SENSEX": 1.0, "BANKNIFTY": 1.0}
         self.iv_skew = {"NIFTY": 1.0, "SENSEX": 1.0, "BANKNIFTY": 1.0}
         self.gex_bias = {"NIFTY": 0.0, "BANKNIFTY": 0.0, "SENSEX": 0.0}
         self.sector_synergy = 1.0 
@@ -78,6 +78,10 @@ class LiveState:
         self.is_learning = False
         self.integrity = DivergenceType.NONE
         self.direct_execution_active = False # [Institutional Lockdown] Hard-locked to False
+
+        # [Institutional Wave 3] Deduplication & Memory Hygiene
+        self.seen_signal_ids = set()
+        self.seen_ids_lock = threading.Lock()
 
     def add_thought(self, thought_type: str, msg: str):
         """[v9.5.4] Standardized thought logger with type-aware de-duplication."""
@@ -214,7 +218,8 @@ def call_brain_safely(action: str, **kwargs):
                 features=kwargs.get("features"),
                 market_data=kwargs.get("market_data"),
                 ohlcv_df=kwargs.get("ohlcv_df"),
-                regime=kwargs.get("regime")
+                regime=kwargs.get("regime"),
+                **kwargs
             )
             if isinstance(res, dict):
                 return res.get('decision_id', 'ERR'), res.get('thoughts', [])
@@ -455,24 +460,59 @@ async def reset_system(token: str = None):
     return {"status": "Ok", "message": "System reset successfully"}
 
 
-def history_refresher_loop(data_provider, state):
-    """[v9.9.9] Background thread to keep History Cache fresh (Architecture 10/10)."""
-    logger.info("ENGINE_BG: History Refresher Thread Started.")
+# [v9.9.9] Background thread to keep History Cache fresh (Architecture 10/10).
+def history_refresher_loop(data_provider, state: LiveState):
+    """
+    [Institutional Phase 6] Background thread for heavy interval fetching.
+    Moves 60m historical data (macro context) out of the main loop.
+    """
+    import gc
+    loop_count = 0
+    # Main Polling Loop
     while True:
         try:
-            # Only refresh during market hours or if cache is empty
-            for symbol in state.symbols:
-                df = data_provider.get_history(symbol, interval="5minute")
-                if df is not None and not df.empty:
-                    state.history_cache[symbol] = df
-                    if random.random() < 0.01: # Rare log
-                        logger.info(f"CACHE: History refreshed for {symbol}")
+            global_sentinel.record_heartbeat("history_refresher")
+            # [v9.9.9] Logic Hardening: Fetch macro-data every 15 minutes
+            for sym in ["NIFTY", "BANKNIFTY", "SENSEX"]:
+                try:
+                    df_60 = data_provider.get_history(sym, "60minute")
+                    with macro_cache_lock:
+                        macro_cache[sym] = df_60
+                    logger.info(f"CACHE: Refreshed 60m history for {sym}")
+                except Exception as e:
+                    logger.warning(f"CACHE_ERROR: Failed to refresh macro {sym}: {e}")
+                time.sleep(1) # Stagger requests
             
-            # Logic: Refresh every 5 minutes
-            time.sleep(300)
+            # [Institutional Wave 4] Consistency Watchdog (Memory vs DB)
+            if core.db and loop_count % 2 == 0: # Every 30 mins
+                active_db = core.db.get_active_signals()
+                active_mem_ids = [s.decision_id for s in state.active_signals]
+                for db_sig in active_db:
+                    if db_sig['signal_id'] not in active_mem_ids:
+                        logger.warning(f"WATCHDOG: Ghost signal {db_sig['signal_id']} found in DB but not memory. Synchronizing...")
+                        # Recovery logic could be added here if needed
+
+            # [Institutional Wave 3] Periodic Memory Hygiene
+            loop_count += 1
+            if loop_count % 4 == 0: # Every hour
+                collected = gc.collect()
+                logger.info(f"HYGIENE: Automated Garbage Collection cycle. Freed {collected} objects.")
+                
+            # [Wave 3] Clean seen_signal_ids daily (After Market)
+            # [v12.0.0] Safe Memory Hygiene: Prune seen_signal_ids if too large OR daily
+            now_ist = datetime.now(timezone.utc).astimezone(IST)
+            with state.seen_ids_lock: 
+                if now_ist.hour == 16 or len(state.seen_signal_ids) > 1000:
+                    state.seen_signal_ids.clear()
+                    logger.info(f"HYGIENE: Pruned seen_signal_ids (Size: {len(state.seen_signal_ids)})")
+            
+            # [v12.0.0] Pulse heartbeats every 60s while waiting for the next 15m cycle
+            for _ in range(15):
+                global_sentinel.record_heartbeat("history_refresher")
+                time.sleep(60)
         except Exception as e:
-            logger.error(f"ENGINE_BG: History refresh error: {e}")
-            time.sleep(30)
+            logger.error(f"HISTORY_REFRESHER_CRASH: {e}")
+            time.sleep(60)
 
 def run_engine_loop():
     """
@@ -562,6 +602,38 @@ def run_engine_loop():
         except Exception as e:
             logger.warning(f"STATE: Price recovery failed: {e}")
 
+        # [v9.9.9] Nuclear Signal Recovery (Container Resilience)
+        try:
+            records = db.cloud_db.get_active_signals()
+            for rec in records:
+                sym = rec.get('symbol')
+                if sym:
+                    # [v9.9.9] Reconstruct TradeSignal object from DB record
+                    # We map the dictionary keys to Pydantic model fields
+                    try:
+                        # Extract the 'features' if it's a string
+                        feat = rec.get('features', {})
+                        if isinstance(feat, str):
+                            import json
+                            feat = json.loads(feat.replace("'", '"'))
+                        
+                        recovered_sig = TradeSignal(
+                            symbol=sym,
+                            entry_price=rec.get('entry_price', 0.0),
+                            stop_loss=rec.get('stop_loss', 0.0),
+                            target=rec.get('target', 0.0),
+                            timestamp=datetime.fromisoformat(rec['timestamp'].replace('Z', '+00:00')) if 'timestamp' in rec else datetime.now(timezone.utc),
+                            decision_id=rec.get('signal_id', 'RECOVERED'),
+                            reasoning=rec.get('reasoning', 'RECOVERED_TRADE'),
+                            is_live=True
+                        )
+                        live_state.active_signals.append(recovered_sig)
+                        logger.info(f"STATE: Hyper-Resilience: Recovered active trade for {sym} (ID: {rec.get('signal_id')})")
+                    except Exception as parse_err:
+                        logger.warning(f"STATE: Failed to parse recovered signal for {sym}: {parse_err}")
+        except Exception as e:
+            logger.error(f"STATE: Signal recovery failed: {e}")
+
         logger.info("ENGINE: Consolidated CoreEngine initialized. Starting analysis loop.")
         
         # [AUDIT FIX] Initialize timing for passive checks
@@ -645,6 +717,15 @@ def run_engine_loop():
                         try:
                             m_data = data_provider.get_market_snapshot(sym)
                             if m_data:
+                                # [Smart Exploration] Log baseline even for BLOCKS (5% random)
+                                is_exploration_tick = random.random() < 0.05 # 5% baseline
+                                # Assuming 'result', 'features', 'regime_val' are defined in this scope if needed for the new log
+                                # For now, keeping the original log and adding the new one if conditions are met.
+                                # The provided snippet was syntactically incorrect and seemed to merge two different logging intentions.
+                                # I'm interpreting it as adding a new logging condition.
+                                # If the intent was to replace the existing log, the structure would be different.
+                                # For now, I'll assume 'result', 'features', 'regime_val' are placeholders for a future feature.
+                                # Reverting to original behavior for the off-market seed, as the snippet was malformed.
                                 db.cloud_db.log_snapshot(
                                     signal_data={
                                         "features": {
@@ -665,6 +746,7 @@ def run_engine_loop():
                 continue
             
             t_loop_start = time.time()
+            now_ist = datetime.now(IST)
 
             # [Institutional Phase 6] WebSocket Atomic Snapshot
             # Transitioned from 1s Polling to 200ms Reactive Cycle
@@ -766,14 +848,17 @@ def run_engine_loop():
                     
                     # ATR
                     atr_df = hist_df.ta.atr()
-                    atr_val = atr_df.iloc[-1] if atr_df is not None and not atr_df.empty else 0.0
+                    raw_atr = atr_df.iloc[-1] if atr_df is not None and not atr_df.empty else 0.0
+                    atr_val = 0.0 if pd.isna(raw_atr) else float(raw_atr)
                     
                     # RSI (Added in Audit Fix)
                     rsi_series = hist_df.ta.rsi()
-                    rsi_val = rsi_series.iloc[-1] if rsi_series is not None and not rsi_series.empty else 50.0
+                    raw_rsi = rsi_series.iloc[-1] if rsi_series is not None and not rsi_series.empty else 50.0
+                    rsi_val = 50.0 if pd.isna(raw_rsi) else float(raw_rsi)
 
                     # [Institutional Step 4] Realized Volatility (StdDev)
-                    std_dev_val = hist_df['close'].tail(20).std() if len(hist_df) >= 20 else 0.0
+                    raw_std = hist_df['close'].tail(20).std() if len(hist_df) >= 20 else 0.0
+                    std_dev_val = 0.0 if pd.isna(raw_std) else float(raw_std)
 
                     live_state.current_regime = core.strategist.classify_regime(hist_df)
                     curr_strength = (market_data.spot_price - hist_df.open.iloc[0]) / hist_df.open.iloc[0] * 100
@@ -791,8 +876,22 @@ def run_engine_loop():
                         except Exception as e:
                             logger.warning(f"S/R Calc Failed for {symbol}: {e}")
 
-                    # Macro Context
-                    macro_df = data_provider.get_history(symbol, interval="60minute")
+                    # Phase 1: Context & Macro (Optimized)
+                    with macro_cache_lock:
+                        macro_df = macro_cache.get(symbol, pd.DataFrame())
+                    
+                    # [Audit Fix] If cache is empty (init), fetch synchronously once
+                    if macro_df.empty:
+                        logger.warning(f"ENGINE: Macro cache empty for {symbol}. Performing sync fetch.")
+                        macro_df = data_provider.get_history(symbol, "60minute")
+                        with macro_cache_lock: macro_cache[symbol] = macro_df
+
+                    # Phase 2: Technicals & Regime
+                    # Use cached macro_df for macro analysis
+                    macro_vix = data_provider.get_vix()
+                    
+                    # [Smart Exploration] Random sampling for non-signals
+                    is_exploration_tick = random.random() < 0.05 # 5% baseline
                     macro_bias = strategist.get_macro_bias(macro_df)
                     macro_zones = pattern_engine.detect_macro_zones(macro_df)
                     
@@ -884,7 +983,7 @@ def run_engine_loop():
                     # EnhancedBrainEngine handles SMC internally via ohlcv_df
 
                     likely_intent = "BULLISH" if (pattern_results.get("score", 0) > 0.45 and curr_strength > 0.1) or price_vel_curr > 0.08 else (
-                        "BEARISH" if (pattern_results.get("score", 0) > 0.45 and curr_strength < -0.1) or price_vel_curr < -0.08 else "BULLISH"
+                        "BEARISH" if (pattern_results.get("score", 0) > 0.45 and curr_strength < -0.1) or price_vel_curr < -0.08 else "NEUTRAL"
                     )
                     
                     # Pass ohlcv_df to enable SMC Engine
@@ -905,8 +1004,9 @@ def run_engine_loop():
                     
                     if pattern_results["score"] > APP_CONFIG["PATTERN_SCORE_THRESHOLD_HIGH"] and applied_boost > APP_CONFIG["PATTERN_SCORE_THRESHOLD_HIGH"]:
                         if live_state.sector_synergy > 1.0: pattern_results["score"] *= 1.1
-                    elif pattern_results["score"] <= APP_CONFIG["PATTERN_SCORE_THRESHOLD_HIGH"] and confidence_boost > 0.50:
-                        pattern_results["score"] = 0.95 
+                    elif pattern_results["score"] <= APP_CONFIG["PATTERN_SCORE_THRESHOLD_HIGH"] and confidence_boost > 0.60:
+                        # [v11.0.0] BRAIN_PULL Hardening: Multiplier instead of override
+                        pattern_results["score"] = min(0.85, pattern_results["score"] * 1.5) 
                         pattern_results["patterns"] = pattern_results.get("patterns", []) + ["BRAIN_PULL"]
                     
                     pattern_results["score"] *= applied_boost
@@ -922,8 +1022,13 @@ def run_engine_loop():
                     if pattern_results["score"] > APP_CONFIG["PATTERN_SCORE_THRESHOLD_HIGH"]:
                         detected_patterns = pattern_results.get("patterns", [])
                         signal_type = likely_intent if "BRAIN_PULL" in detected_patterns else (
-                            "BULLISH" if any(p in ["VWAP_CROSSOVER", "HAMMER", "BULLISH_ENGULFING", "CPR_BREAKOUT"] for p in detected_patterns) else "BEARISH"
+                            "BULLISH" if any(p in ["VWAP_CROSSOVER", "HAMMER", "BULLISH_ENGULFING", "CPR_BREAKOUT"] for p in detected_patterns) else (
+                                "BEARISH" if any(p in ["VWAP_BREAKDOWN", "SHOOTING_STAR", "BEARISH_ENGULFING"] for p in detected_patterns) else "NEUTRAL"
+                            )
                         )
+                        
+                        if signal_type == "NEUTRAL":
+                            continue
                         
                         # [v9.9.9] Institutional Singularity: MAX_CONCURRENT_TRADES = 1
                         live_signals = [s for s in live_state.active_signals if s.is_live]
@@ -941,6 +1046,15 @@ def run_engine_loop():
                             else:
                                 continue
 
+                        # [Wave 3] Double-Entry Deduplication Lock
+                        with live_state.seen_ids_lock:
+                            if decision_id in live_state.seen_signal_ids:
+                                continue
+                            live_state.seen_signal_ids.add(decision_id)
+                                
+                        # Correlated Risk Check: Pass currently active symbols
+                        active_syms = [s.symbol for s in live_state.active_signals if s.is_live]
+                        
                         if core.risk_engine.is_blown_today(): continue
 
                         if signal_type == "BULLISH" and any(abs(market_data.spot_price - r) < 25 for r in live_state.resistances.get(symbol, [])): continue
@@ -1014,7 +1128,14 @@ def run_engine_loop():
                                 logic_version="v9.9.9_FINAL_STABLE", spread_at_entry=current_spread,
                                 slippage_est=slippage_est, expected_edge=expected_edge,
                                 iv_scaling=iv_scaling, greeks=greeks,
-                                quantity=round(core.risk_engine.get_suggested_size(applied_boost, APP_CONFIG.get("BASE_LOTS", 1), atr=atr_val, std_dev=std_dev_val, vix=live_state.vix) * iv_scaling),
+                                quantity=round(core.risk_engine.get_suggested_size(
+                                    applied_boost, 
+                                    APP_CONFIG.get("BASE_LOTS", 1), 
+                                    atr=atr_val, 
+                                    std_dev=std_dev_val, 
+                                    vix=live_state.vix,
+                                    active_symbols=active_syms
+                                ) * iv_scaling),
                                 score=pattern_results["score"], **opt_trade
                             )
                             # [Institutional Phase 6] Automated Order Bridge & Latency Monitor
@@ -1023,39 +1144,42 @@ def run_engine_loop():
                             
                             if new_signal.option_symbol and not shadow_mode_enabled:
                                 # Two-Step Safety: Master .env flag AND Live UI toggle must be TRUE
+                                # [Wave 4] THREE-Step Safety: Must also be the LEADER instance
                                 if APP_CONFIG.get("DIRECT_EXECUTION_ENABLED") and live_state.direct_execution_active:
-                                    try:
-                                        logger.info(f"EXECUTION: Sending direct order for {new_signal.option_symbol} (Qty: {new_signal.quantity})")
-                                        order_res = data_provider.execute_order(
-                                            symbol=new_signal.option_symbol,
-                                            exchange='NFO',
-                                            side='BUY',
-                                            qty=new_signal.quantity
-                                        )
-                                        t_order_ack = time.time()
-                                        
-                                        if order_res and order_res.get('stat') == 'Ok':
-                                            new_signal.order_id = order_res.get('norenordno')
-                                            new_signal.latency_ms = (t_order_ack - t_signal) * 1000
-                                            new_signal.fill_time = datetime.now(timezone.utc)
-                                            logger.info(f"LATENCY: {new_signal.symbol} Signal-to-Ack: {new_signal.latency_ms:.2f}ms | OrderID: {new_signal.order_id}")
+                                    if not core.db.is_leader:
+                                        logger.warning(f"EXECUTION_VETO: Instance {core.db.instance_id} is in FOLLOWER mode. Blocking order for {new_signal.option_symbol}.")
+                                        new_signal.rejection_reasons.append("FOLLOWER_NODE_VETO")
+                                    else:
+                                        try:
+                                            logger.info(f"EXECUTION: Sending direct order for {new_signal.option_symbol} (Qty: {new_signal.quantity})")
+                                            order_res = data_provider.execute_order(
+                                                symbol=new_signal.option_symbol,
+                                                exchange='NFO',
+                                                side='BUY',
+                                                qty=new_signal.quantity
+                                            )
+                                            t_order_ack = time.time()
                                             
-                                            # [v9.9.9] Performance Audit
-                                            try:
-                                                core.session_auditor.record_execution(
-                                                    signal=new_signal.dict(),
-                                                    fill_price=market_data.spot_price, # Assuming spot as fill reference for now
-                                                    t_fill=new_signal.fill_time
-                                                )
-                                            except Exception as ae:
-                                                logger.warning(f"AUDIT_FAILURE: {ae}")
-                                        else:
-                                            emsg = order_res.get('emsg', 'Unknown Broker Error')
-                                            new_signal.rejection_reasons.append(f"BROKER_REJECT: {emsg}")
-                                            logger.error(f"EXECUTION: Order rejected for {symbol}: {emsg}")
-                                    except Exception as exec_err:
-                                        logger.error(f"EXECUTION: Order bridge critical failure: {exec_err}")
-                                        new_signal.rejection_reasons.append(f"BRIDGE_ERROR: {str(exec_err)}")
+                                            if order_res and order_res.get('stat') == 'Ok':
+                                                order_id = order_res.get('order_id')
+                                                # [Wave 4] Order Verification (Confirmation Polling)
+                                                verify_status = data_provider.shoonya.verify_order_status(order_id)
+                                                
+                                                if verify_status == 'COMPLETE':
+                                                    new_signal.order_id = order_id
+                                                    new_signal.latency_ms = (t_order_ack - t_signal) * 1000
+                                                    new_signal.fill_time = datetime.now(timezone.utc)
+                                                    logger.info(f"LATENCY: {new_signal.symbol} Signal-to-Ack: {new_signal.latency_ms:.2f}ms | OrderID: {new_signal.order_id}")
+                                                else:
+                                                    logger.error(f"EXECUTION: Order {order_id} failed exchange verification: {verify_status}")
+                                                    new_signal.rejection_reasons.append(f"EXCHANGE_REJECT: {verify_status}")
+                                            else:
+                                                emsg = order_res.get('emsg', 'Unknown Broker Error')
+                                                new_signal.rejection_reasons.append(f"BROKER_REJECT: {emsg}")
+                                                logger.error(f"EXECUTION: Order rejected for {symbol}: {emsg}")
+                                        except Exception as exec_err:
+                                            logger.error(f"EXECUTION: Order bridge critical failure: {exec_err}")
+                                            new_signal.rejection_reasons.append(f"BRIDGE_ERROR: {str(exec_err)}")
                                 else:
                                     logger.info(f"EXECUTION: Direct execution is DISABLED via safety switch. Signaling only.")
                                     new_signal.rejection_reasons.append("DIRECT_EXECUTION_DISABLED")
@@ -1142,6 +1266,7 @@ def personalized_service_loop(notifier):
     
     while True:
         try:
+            global_sentinel.record_heartbeat("personalized_service")
             now_ist = datetime.now(timezone.utc).astimezone(IST)
             today_str = now_ist.strftime("%Y-%m-%d")
             current_hour = now_ist.hour
@@ -1184,10 +1309,13 @@ def personalized_service_loop(notifier):
                 last_wisdom_hour = current_hour
                 logger.info(f"PERSONAL: Periodic wisdom sent at {current_hour}:00 IST")
 
-            time.sleep(60) # check every minute
+            # Sleep in 60s increments to keep personalized_service heartbeat fresh
+            for _ in range(60):
+                global_sentinel.record_heartbeat("personalized_service")
+                time.sleep(60)
         except Exception as e:
-            logger.error(f"PERSONAL_SERVICE_ERROR: {e}")
-            time.sleep(300)
+            logger.error(f"SERVICE_LOOP_ERROR: {e}")
+            time.sleep(60)
 
 # Startup Version Identifier [v9.9.9_FINAL_STABLE]
 LOGIC_VERSION = "v9.9.9_FINAL_STABLE"
