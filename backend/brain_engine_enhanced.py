@@ -305,6 +305,23 @@ class EnhancedBrainEngine:
             
             # Put in queue instead of writing directly
             self.log_queue.put(context)
+            
+            # [Institutional Responsibility] Log to Cloud DB for Evolution Engine training
+            # This ensures even 'BLOCK' decisions are analyzed for missed wins/losses.
+            if hasattr(self, 'cloud_db') and self.cloud_db:
+                self.cloud_db.log_snapshot(
+                    signal_data={
+                        "symbol": context['instrument'],
+                        "features": features,
+                        "decision_id": context['decision_id'],
+                        "reasoning": " | ".join(context['veto_reasons']) if context['veto_reasons'] else "NOMINAL"
+                    },
+                    outcome=0, # Initial state (unfilled)
+                    efficacy=None, # To be filled during session audit
+                )
+                # Manually set decision field if log_snapshot doesn't handle it well
+                # Note: infrastructure.py log_snapshot usually defaults to Decision.BLOCK 
+                # if efficacy is None and it's called here.
                 
         except Exception as e:
             logger.error(f"BRAIN: Failed to queue decision context: {e}")

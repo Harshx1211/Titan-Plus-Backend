@@ -1047,6 +1047,10 @@ def run_engine_loop():
                                     new_signal.rejection_reasons.append("DIRECT_EXECUTION_DISABLED")
 
                             live_state.active_signals.append(new_signal)
+                            
+                            # [Institutional Responsibility] Log intent to Signal Ledger
+                            core.db.log_intent(new_signal.dict())
+                            
                             core.telegram_notifier.send_signal(new_signal.dict(), dashboard_url=APP_CONFIG.get("DASHBOARD_URL", ""))
 
                     # [v9.9.9] Modular Management: Priority-Based Exit Evaluation

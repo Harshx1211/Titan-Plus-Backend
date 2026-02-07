@@ -138,6 +138,11 @@ const SignalCard = ({ signal, onExecute }: { signal: TradeSignal, onExecute: (id
               </div>
               <p className="text-[10px] sm:text-institutional text-slate-500 mt-1 sm:mt-2 font-bold">
                 {signal.option_symbol || 'Protocol Execution'} • {signal.decision_id?.slice(0, 8) || 'SENTINEL'}
+                {signal.timestamp && (
+                  <span className="ml-2 text-blue-400 opacity-60">
+                    [{new Date(signal.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}]
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -385,9 +390,9 @@ export default function TitanDashboard() {
                 <div className="h-[1px] md:h-[2px] bg-gradient-to-r from-white/20 via-white/5 to-transparent flex-1" />
               </div>
 
-              <div className="grid grid-cols-1 gap-10">
+              <div className="grid grid-cols-1 gap-10 max-h-[1200px] overflow-y-auto scrollbar-none pr-4">
                 {state?.active_signals && state.active_signals.length > 0 ? (
-                  state.active_signals.map((sig, i) => (
+                  [...state.active_signals].reverse().map((sig, i) => (
                     <div key={i} className="animate-in fade-in slide-in-from-bottom-8 duration-700" style={{ animationDelay: `${i * 150}ms` }}>
                       <SignalCard signal={sig} onExecute={handleExecute} />
                     </div>
