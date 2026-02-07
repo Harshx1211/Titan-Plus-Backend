@@ -1,5 +1,6 @@
 import os
 import logging
+import pytz
 import threading
 import queue
 from collections import deque
@@ -19,6 +20,7 @@ class DataHealthError(Exception):
     pass
 
 load_dotenv()
+IST = pytz.timezone('Asia/Kolkata')
 
 # ============================================================================
 # Institutional Wisdom & Greetings

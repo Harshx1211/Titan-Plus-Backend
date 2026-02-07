@@ -116,7 +116,7 @@ shadow_mode_enabled = os.getenv("SHADOW_MODE", "false").lower() == "true"
 admin_token = os.getenv("ADMIN_TOKEN", "titan_admin_123") # Simple auth
 
 # State & Monitoring
-IST = pytz.timezone('Asia/Kolkata')
+from infrastructure import IST
 live_state = LiveState()
 
 # ============================================================================

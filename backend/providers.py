@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 from NorenRestApiPy.NorenApi import NorenApi
 from growwapi import GrowwAPI
 from models_v3 import MarketData
-from infrastructure import CircuitBreaker
+from infrastructure import CircuitBreaker, IST
 
 load_dotenv()
 logger = logging.getLogger("providers")
@@ -216,7 +216,7 @@ GrowwAPI._build_headers = staticmethod(_masked_groww_headers)
 
 class DataProvider:
     def __init__(self):
-        from infrastructure import CircuitBreaker
+        from infrastructure import CircuitBreaker, IST
         self.shoonya = ShoonyaProvider()
         self.groww_key = os.getenv("GROWW_API_KEY")
         self.groww_secret = os.getenv("GROWW_API_SECRET")
@@ -240,8 +240,9 @@ class DataProvider:
         if data and data.get('lp', 0) > 0:
             return MarketData(
                 symbol=symbol, spot_price=data['lp'], 
-                future_price=data.get('future_lp') or (data['lp']+5.0),
-                oi=0, pcr=0.95, timestamp=datetime.now(), source="SHOONYA"
+                # [v9.9.9] Audit Fix: Standardize to 0.05% Basis Fallback
+                future_price=data.get('future_lp') or (data['lp'] * 1.0005),
+                oi=0, pcr=0.95, timestamp=datetime.now(IST), source="SHOONYA"
             )
         
         # Fallback 1: Groww (if Shoonya fails)
@@ -255,8 +256,10 @@ class DataProvider:
                     lp = float(quote['ltp'])
                     self.circuit_groww.record_success()
                     return MarketData(
-                        symbol=symbol, spot_price=lp, future_price=lp+5.0,
-                        oi=0, pcr=0.95, timestamp=datetime.now(), source="GROWW_API"
+                        symbol=symbol, spot_price=lp, 
+                        # [v9.9.9] Audit Fix: Standardize to 0.05% Basis Fallback
+                        future_price=lp * 1.0005,
+                        oi=0, pcr=0.95, timestamp=datetime.now(IST), source="GROWW_API"
                     )
             except Exception as e:
                 logger.error(f"GROWW_DATA: Quote fetch failed for {symbol}: {e}")
@@ -271,7 +274,7 @@ class DataProvider:
                 return MarketData(
                     symbol=symbol, spot_price=last_close, 
                     future_price=last_close,
-                    oi=0, pcr=0.95, timestamp=datetime.now(), source="FALLBACK"
+                    oi=0, pcr=0.95, timestamp=datetime.now(IST), source="FALLBACK"
                 )
         except Exception as e:
             logger.warning(f"Fallback history fetch failed: {e}")
