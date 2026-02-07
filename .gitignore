@@ -11,7 +11,7 @@ weekly_simulation.py
 verify_*.py
 api_*.txt
 *.json
-# Expose Dashboard Config
+!brain_state.json
 !dashboard/*.json
 !dashboard/*.mjs
 !dashboard/*.ts

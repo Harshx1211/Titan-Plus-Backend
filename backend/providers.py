@@ -118,11 +118,20 @@ class ShoonyaProvider:
                              break
 
                 # 2. Map Current Month Futures
-                month = datetime.now().strftime("%b%y").upper()
+                month_code = datetime.now().strftime("%b").upper() # FEB
+                year_code = datetime.now().strftime("%y") # 25
                 exch = "BFO" if symbol == "SENSEX" else "NFO"
-                res = self.api.searchscrip(exchange=exch, searchtext=f"{symbol} {month} FUT")
+                
+                # Try generic search first
+                search_pattern = f"{symbol}{year_code}{month_code}" # NIFTY25FEB
+                res = self.api.searchscrip(exchange=exch, searchtext=search_pattern)
                 if res and res.get('stat') == 'Ok' and res.get('values'):
-                    self.future_tokens[symbol] = (exch, res['values'][0]['token'])
+                    # Filter for FUTIDX or FUTSTK
+                    for v in res['values']:
+                        if 'FUT' in v['instname'] and symbol in v['tsym']:
+                            self.future_tokens[symbol] = (exch, v['token'])
+                            logger.info(f"VALIDATION_PULSE: Mapped {symbol} Future to {v['tsym']} ({v['token']})")
+                            break
             
             # 3. Verify India VIX
             vix_res = self.api.searchscrip(exchange="NSE", searchtext="INDIA VIX")
