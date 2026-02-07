@@ -516,9 +516,9 @@ def run_engine_loop():
             if seed_data and seed_data.spot_price > 0:
                 live_state.prices[sym] = seed_data.spot_price
                 market_state.update({'symbol': sym, 'lp': seed_data.spot_price, 'v': 0, 'oi': seed_data.oi})
-                logger.info(f"STATE: Seeded {sym} @ {seed_data.spot_price}")
+                logger.info(f"STATE_AUDIT: Seeded {sym} @ {seed_data.spot_price} from {seed_data.source}")
         except Exception as e:
-            logger.error(f"STATE_SEED: Failure for {sym}: {e}")
+            logger.error(f"STATE_AUDIT: Failure seeding {sym}: {e}")
 
     # Seed VIX
     try:
@@ -574,13 +574,16 @@ def run_engine_loop():
         logger.error(f"ENGINE INIT ERROR: {init_err}", exc_info=True)
         return
 
+    vix_update_counter = 0
+    
     while True:
         try:
             # [Institutional Phase 6] WebSocket Atomic Snapshot
             now = datetime.now(IST)
             # [v9.9.9] Connectivity Heartbeat
             source_info = data_provider.get_status()
-            live_state.add_thought("MONITOR", f"Data Source Status: {source_info['status']} ({source_info['name']})")
+            if vix_update_counter % 50 == 0:
+                live_state.add_thought("MONITOR", f"System Health: {source_info['status']} | Data: {source_info['name']}")
             
             # Phase 0: Operational Hygiene (Market Hours & Evolution)
             now_ist = datetime.now(IST)
@@ -672,11 +675,14 @@ def run_engine_loop():
             live_state.last_update = datetime.now(timezone.utc)
             live_state.data_source = "SHOONYA_WS"
             
-            # [v9.9.9] Update VIX & Global Breadth once per cycle
-            try:
-                live_state.vix = data_provider.get_vix()
-                live_state.breadth = data_provider.get_breadth("NIFTY")
-            except: pass
+            # [v9.9.9] Update VIX & Global Breadth (Throttled for Stability)
+            if vix_update_counter % 20 == 0: # Every ~4 seconds in a 200ms loop
+                try:
+                    live_state.vix = data_provider.get_vix()
+                    live_state.breadth = data_provider.get_breadth("NIFTY")
+                except: pass
+            
+            vix_update_counter += 1
             
             for symbol in live_state.symbols:
                 try:

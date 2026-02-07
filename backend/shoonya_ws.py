@@ -50,6 +50,7 @@ class ShoonyaWebSocket:
         self.is_connected = True
         logger.info("SHOONYA_WS: Connection opened. Subscribing to tokens...")
         self.resubscribe()
+        logger.info(f"SHOONYA_WS: Verified {len(self.token_map)} active subscriptions.")
 
     def _on_error(self, err):
         logger.error(f"SHOONYA_WS: Socket error: {err}")
