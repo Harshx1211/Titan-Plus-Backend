@@ -297,6 +297,7 @@ export default function TitanDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
 
+  // [v9.9.9] Hardcoded Fallback to ensure connectivity if ENV fails
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://harshx1323-trading-bot.hf.space';
 
   useEffect(() => {
@@ -379,8 +380,9 @@ export default function TitanDashboard() {
               </div>
             </div>
             <div className="space-y-3">
-              <h1 className="text-4xl md:text-6xl font-black tracking-tighter text-white uppercase italic">
-                Neural <span className="text-blue-500">Alpha</span>
+              <h1 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-500 tracking-tighter uppercase">
+                Titan<span className="text-white">Plus</span>
+                <span className="ml-2 text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 align-top tracking-widest font-mono">v9.9.9 (LIVE)</span>
               </h1>
               <div className="flex items-center gap-5">
                 <span className="text-institutional text-slate-500 opacity-60">Titan Institutional Protocol</span>
