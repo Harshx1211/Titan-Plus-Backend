@@ -125,7 +125,7 @@ class TechnicalEngine:
         """
         walls = []
         try:
-            if not oi_data: return []
+            if oi_data is None or len(oi_data) == 0: return []
             
             # Example OI Data Structure: { 'calls': {22000: 50000, ...}, 'puts': {22000: 40000, ...} }
             

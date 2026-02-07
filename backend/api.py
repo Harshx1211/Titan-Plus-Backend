@@ -841,6 +841,7 @@ def run_engine_loop():
                             
                             new_signal = TradeSignal(
                                 symbol=symbol, entry_price=market_data.spot_price,
+                                action=Action.BUY_CALL if signal_type == "BULLISH" else Action.BUY_PUT,
                                 stop_loss=max(APP_CONFIG["SIGNAL_STOP_LOSS_POINTS"], abs(market_data.spot_price - smart_risk["stop_loss"])), 
                                 target=max(APP_CONFIG["SIGNAL_TARGET_POINTS"], abs((smart_risk["targets"][0] if smart_risk["targets"] else (market_data.spot_price + 100)) - market_data.spot_price)),
                                 confidence=SignalConfidence.HIGH if pattern_results["score"] > 0.9 else SignalConfidence.MEDIUM,
