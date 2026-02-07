@@ -134,9 +134,9 @@ class ShoonyaProvider:
                 for pattern in searches:
                     res = self.api.searchscrip(exchange=exch, searchtext=pattern)
                     if res and res.get('stat') == 'Ok' and res.get('values'):
-                        # [Diagnostic] Log first 3 results to see format
-                        sample = [f"{v.get('tsym')}:{v.get('instname')}" for v in res['values'][:3]]
-                        logger.debug(f"SEARCH_DIAG [{pattern}]: {sample}")
+                        # [Diagnostic] Log first 5 results to see exact format
+                        sample = [f"{v.get('tsym')}:{v.get('instname')}" for v in res['values'][:5]]
+                        logger.info(f"SEARCH_DIAG [{pattern}] Found {len(res['values'])} results. Samples: {sample}")
                         
                         for v in res['values']:
                             tsym = v.get('tsym', '')
