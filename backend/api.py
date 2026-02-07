@@ -612,7 +612,11 @@ def run_engine_loop():
                             status = results.get('governor_status', 'SUCCESS')
                             live_state.add_thought("LEARN", f"Evolution Complete: {status}. Brain Refined.")
                             if 'metrics' in results and 'win_rate' in results['metrics']:
-                                live_state.add_thought("LEARN", f"Session Review: {results['metrics']['win_rate']:.1f}% Win Rate analyzed.")
+                                wr = results['metrics']['win_rate']
+                                if wr is not None:
+                                    live_state.add_thought("LEARN", f"Session Review: {wr:.1f}% Win Rate analyzed.")
+                                else:
+                                    live_state.add_thought("LEARN", "Session Review: No trades analyzed today.")
                         else:
                             reason = results.get("reason", "No data") if results else "Empty Response"
                             live_state.add_thought("LEARN", f"Evolution Skipped: {reason}")

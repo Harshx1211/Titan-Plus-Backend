@@ -93,10 +93,10 @@ class EvolutionEngine:
             logger.warning(f"EVOLUTION: 'decision' column missing in session data. Check Supabase schema.")
             return {"status": "SKIPPED", "reason": "Missing 'decision' column.", "governor_status": "VETOED"}
 
-        # 2. Extract Blocks & Approvals
-        blocks = session_df[session_df['decision'] == 'BLOCK']
-        approvals = session_df[session_df['decision'] == 'APPROVE']
-        
+        if blocks.empty and approvals.empty:
+            logger.info(f"EVOLUTION: No BLOCK or APPROVE decisions found for {date_str}. Skipping.")
+            return {"status": "SKIPPED", "reason": "No active trading decisions today", "governor_status": "IDLE"}
+
         # 3. Calculate Reputation Adjustments (Bounded)
         rep_adjustments = {f: 0.0 for f in self.brain.feature_reputation}
 
@@ -143,14 +143,14 @@ class EvolutionEngine:
         # 5. Governor Audit for Thresholds
         total_trades = len(approvals)
         wins = len(approvals[approvals['efficacy'] == 1])
-        win_rate = (wins / total_trades * 100) if total_trades > 0 else 50.0
+        win_rate = (wins / total_trades * 100) if total_trades > 0 else None
         
         missed = len(blocks[blocks['efficacy'] == 0]) 
         total_opps = missed + wins
         missed_alpha_pct = (missed / total_opps * 100) if total_opps > 0 else 0.0
         
-        metrics = {"win_rate": win_rate, "missed_alpha": missed_alpha_pct}
-        new_threshold = self.governor.audit_threshold_proposal(0.75, metrics)
+        metrics = {"win_rate": win_rate, "missed_alpha": missed_alpha_pct, "trades": total_trades}
+        new_threshold = self.governor.audit_threshold_proposal(0.75, metrics if win_rate is not None else {"win_rate": 50.0})
         if new_threshold > 0.75:
              logger.warning(f"GOVERNOR DECREE: System needs tightening to {new_threshold}")
              self.brain.update_threshold(new_threshold)
