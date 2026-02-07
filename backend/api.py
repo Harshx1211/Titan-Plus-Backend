@@ -518,7 +518,14 @@ def run_engine_loop():
                 market_state.update({'symbol': sym, 'lp': seed_data.spot_price, 'v': 0, 'oi': seed_data.oi})
                 logger.info(f"STATE: Seeded {sym} @ {seed_data.spot_price}")
         except Exception as e:
-            logger.warning(f"STATE: Seeding failed for {sym}: {e}")
+            logger.error(f"STATE_SEED: Failure for {sym}: {e}")
+
+    # Seed VIX
+    try:
+        live_state.vix = data_provider.get_vix()
+        logger.info(f"STATE: Seeded VIX @ {live_state.vix}")
+    except Exception as vix_err:
+        logger.warning(f"STATE: VIX seeding failed: {vix_err}")
     
     start_time = time.time()
     evolution_done_date = None
@@ -664,6 +671,12 @@ def run_engine_loop():
             all_snapshots = market_state.snapshot()
             live_state.last_update = datetime.now(timezone.utc)
             live_state.data_source = "SHOONYA_WS"
+            
+            # [v9.9.9] Update VIX & Global Breadth once per cycle
+            try:
+                live_state.vix = data_provider.get_vix()
+                live_state.breadth = data_provider.get_breadth("NIFTY")
+            except: pass
             
             for symbol in live_state.symbols:
                 try:
@@ -820,8 +833,7 @@ def run_engine_loop():
                         live_state.add_thought("TRAP_WARNING", f"Potential Trap Detected: {trap_reason}. Reducing Score.")
                         pattern_results["score"] *= 0.5
 
-                    # VIX & Breadth
-                    live_state.vix = data_provider.get_vix()
+                    # VIX & Breadth (Updated globally in outer loop)
                     live_state.iv_skew[symbol] = data_provider.get_iv_skew(symbol)
                     
                     # [Phase 3.5] Strict VIX Cap
@@ -831,7 +843,6 @@ def run_engine_loop():
                     elif live_state.vix > APP_CONFIG.get("HIGH_VOLATILITY_VIX", 20.0):
                         pattern_results["score"] *= 0.8
                         
-                    live_state.breadth = data_provider.get_breadth(symbol)
                     
                     # 4. Feature Engineering
                     price_velocities = hist_df.close.pct_change(5).dropna() * 100

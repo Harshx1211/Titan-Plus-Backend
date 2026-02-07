@@ -75,7 +75,10 @@ class ShoonyaProvider:
         self.api = ShoonyaApiPy()
         self.authenticated = False
         self._login_lock = threading.Lock() if 'threading' in globals() else None
-        self.index_tokens = {"NIFTY": ("NSE", "26000"), "BANKNIFTY": ("NSE", "26009"), "SENSEX": ("BSE", "1")}
+        self.index_tokens = {
+            "NIFTY": ("NSE", "26000"), "BANKNIFTY": ("NSE", "26009"), "SENSEX": ("BSE", "1"),
+            "INDIA VIX": ("NSE", "26017")
+        }
         self.future_tokens = {}
         self.circuit = CircuitBreaker("SHOONYA", threshold=3, recovery_timeout=120)
 
@@ -363,12 +366,21 @@ class DataProvider:
         return pd.DataFrame(strikes), True
 
     def get_vix(self) -> float:
-        """Returns the India VIX value."""
-        # Try fetching from Shoonya if possible, or return fallback
-        data = self.shoonya.get_market_data("INDIA VIX")
-        if data and data['lp'] > 0:
-            return data['lp']
-        return 15.0 # Fallback VIX
+        """Returns the India VIX value with historical fallback."""
+        try:
+            # Priority 1: Live Quote (Shoonya)
+            data = self.shoonya.get_market_data("INDIA VIX")
+            if data and data['lp'] > 0:
+                return data['lp']
+            
+            # Fallback: Historical (Weekend/Off-Market)
+            hist = self.get_history("INDIA VIX", "60minute")
+            if not hist.empty:
+                return float(hist['close'].iloc[-1])
+        except Exception as e:
+            logger.warning(f"VIX_FETCH: Error retrieving volatility index: {e}")
+            
+        return 15.0 # Absolute floor fallback
 
     def get_iv_skew(self, symbol: str) -> float:
         """Returns the IV Skew for a symbol."""
