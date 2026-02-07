@@ -118,40 +118,41 @@ class ShoonyaProvider:
                              break
 
                 # 2. Map Current Month Futures
-                # 2. Map Current Month Futures (e.g. NIFTY27FEB25FUT)
-                month_code = datetime.now().strftime("%b").upper() # FEB
-                year_code = datetime.now().strftime("%y") # 25
-                exch = "BFO" if symbol == "SENSEX" else "NFO"
-                
-                # Try multiple search patterns
+                # Try multiple search patterns (Ordered by probability)
                 searches = [
-                    f"{symbol} {month_code} FUT",    # "NIFTY FEB FUT"
-                    f"{symbol}{year_code}{month_code}", # "NIFTY25FEB"
-                    symbol                           # "NIFTY"
+                    f"{symbol} {month_code} FUT",        # Generic: "NIFTY FEB FUT"
+                    f"{symbol} FUT",                     # Broader: "NIFTY FUT"
+                    f"{symbol}{year_code}{month_code}",     # Short: "NIFTY26FEB"
+                    symbol                               # Minimal: "NIFTY"
                 ]
                 
                 found_fut = False
                 for pattern in searches:
-                    res = self.api.searchscrip(exchange=exch, searchtext=pattern)
-                    if res and res.get('stat') == 'Ok' and res.get('values'):
-                        # [Diagnostic] Log first 5 results to see exact format
-                        sample = [f"{v.get('tsym')}:{v.get('instname')}" for v in res['values'][:5]]
-                        logger.info(f"SEARCH_DIAG [{pattern}] Found {len(res['values'])} results. Samples: {sample}")
-                        
-                        for v in res['values']:
-                            tsym = v.get('tsym', '')
-                            inst = v.get('instname', '')
-                            # Must contain month and year OR just be the most liquid future
-                            if (month_code in tsym and year_code in tsym) and \
-                               (inst in ['FUTIDX', 'FUTSTK', 'FUTCOM', 'FUTCUR']):
-                                self.future_tokens[symbol] = (exch, v['token'])
-                                logger.info(f"VALIDATION_PULSE: Mapped {symbol} Future -> {tsym} ({v['token']})")
-                                found_fut = True
-                                break
+                    try:
+                        res = self.api.searchscrip(exchange=exch, searchtext=pattern)
+                        if res and res.get('stat') == 'Ok' and res.get('values'):
+                            # Log what we found for diagnostics
+                            sample = [f"{v.get('tsym')}:{v.get('instname')}" for v in res['values'][:5]]
+                            logger.info(f"VALIDATION_PULSE: Search [{pattern}] in {exch} found: {sample}")
+                            
+                            for v in res['values']:
+                                tsym = v.get('tsym', '')
+                                inst = v.get('instname', '')
+                                # Match month AND (FUTIDX or FUTSTK)
+                                if (month_code in tsym) and (inst in ['FUTIDX', 'FUTSTK']):
+                                    self.future_tokens[symbol] = (exch, v['token'])
+                                    logger.info(f"VALIDATION_PULSE: Mapped {symbol} Future -> {tsym} ({v['token']})")
+                                    found_fut = True
+                                    break
+                        else:
+                            logger.debug(f"VALIDATION_PULSE: Search [{pattern}] in {exch} returned no values or error: {res.get('stat') if res else 'None'}")
+                    except Exception as e:
+                        logger.error(f"VALIDATION_PULSE: Error during search [{pattern}]: {e}")
+                    
                     if found_fut: break
                 
                 if not found_fut:
-                    logger.warning(f"VALIDATION_PULSE: Failed to map Future for {symbol} after {len(searches)} attempts.")
+                    logger.warning(f"VALIDATION_PULSE: Critical failure to map {symbol} Future.")
             
             # 3. Verify India VIX
             vix_res = self.api.searchscrip(exchange="NSE", searchtext="INDIA VIX")
