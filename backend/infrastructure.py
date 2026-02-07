@@ -70,7 +70,8 @@ APP_CONFIG = {
     "MARKET_END_HOUR": int(os.getenv("MARKET_END_HOUR", "15")),
     "MARKET_END_MINUTE": int(os.getenv("MARKET_END_MINUTE", "30")),
     "ENGINE_ERROR_SLEEP_TIME": int(os.getenv("ENGINE_ERROR_SLEEP_TIME", "5")),
-    "DIRECT_EXECUTION_ENABLED": os.getenv("DIRECT_EXECUTION_ENABLED", "FALSE").upper() == "TRUE",
+    # [Institutional Lockdown] Force False per user request; must change in code to enable.
+    "DIRECT_EXECUTION_ENABLED": False,
     "MAX_DAILY_LOSS": float(os.getenv("MAX_DAILY_LOSS", "-500.0")),
     "MAX_TRADES_PER_DAY": int(os.getenv("MAX_TRADES_PER_DAY", "20")),
 }

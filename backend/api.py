@@ -77,7 +77,7 @@ class LiveState:
         self.last_thoughts_by_type = {} # [v9.9.9] Deduplication Cache
         self.is_learning = False
         self.integrity = DivergenceType.NONE
-        self.direct_execution_active = False # [Institutional Phase 6] Dynamic Safety Switch
+        self.direct_execution_active = False # [Institutional Lockdown] Hard-locked to False
 
     def add_thought(self, thought_type: str, msg: str):
         """[v9.5.4] Standardized thought logger with type-aware de-duplication."""
@@ -457,16 +457,6 @@ async def reset_system(token: str = None):
     live_state.add_thought("SYSTEM", "Emergency reset triggered by administrator.")
     return {"status": "Ok", "message": "System reset successfully"}
 
-@app.post("/toggle-execution")
-async def toggle_execution(active: bool, token: str = None):
-    """Dynamic toggle for direct order placement."""
-    if token != os.getenv("APP_API_TOKEN", "oracle_v1"):
-         raise HTTPException(status_code=403, detail="Not authorized")
-    live_state.direct_execution_active = active
-    msg = "ENABLED" if active else "DISABLED"
-    live_state.add_thought("SYSTEM", f"Direct order placement {msg} by administrator.")
-    logger.info(f"SYSTEM: Direct execution {msg}")
-    return {"status": "Ok", "active": active}
 
 def history_refresher_loop(data_provider, state):
     """[v9.9.9] Background thread to keep History Cache fresh (Architecture 10/10)."""

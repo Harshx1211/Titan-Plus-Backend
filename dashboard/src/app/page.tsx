@@ -98,20 +98,20 @@ const NeonBadge = ({ children, color = "cyan" }: { children: React.ReactNode, co
 };
 
 const StatCard = ({ label, value, sub, colorClass }: { label: string, value: string | number, sub: string, colorClass: string }) => (
-  <div className="premium-glass p-6 md:p-8 hover:translate-y-[-4px] hover:border-white/20 transition-all duration-300 group overflow-hidden">
-    <div className="space-y-4 relative z-10">
+  <div className="premium-glass p-4 sm:p-6 md:p-8 hover:translate-y-[-4px] hover:border-white/20 transition-all duration-300 group overflow-hidden">
+    <div className="space-y-2 sm:space-y-4 relative z-10">
       <div className="flex justify-between items-start">
-        <p className="text-institutional text-slate-500 opacity-60">{label}</p>
-        <div className={`w-1.5 h-1.5 rounded-full blur-[1px] ${colorClass.replace('text-', 'bg-')} shadow-[0_0_8px_currentColor]`} />
+        <p className="text-[10px] sm:text-institutional text-slate-500 opacity-60 uppercase tracking-widest">{label}</p>
+        <div className={`w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full blur-[1px] ${colorClass.replace('text-', 'bg-')} shadow-[0_0_8px_currentColor]`} />
       </div>
-      <p className={`text-3xl md:text-4xl font-black font-mono tracking-tighter ${colorClass}`}>{value}</p>
+      <p className={`text-2xl sm:text-3xl md:text-4xl font-black font-mono tracking-tighter ${colorClass}`}>{value}</p>
       <div className="flex items-center gap-2">
-        <div className="w-1 h-3 bg-white/5 rounded-full" />
-        <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">{sub}</p>
+        <div className="w-0.5 sm:w-1 h-2 sm:h-3 bg-white/5 rounded-full" />
+        <p className="text-[8px] sm:text-[9px] text-slate-500 font-bold uppercase tracking-widest">{sub}</p>
       </div>
     </div>
     {/* Background Pattern */}
-    <div className="absolute top-0 right-0 w-24 h-24 bg-white/[0.02] -rotate-12 translate-x-12 -translate-y-12 group-hover:rotate-0 transition-transform duration-700" />
+    <div className="absolute top-0 right-0 w-16 h-16 sm:w-24 sm:h-24 bg-white/[0.02] -rotate-12 translate-x-8 -translate-y-8 sm:translate-x-12 sm:-translate-y-12 group-hover:rotate-0 transition-transform duration-700" />
   </div>
 );
 
@@ -120,46 +120,46 @@ const SignalCard = ({ signal, onExecute }: { signal: TradeSignal, onExecute: (id
   const accentColor = isPE ? 'rose' : 'emerald';
 
   return (
-    <div className="p-8 md:p-12 relative group premium-glass rounded-[2.5rem]">
+    <div className="p-4 sm:p-8 md:p-12 relative group premium-glass rounded-2xl sm:rounded-[2.5rem]">
       {/* Dynamic Background Glow */}
       <div className={`absolute -top-24 -right-24 w-96 h-96 bg-${accentColor}-500/10 blur-[120px] rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-1000`} />
 
       <div className="relative z-10">
         {/* Header: Asset & Type */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12">
-          <div className="flex items-center gap-6">
-            <div className={`w-16 h-16 rounded-2xl bg-${accentColor}-500/10 border border-${accentColor}-500/20 flex items-center justify-center shadow-lg`}>
-              {isPE ? <TrendingDown className="w-8 h-8 text-rose-400" /> : <TrendingUp className="w-8 h-8 text-emerald-400" />}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-6 mb-6 sm:mb-12">
+          <div className="flex items-center gap-4 sm:gap-6">
+            <div className={`w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-${accentColor}-500/10 border border-${accentColor}-500/20 flex items-center justify-center shadow-lg`}>
+              {isPE ? <TrendingDown className="w-6 h-6 sm:w-8 sm:h-8 text-rose-400" /> : <TrendingUp className="w-6 h-6 sm:w-8 sm:h-8 text-emerald-400" />}
             </div>
             <div>
-              <div className="flex items-center gap-4">
-                <h3 className="text-3xl md:text-5xl font-black text-white tracking-tighter uppercase">{signal.symbol}</h3>
+              <div className="flex items-center gap-2 sm:gap-4">
+                <h3 className="text-2xl sm:text-3xl md:text-5xl font-black text-white tracking-tighter uppercase">{signal.symbol}</h3>
                 <NeonBadge color={accentColor}>{signal.option_type || (isPE ? 'SHORT' : 'LONG')}</NeonBadge>
               </div>
-              <p className="text-institutional text-slate-500 mt-2 font-bold">
+              <p className="text-[10px] sm:text-institutional text-slate-500 mt-1 sm:mt-2 font-bold">
                 {signal.option_symbol || 'Protocol Execution'} • {signal.decision_id?.slice(0, 8) || 'SENTINEL'}
               </p>
             </div>
           </div>
-          <div className="flex flex-col items-end">
-            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Engine Confidence</p>
-            <p className={`text-2xl font-black font-mono ${signal.confidence === 'HIGH' ? 'text-blue-400' : 'text-slate-300'}`}>
+          <div className="flex flex-row sm:flex-col items-center sm:items-end gap-2 sm:gap-0">
+            <p className="text-[8px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest mb-0 sm:mb-1">Confidence</p>
+            <p className={`text-lg sm:text-2xl font-black font-mono ${signal.confidence === 'HIGH' ? 'text-blue-400' : 'text-slate-300'}`}>
               {signal.confidence}
             </p>
           </div>
         </div>
 
         {/* Data Grid: High Contrast Pricing */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-6 sm:mb-12">
           {[
-            { label: 'Entry Strike', val: signal.premium_entry || signal.entry_price, color: 'text-white' },
+            { label: 'Strike', val: signal.premium_entry || signal.entry_price, color: 'text-white' },
             { label: 'Stop Loss', val: signal.premium_sl || signal.stop_loss, color: 'text-rose-400' },
-            { label: 'Profit Target', val: signal.premium_target || signal.target, color: 'text-emerald-400' },
+            { label: 'Target', val: signal.premium_target || signal.target, color: 'text-emerald-400' },
             { label: 'Momentum', val: `${(signal.score || 0.95).toFixed(2)}`, color: 'text-violet-400' },
           ].map((d, i) => (
-            <div key={i} className="bg-black/20 rounded-[1.5rem] p-6 border border-white/5 hover:border-white/10 transition-all duration-300 group/item">
-              <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] mb-3 group-hover/item:text-slate-400 transition-colors">{d.label}</p>
-              <p className={`text-2xl font-black font-mono tracking-tighter ${d.color}`}>
+            <div key={i} className="bg-black/20 rounded-xl sm:rounded-[1.5rem] p-3 sm:p-6 border border-white/5 hover:border-white/10 transition-all duration-300 group/item">
+              <p className="text-[8px] sm:text-[9px] font-black text-slate-500 uppercase tracking-[0.15em] sm:tracking-[0.2em] mb-1 sm:mb-3 group-hover/item:text-slate-400 transition-colors">{d.label}</p>
+              <p className={`text-lg sm:text-2xl font-black font-mono tracking-tighter ${d.color}`}>
                 {i < 3 ? `₹${d.val.toLocaleString()}` : d.val}
               </p>
             </div>
@@ -167,13 +167,13 @@ const SignalCard = ({ signal, onExecute }: { signal: TradeSignal, onExecute: (id
         </div>
 
         {/* Intelligence Matrix & Action */}
-        <div className="flex flex-col xl:flex-row gap-8 items-stretch">
-          <div className="flex-1 bg-white/[0.02] rounded-[1.5rem] p-8 border-l-4 border-l-blue-500 relative overflow-hidden group/matrix transition-all hover:bg-white/[0.04]">
-            <div className="flex items-center gap-3 mb-4">
-              <Brain className="w-4 h-4 text-blue-400" />
-              <span className="text-institutional text-slate-400 opacity-60">Neural Decision Matrix</span>
+        <div className="flex flex-col xl:flex-row gap-4 sm:gap-8 items-stretch">
+          <div className="flex-1 bg-white/[0.02] rounded-xl sm:rounded-[1.5rem] p-4 sm:p-8 border-l-4 border-l-blue-500 relative overflow-hidden group/matrix transition-all hover:bg-white/[0.04]">
+            <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-4">
+              <Brain className="w-3 h-3 sm:w-4 sm:h-4 text-blue-400" />
+              <span className="text-[10px] sm:text-institutional text-slate-400 opacity-60 uppercase tracking-widest font-bold">Neural Matrix</span>
             </div>
-            <p className="text-base text-slate-300 font-medium leading-relaxed italic pr-4">
+            <p className="text-xs sm:text-base text-slate-300 font-medium leading-relaxed italic pr-2 sm:pr-4">
               "{signal.reasoning}"
             </p>
             {/* Ambient shimmer */}
@@ -199,91 +199,6 @@ const SignalCard = ({ signal, onExecute }: { signal: TradeSignal, onExecute: (id
   );
 };
 
-const ExecutionSafetyControl = ({ isActive, onToggle }: { isActive: boolean, onToggle: (active: boolean) => void }) => {
-  const [showModal, setShowModal] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleConfirm = async () => {
-    setIsLoading(true);
-    await onToggle(!isActive);
-    setIsLoading(false);
-    setShowModal(false);
-  };
-
-  return (
-    <>
-      <div className="flex items-center gap-6 px-8 py-4 bg-white/[0.02] rounded-2xl border border-white/5 group/toggle transition-all hover:border-blue-500/20">
-        <div className="flex flex-col">
-          <p className="text-institutional text-slate-500 mb-1">Direct Execution</p>
-          <div className="flex items-center gap-3">
-            <span className={`text-[10px] font-black font-mono tracking-tighter ${isActive ? 'text-emerald-400 animate-pulse' : 'text-rose-500'}`}>
-              {isActive ? 'PROTOCOL_ACTIVE' : 'ADVISORY_ONLY'}
-            </span>
-          </div>
-        </div>
-        <div className="h-10 w-px bg-white/10" />
-        <button
-          onClick={() => setShowModal(true)}
-          className={`relative w-14 h-7 rounded-full transition-all duration-500 p-1 ${isActive ? 'bg-emerald-500/20' : 'bg-slate-800'}`}
-        >
-          <div className={`w-5 h-5 rounded-full transition-all duration-500 shadow-lg ${isActive ? 'bg-emerald-400 translate-x-7 rotate-0' : 'bg-slate-500 translate-x-0 rotate-180'}`}>
-            <Cpu className="w-full h-full p-1 text-[#030305]" />
-          </div>
-        </button>
-      </div>
-
-      {/* Two-Step Confirmation Modal */}
-      {showModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-md animate-in fade-in duration-300" onClick={() => !isLoading && setShowModal(false)} />
-          <div className="relative w-full max-w-md bg-[#0a0a0f] border border-white/10 rounded-[2.5rem] p-10 shadow-3xl animate-in zoom-in-95 duration-300 overflow-hidden">
-            {/* Background Glow */}
-            <div className={`absolute -top-24 -right-24 w-64 h-64 bg-${isActive ? 'rose' : 'emerald'}-500/10 blur-[100px] rounded-full`} />
-
-            <div className="relative z-10 text-center space-y-8">
-              <div className={`mx-auto w-20 h-20 rounded-3xl flex items-center justify-center ${isActive ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'} border border-white/5`}>
-                <Shield className="w-10 h-10" />
-              </div>
-
-              <div className="space-y-3">
-                <h3 className="text-2xl font-black text-white uppercase tracking-tighter">
-                  {isActive ? 'Deactivate Execution?' : 'Activate Systematic Execution?'}
-                </h3>
-                <p className="text-sm text-slate-500 font-medium leading-relaxed italic">
-                  {isActive
-                    ? "Warning: This will halt all automated order placement. The system will revert to manual advisory mode."
-                    : "Caution: This will enable direct capital deployment. Every neural signal will trigger real-world orders in milliseconds."}
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-4">
-                <button
-                  disabled={isLoading}
-                  onClick={handleConfirm}
-                  className={`w-full py-5 rounded-2xl font-black text-sm uppercase tracking-widest transition-all ${isActive
-                    ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-xl shadow-rose-600/20'
-                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-xl shadow-emerald-600/20'
-                    } active:scale-95 disabled:opacity-50`}
-                >
-                  {isLoading ? 'Processing...' : (isActive ? 'Yes, Deactivate Protocol' : 'Yes, Deploy Protocol')}
-                </button>
-                <button
-                  disabled={isLoading}
-                  onClick={() => setShowModal(false)}
-                  className="w-full py-4 text-slate-500 font-black text-[10px] uppercase tracking-widest hover:text-white transition-colors"
-                >
-                  Cancel & Return
-                </button>
-              </div>
-            </div>
-
-            <div className="absolute bottom-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-          </div>
-        </div>
-      )}
-    </>
-  );
-};
 
 // ============================================================================
 // Main Application
@@ -332,17 +247,6 @@ export default function TitanDashboard() {
     } catch (err) { setError(err instanceof Error ? err.message : 'Execution Link Failure'); }
   };
 
-  const handleToggleExecution = async (active: boolean) => {
-    try {
-      const res = await fetch(`${API_URL}/toggle-execution?active=${active}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      if (!res.ok) throw new Error('Toggle Rejected');
-      const data = await res.json();
-      setState(prev => prev ? { ...prev, direct_execution_active: data.active } : null);
-    } catch (err) { setError('Failed to communicate with Execution Bridge'); }
-  };
 
   if (loading) return (
     <div className="min-h-screen bg-[#030305] flex items-center justify-center overflow-hidden">
@@ -368,59 +272,56 @@ export default function TitanDashboard() {
       <div className="max-w-[1800px] mx-auto space-y-16 relative z-10">
 
         {/* Header HUD Section */}
-        <header className="flex flex-col xl:flex-row justify-between items-stretch gap-6 premium-glass p-8 rounded-[3rem] relative overflow-hidden group">
+        <header className="flex flex-col xl:flex-row justify-between items-stretch gap-4 md:gap-6 premium-glass p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-[3rem] relative overflow-hidden group">
           {/* Subtle Scanline for Header */}
           <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-transparent via-white/[0.02] to-transparent h-px top-0 animate-scanline opacity-50" />
 
-          <div className="flex items-center gap-8 relative z-10">
-            <div className="w-20 h-20 rounded-[2rem] bg-gradient-to-br from-blue-600 to-cyan-500 p-[1px] shadow-3xl shadow-blue-500/20 group-hover:scale-105 transition-transform duration-500">
-              <div className="w-full h-full bg-[#050507] rounded-[2rem] flex items-center justify-center relative overflow-hidden">
-                <Shield className="w-10 h-10 text-white relative z-10" />
+          <div className="flex items-center gap-4 sm:gap-8 relative z-10">
+            <div className="w-12 h-12 sm:w-20 sm:h-20 rounded-xl sm:rounded-[2rem] bg-gradient-to-br from-blue-600 to-cyan-500 p-[1px] shadow-3xl shadow-blue-500/20 group-hover:scale-105 transition-transform duration-500">
+              <div className="w-full h-full bg-[#050507] rounded-xl sm:rounded-[2rem] flex items-center justify-center relative overflow-hidden">
+                <Shield className="w-6 h-6 sm:w-10 sm:h-10 text-white relative z-10" />
                 <div className="absolute inset-0 bg-blue-500/10 animate-pulse-slow" />
               </div>
             </div>
-            <div className="space-y-3">
-              <h1 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-500 tracking-tighter uppercase">
+            <div className="space-y-1 sm:space-y-3">
+              <h1 className="text-xl sm:text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-500 tracking-tighter uppercase">
                 Titan<span className="text-white">Plus</span>
-                <span className="ml-2 text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 align-top tracking-widest font-mono">v9.9.9 (LIVE)</span>
+                <span className="ml-2 text-[8px] sm:text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 sm:py-0.5 rounded border border-emerald-500/20 align-top tracking-widest font-mono">v9.9.9</span>
               </h1>
-              <div className="flex items-center gap-5">
-                <span className="text-institutional text-slate-500 opacity-60">Titan Institutional Protocol</span>
-                <div className="h-3 w-px bg-white/10" />
-                <span className="text-institutional text-blue-500">v9.9.9.hf-2</span>
+              <div className="flex items-center gap-2 sm:gap-5">
+                <span className="text-[10px] sm:text-institutional text-slate-500 opacity-60">Titan Institutional</span>
+                <div className="h-2 sm:h-3 w-px bg-white/10" />
+                <span className="text-[10px] sm:text-institutional text-blue-500">PRO_GRADE</span>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-4 relative z-10">
-            {/* Safety Switch */}
-            <ExecutionSafetyControl
-              isActive={state?.direct_execution_active || false}
-              onToggle={handleToggleExecution}
-            />
-
-            <div className="hidden lg:flex flex-col items-end pr-8 border-r border-white/10">
-              <p className="text-institutional text-slate-500 mb-1">Grid Status</p>
-              <div className="flex items-center gap-3">
-                <div className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.5)] animate-pulse' : 'bg-rose-500'}`} />
-                <span className="text-sm font-black text-white font-mono tracking-tighter">
-                  {connected ? 'NOMINAL' : 'DISCONNECTED'}
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4 relative z-10">
+            <div className="flex flex-col items-start sm:items-end sm:pr-8 sm:border-r border-white/10">
+              <p className="text-[9px] sm:text-institutional text-slate-500 mb-0.5 sm:mb-1">Grid Status</p>
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${connected ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.5)] animate-pulse' : 'bg-rose-500'}`} />
+                <span className="text-xs sm:text-sm font-black text-white font-mono tracking-tighter">
+                  {connected ? 'NOMINAL' : 'OFFLINE'}
                 </span>
               </div>
             </div>
 
-            <div className="flex items-center gap-6 px-8 py-4 bg-white/[0.02] rounded-2xl border border-white/5">
+            <div className="flex items-center gap-4 sm:gap-6 px-4 sm:px-8 py-2 sm:py-4 bg-white/[0.02] rounded-xl sm:rounded-2xl border border-white/5 flex-1 sm:flex-none">
               <div className="flex flex-col">
-                <p className="text-institutional text-slate-500 mb-1">Server Cluster</p>
-                <p className="text-sm font-black text-white font-mono">HKG-SENTINEL-7</p>
-              </div>
-              <div className="h-10 w-px bg-white/10" />
-              <div className="flex flex-col">
-                <p className="text-institutional text-slate-500 mb-1">System Time</p>
+                <p className="text-[9px] sm:text-institutional text-slate-500 mb-0.5 sm:mb-1">Latency</p>
                 <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-blue-500" />
-                  <span className="text-base font-black text-white font-mono">
-                    {lastUpdate.toLocaleTimeString([], { hour12: false })}
+                  <Wifi className="w-3 h-3 sm:w-4 sm:h-4 text-blue-500" />
+                  <p className="text-xs sm:text-sm font-black text-white font-mono">{state?.data_latency || 0}ms</p>
+                </div>
+              </div>
+              <div className="h-6 sm:h-10 w-px bg-white/10" />
+              <div className="flex flex-col">
+                <p className="text-[9px] sm:text-institutional text-slate-500 mb-0.5 sm:mb-1">System Time</p>
+                <div className="flex items-center gap-2">
+                  <Clock className="w-3 h-3 sm:w-4 sm:h-4 text-blue-500" />
+                  <span className="text-xs sm:text-base font-black text-white font-mono">
+                    {lastUpdate.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
               </div>
@@ -591,34 +492,34 @@ export default function TitanDashboard() {
           </div>
         </div>
 
-        <footer className="pt-24 pb-20 border-t border-white/5 flex flex-col xl:flex-row justify-between items-center gap-16 group">
-          <div className="flex flex-col md:flex-row items-center gap-16">
-            <div className="flex items-center gap-6">
-              <div className="w-14 h-14 rounded-2xl bg-white/[0.02] flex items-center justify-center shadow-2xl border border-white/5 group-hover:border-blue-500/20 transition-all duration-700">
-                <Shield className="w-7 h-7 text-blue-500 opacity-50 group-hover:opacity-100" />
+        <footer className="pt-12 sm:pt-24 pb-10 sm:pb-20 border-t border-white/5 flex flex-col xl:flex-row justify-between items-center gap-8 sm:gap-16 group">
+          <div className="flex flex-col md:flex-row items-center gap-8 sm:gap-16 text-center md:text-left">
+            <div className="flex items-center gap-4 sm:gap-6">
+              <div className="w-10 h-10 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl bg-white/[0.02] flex items-center justify-center shadow-2xl border border-white/5 group-hover:border-blue-500/20 transition-all duration-700">
+                <Shield className="w-5 h-5 sm:w-7 sm:h-7 text-blue-500 opacity-50 group-hover:opacity-100" />
               </div>
-              <div className="space-y-1">
-                <p className="text-institutional text-white opacity-80">© 2026 TITAN PLUS SYSTEMS</p>
-                <p className="text-institutional text-slate-600">Exclusive Institutional Authority Grade</p>
+              <div className="space-y-0.5 sm:space-y-1">
+                <p className="text-[10px] sm:text-institutional text-white opacity-80 uppercase tracking-widest">© 2026 TITAN PLUS SYSTEMS</p>
+                <p className="text-[9px] sm:text-institutional text-slate-600 font-bold">Institutional Authority Grade</p>
               </div>
             </div>
             <div className="hidden md:block h-16 w-px bg-white/5" />
-            <div className="flex items-center gap-12 text-institutional text-slate-600">
-              <span className="hover:text-blue-400 transition-colors">Uptime: 99.99%</span>
-              <span className="hover:text-violet-400 transition-colors">MTTR: 12ms</span>
+            <div className="flex items-center gap-6 sm:gap-12 text-[10px] sm:text-institutional text-slate-600">
+              <span className="hover:text-blue-400 transition-colors">Uptime: 99.9%</span>
+              <span className="hover:text-violet-400 transition-colors">Latency: Optimal</span>
             </div>
           </div>
 
-          <div className="premium-glass px-16 py-8 rounded-[3rem] border border-white/5 group-hover:border-white/10 transition-all duration-1000">
-            <div className="flex flex-wrap items-center justify-center gap-12">
+          <div className="premium-glass px-6 sm:px-16 py-4 sm:py-8 rounded-2xl sm:rounded-[3rem] border border-white/5 group-hover:border-white/10 transition-all duration-1000 w-full sm:w-auto">
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-12">
               <div className="flex items-center gap-3">
-                <span className="text-institutional text-slate-500 italic">System:</span>
-                <span className="text-emerald-400 font-mono text-xs font-black tracking-widest animate-pulse">NOMINAL_STATE</span>
+                <span className="text-[10px] sm:text-institutional text-slate-500 italic">Cluster:</span>
+                <span className="text-emerald-400 font-mono text-[10px] sm:text-xs font-black tracking-widest animate-pulse">HKG-SENTINEL</span>
               </div>
-              <div className="w-1.5 h-1.5 rounded-full bg-white/5" />
+              <div className="hidden sm:block w-1.5 h-1.5 rounded-full bg-white/5" />
               <div className="flex items-center gap-3">
-                <span className="text-institutional text-slate-500 italic">Intelligence:</span>
-                <span className="text-cyan-400 font-mono text-xs font-black italic tracking-wide">"{state?.market_message || 'Grid Stable'}"</span>
+                <span className="text-[10px] sm:text-institutional text-slate-500 italic">State:</span>
+                <span className="text-cyan-400 font-mono text-[10px] sm:text-xs font-black italic tracking-wide">"{state?.market_message || 'NOMINAL'}"</span>
               </div>
             </div>
           </div>
