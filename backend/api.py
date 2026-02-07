@@ -553,13 +553,18 @@ def run_engine_loop():
         if data_provider.use_groww:
             live_state.data_source = "GROWW_API"
             
-        # [v9.9.8] State Recovery: Load last active prices if market is closed/fresh restart
+        # [v9.9.8] State Recovery: Fallback for missing prices if market is closed/fresh restart
         try:
             last_prices = db.cloud_db.get_last_known_prices()
             for sym, price in last_prices.items():
-                if sym in live_state.prices:
+                # [v9.9.9] SAFETY: ONLY recover if seeding failed (price is 0.0 or missing)
+                current_price = live_state.prices.get(sym, 0.0)
+                if current_price <= 0.0 and sym in ["NIFTY", "BANKNIFTY", "SENSEX"]:
                     live_state.prices[sym] = price
-                    logger.info(f"STATE: Recovered last active price for {sym}: {price}")
+                    logger.info(f"STATE: Recovered last active price for {sym}: {price} (Fallback)")
+                elif sym in live_state.prices:
+                    # Log but don't overwrite if we already have fresh data
+                    logger.info(f"STATE: Skipping recovery for {sym}, using fresh seeding: {current_price}")
         except Exception as e:
             logger.warning(f"STATE: Price recovery failed: {e}")
 

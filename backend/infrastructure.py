@@ -281,15 +281,24 @@ class SupabaseManager:
         """Recovers the most recent prices from trade snapshots."""
         prices = {}
         try:
-            snapshots = self.get_snapshots(limit=200)
+            snapshots = self.get_snapshots(limit=300)
             for snap in snapshots:
                 feat = snap.get("features", {})
-                # Look for symbols in snapshots (v9.8 logs symbol in features usually)
                 symbol = feat.get("symbol")
                 if not symbol: continue
-                if symbol not in prices and "SPOT_PRICE" in feat:
-                    prices[symbol] = float(feat["SPOT_PRICE"])
-                if len(prices) >= 2: break # Found both NIFTY and SENSEX
+                
+                # Check multiple possible keys for the price
+                price = None
+                for key in ["SPOT_PRICE", "spot_price", "price", "lp"]:
+                    if key in feat:
+                        price = float(feat[key])
+                        break
+                
+                if symbol not in prices and price is not None:
+                    prices[symbol] = price
+            
+            if prices:
+                logging.getLogger("infrastructure").info(f"SUPABASE: Recovered prices for {list(prices.keys())}")
         except Exception as e:
             logging.getLogger("infrastructure").error(f"SUPABASE: Price recovery failed: {e}")
         return prices
