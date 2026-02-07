@@ -220,7 +220,21 @@ class DataProvider:
                     )
             except: pass
 
-        # Fallback 2: Realistic Hard-coded Fallbacks
+        # Fallback 2: Historical Close (Pre-Market / Weekend Fix)
+        try:
+            # If live data is 0 (weekend), fetch last available history candle
+            hist_df = self.get_history(symbol, "60minute")
+            if not hist_df.empty:
+                last_close = float(hist_df['close'].iloc[-1])
+                return MarketData(
+                    symbol=symbol, spot_price=last_close, 
+                    future_price=last_close+5.0,
+                    oi=0, pcr=0.95, timestamp=datetime.now(), source="HISTORY_CLOSE"
+                )
+        except Exception as e:
+            logger.warning(f"Fallback history fetch failed: {e}")
+
+        # Fallback 3: Realistic Hard-coded Fallbacks
         prices = {"NIFTY": 25727.0, "SENSEX": 83739.0, "BANKNIFTY": 51200.0}
         base = prices.get(symbol, 25000.0)
         return MarketData(symbol=symbol, spot_price=base, future_price=base+5.0, oi=0, pcr=0.95, timestamp=datetime.now(), source="FALLBACK")

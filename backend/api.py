@@ -510,6 +510,24 @@ def run_engine_loop():
         ws = ShoonyaWebSocket(data_provider.shoonya)
         ws.start()
         logger.info("ENGINE: WebSocket data pipeline active.")
+
+        # [v9.9.9] Startup Price Seeding (Phase 6 Fix)
+        # Ensures dashboard shows last close price even if WS is silent (Weekend)
+        logger.info("STATE: Seeding initial prices from DataProvider...")
+        for sym in live_state.symbols:
+            try:
+                seed_data = data_provider.get_market_snapshot(sym)
+                if seed_data and seed_data.spot_price > 0:
+                    live_state.prices[sym] = seed_data.spot_price
+                    # Also seed the MarketState so WS logic has a base
+                    market_state.update({
+                        'symbol': sym, 
+                        'lp': seed_data.spot_price, 
+                        'v': 0, 'oi': seed_data.oi
+                    })
+                    logger.info(f"STATE: Seeded {sym} @ {seed_data.spot_price}")
+            except Exception as e:
+                logger.warning(f"STATE: Seeding failed for {sym}: {e}")
         
         # [AUDIT FIX] Initialize timing for passive checks
         start_time = time.time()
