@@ -171,6 +171,7 @@ class CoreEngine:
         
         # Start Decoupled Heartbeats
         threading.Thread(target=history_refresher_loop, args=(self.data_provider, self.state), daemon=True).start()
+        threading.Thread(target=personalized_service_loop, args=(self.telegram_notifier,), daemon=True).start()
         
         self.sentinel = DataSentinel()
         self.strategist = MarketStrategist()
@@ -1126,11 +1127,42 @@ def run_engine_loop():
             logger.error(f"ENGINE CRITICAL: {e}", exc_info=True)
             time.sleep(10)
 
+def personalized_service_loop(notifier):
+    """[v9.9.9] Handles daily greetings and periodic wisdom in IST."""
+    logger.info("CORE: Personalized Service Loop started.")
+    last_greet_date = None
+    last_wisdom_hour = -1
+    
+    while True:
+        try:
+            now_ist = datetime.now(timezone.utc).astimezone(IST)
+            today_str = now_ist.strftime("%Y-%m-%d")
+            current_hour = now_ist.hour
+            current_minute = now_ist.minute
+
+            # 1. Daily Morning Greeting (9:00 AM IST)
+            if today_str != last_greet_date and current_hour == 9 and current_minute >= 0:
+                notifier.send_personalized_greeting("Harsh")
+                last_greet_date = today_str
+                logger.info(f"PERSONAL: Morning greeting sent to Harsh for {today_str}")
+
+            # 2. Periodic Institutional Wisdom (Every 4 hours during market/active hours)
+            # 11:00 AM, 1:00 PM, 3:00 PM
+            wisdom_hours = [11, 13, 15]
+            if current_hour in wisdom_hours and current_hour != last_wisdom_hour:
+                notifier.send_random_wisdom()
+                last_wisdom_hour = current_hour
+                logger.info(f"PERSONAL: Periodic wisdom sent at {current_hour}:00 IST")
+
+            time.sleep(60) # check every minute
+        except Exception as e:
+            logger.error(f"PERSONAL_SERVICE_ERROR: {e}")
+            time.sleep(300)
+
 @app.on_event("startup")
 async def startup_event():
     logger.info("API: Launching background initialization thread...")
     # Immediately spawn background thread and return
-    # This ensures the API binds to its port in milliseconds
     thread = threading.Thread(target=run_engine_loop, daemon=True)
     thread.start()
 

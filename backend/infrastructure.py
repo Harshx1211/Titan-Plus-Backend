@@ -21,6 +21,20 @@ class DataHealthError(Exception):
 load_dotenv()
 
 # ============================================================================
+# Institutional Wisdom & Greetings
+# ============================================================================
+INSTITUTIONAL_WISDOM = [
+    "Greed makes you loss money at the end.",
+    "The winner is the one who does not know when and how to win; the true winner is the one who know when to stop.",
+    "The market is a device for transferring money from the impatient to the patient.",
+    "In trading, the best losers are the ultimate winners.",
+    "Your discipline is your edge. Don't let your emotions dull it.",
+    "Risk comes from not knowing what you're doing.",
+    "Trading is 10% execution and 90% waiting.",
+    "Protect your capital like your life depends on it. Because in this game, it does."
+]
+
+# ============================================================================
 # 1. Global Configuration
 # ============================================================================
 
@@ -193,7 +207,23 @@ class TelegramNotifier:
                 logging.error(msg)
             return False
 
-    def send_alert(self, message: str) -> bool:
+    def send_alert(self, message: str):
+        """Standard alert dispatch."""
+        self._dispatch(message)
+
+    def send_personalized_greeting(self, name: str):
+        """[v9.9.9] Personal morning touch."""
+        msg = f"🌅 <b>Good morning {name}!</b>\nMay the trend be with you today. Have a productive and green day ahead! 🚀"
+        self._dispatch(msg)
+
+    def send_random_wisdom(self):
+        """[v9.9.9] Institutional psychology reminder."""
+        import random
+        wisdom = random.choice(INSTITUTIONAL_WISDOM)
+        msg = f"💡 <b>Institutional Wisdom</b>\n\n<i>\"{wisdom}\"</i>"
+        self._dispatch(msg)
+
+    def _dispatch(self, message: str) -> bool:
         if not self.enabled or not self.circuit.can_proceed(): return False
         if not self._should_send(message): return False
         try:
