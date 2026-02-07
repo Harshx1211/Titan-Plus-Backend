@@ -224,9 +224,8 @@ def is_market_open():
     now = datetime.now(ist)
     
     # Market hours: Monday-Friday, 9:00 AM - 3:30 PM IST
-    # [HOTFIX] Special Budget Day Session (Feb 1st is Sunday)
-    # if now.weekday() >= 5:  # Saturday = 5, Sunday = 6
-    #     return False
+    if now.weekday() >= 5:  # Saturday = 5, Sunday = 6
+        return False
     
     market_start = now.replace(hour=APP_CONFIG["MARKET_START_HOUR"], minute=APP_CONFIG["MARKET_START_MINUTE"], second=0, microsecond=0)
     market_end = now.replace(hour=APP_CONFIG["MARKET_END_HOUR"], minute=APP_CONFIG["MARKET_END_MINUTE"], second=0, microsecond=0)
