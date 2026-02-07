@@ -461,7 +461,7 @@ async def reset_system(token: str = None):
 
 
 # [v9.9.9] Background thread to keep History Cache fresh (Architecture 10/10).
-def history_refresher_loop(data_provider, state: LiveState):
+def history_refresher_loop(data_provider, state: LiveState, sentinel):
     """
     [Institutional Phase 6] Background thread for heavy interval fetching.
     Moves 60m historical data (macro context) out of the main loop.
@@ -471,7 +471,7 @@ def history_refresher_loop(data_provider, state: LiveState):
     # Main Polling Loop
     while True:
         try:
-            global_sentinel.record_heartbeat("history_refresher")
+            sentinel.record_heartbeat("history_refresher")
             # [v9.9.9] Logic Hardening: Fetch macro-data every 15 minutes
             for sym in ["NIFTY", "BANKNIFTY", "SENSEX"]:
                 try:
@@ -508,7 +508,7 @@ def history_refresher_loop(data_provider, state: LiveState):
             
             # [v12.0.0] Pulse heartbeats every 60s while waiting for the next 15m cycle
             for _ in range(15):
-                global_sentinel.record_heartbeat("history_refresher")
+                sentinel.record_heartbeat("history_refresher")
                 time.sleep(60)
         except Exception as e:
             logger.error(f"HISTORY_REFRESHER_CRASH: {e}")
@@ -582,7 +582,7 @@ def run_engine_loop():
         except: pass
         
         # [v9.9.9] Start Decoupled Heartbeats
-        threading.Thread(target=history_refresher_loop, args=(data_provider, live_state), daemon=True).start()
+        threading.Thread(target=history_refresher_loop, args=(data_provider, live_state, global_sentinel), daemon=True).start()
         
         if data_provider.use_groww:
             live_state.data_source = "GROWW_API"
@@ -1258,7 +1258,7 @@ def run_engine_loop():
             logger.error(f"ENGINE CRITICAL: {e}", exc_info=True)
             time.sleep(10)
 
-def personalized_service_loop(notifier):
+def personalized_service_loop(notifier, sentinel):
     """[v9.9.9] Handles daily greetings, market blueprints, and periodic wisdom in IST."""
     logger.info("CORE: Personalized Service Loop started.")
     last_greet_date = None
@@ -1266,7 +1266,7 @@ def personalized_service_loop(notifier):
     
     while True:
         try:
-            global_sentinel.record_heartbeat("personalized_service")
+            sentinel.record_heartbeat("personalized_service")
             now_ist = datetime.now(timezone.utc).astimezone(IST)
             today_str = now_ist.strftime("%Y-%m-%d")
             current_hour = now_ist.hour
@@ -1311,7 +1311,7 @@ def personalized_service_loop(notifier):
 
             # Sleep in 60s increments to keep personalized_service heartbeat fresh
             for _ in range(60):
-                global_sentinel.record_heartbeat("personalized_service")
+                sentinel.record_heartbeat("personalized_service")
                 time.sleep(60)
         except Exception as e:
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
@@ -1326,6 +1326,10 @@ async def startup_event():
     logger.info("API: Launching background engine loop...")
     thread = threading.Thread(target=run_engine_loop, daemon=True)
     thread.start()
+    
+    # [v12.0.1] Launch Personalized Service Loop with Sentinel
+    pst = threading.Thread(target=personalized_service_loop, args=(core.telegram_notifier, global_sentinel), daemon=True)
+    pst.start()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8004))

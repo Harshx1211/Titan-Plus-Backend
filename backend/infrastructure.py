@@ -12,7 +12,7 @@ import random
 import uuid
 from typing import Dict, List, Optional, Set, Tuple, Any
 from typing import Dict, List, Optional, Set, Tuple, Any
-from datetime import datetime
+from datetime import datetime, timezone
 # import pandas as pd (Moved to local scope)
 from supabase import create_client, Client
 from dotenv import load_dotenv
