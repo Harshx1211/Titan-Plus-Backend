@@ -684,15 +684,17 @@ def run_engine_loop():
                     market_data = MarketData(
                         symbol=symbol, 
                         spot_price=ws_tick['lp'], 
-                        future_price=fut_tick['lp'] if fut_tick else (ws_tick['lp'] + 5.0),
+                        # [v9.9.9] Audit Fix: Use Proportional Basis Fallback (0.05%) instead of flat +5.0
+                        future_price=fut_tick['lp'] if fut_tick else (ws_tick['lp'] * 1.0005),
                         oi=ws_tick.get('oi', 0), 
                         pcr=0.95, 
-                        timestamp=datetime.fromtimestamp(ws_tick.get('timestamp', time.time())), 
+                        # [v9.9.9] Audit Fix: Standardize to IST for age calculations
+                        timestamp=datetime.fromtimestamp(ws_tick.get('timestamp', time.time()), tz=IST), 
                         source="SHOONYA_WS"
                     )
                     
-                    # [v9.9.9] Audit Fix: Stale Data Guard
-                    data_age_seconds = (datetime.now() - market_data.timestamp).total_seconds()
+                    # [v9.9.9] Audit Fix: Stale Data Guard (IST vs IST)
+                    data_age_seconds = (datetime.now(IST) - market_data.timestamp).total_seconds()
                     if data_age_seconds > 10:
                         if random.random() < 0.1: # Throttle logs
                             logger.warning(f"STALE_DATA: {symbol} data is {data_age_seconds:.1f}s old. Skipping analysis.")
@@ -767,8 +769,8 @@ def run_engine_loop():
                     curr_strength = (market_data.spot_price - hist_df.open.iloc[0]) / hist_df.open.iloc[0] * 100
                     live_state.index_strengths[symbol] = curr_strength
 
-                    # S/R Analysis
-                    now_minute = datetime.now().minute
+                    # S/R Analysis (IST-aware trigger)
+                    now_minute = now_ist.minute
                     if now_minute % 5 == 0 or not live_state.supports.get(symbol):
                         try:
                             sr_levels = sr_engine.find_pivot_levels(hist_df, lookback=10)
@@ -901,8 +903,8 @@ def run_engine_loop():
                     
                     pattern_results["score"] *= applied_boost
 
-                    # Lull Filter
-                    now_time = datetime.now().time()
+                    # Lull Filter (IST-aware)
+                    now_time = now_ist.time()
                     lull_start = datetime.strptime(f"{APP_CONFIG['LULL_START_HOUR']}:{APP_CONFIG['LULL_START_MINUTE']:02d}", "%H:%M").time()
                     lull_end = datetime.strptime(f"{APP_CONFIG['LULL_END_HOUR']}:{APP_CONFIG['LULL_END_MINUTE']:02d}", "%H:%M").time()
                     if lull_start <= now_time <= lull_end and "BRAIN_PULL" not in pattern_results.get("patterns", []):
@@ -1078,7 +1080,8 @@ def run_engine_loop():
                             is_win = p_delta > 0
                             
                             # Prepare Post-Analysis
-                            duration_min = int((datetime.now(timezone.utc) - sig.timestamp.replace(tzinfo=timezone.utc)).total_seconds() / 60)
+                            # [v9.9.9] Audit Fix: Accurate aware-datetime duration calculation 
+                            duration_min = int((datetime.now(timezone.utc) - sig.timestamp).total_seconds() / 60)
                             signal_data = sig.dict()
                             signal_data.update({'pnl': p_delta, 'duration_min': duration_min})
                             

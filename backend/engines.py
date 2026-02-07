@@ -166,7 +166,8 @@ class RiskEngine:
             return {"reason": "SAFE_EXIT (Climax)", "priority": 70, "analysis": "Exhaustion volume detected."}
 
         # 5. TIME DECAY (Priority 60)
-        duration_min = (datetime.now(timezone.utc) - signal.timestamp.replace(tzinfo=timezone.utc)).total_seconds() / 60
+        # [v9.9.9] Audit Fix: Standardized Aware-UTC duration
+        duration_min = (datetime.now(timezone.utc) - signal.timestamp).total_seconds() / 60
         if duration_min > 45: # Hard cap 45 mins for intraday
             return {"reason": "TIME_DECAY", "priority": 60, "analysis": "Time limit exceeded."}
 
