@@ -269,7 +269,7 @@ class CoreEngine:
         from engines import DataSentinel, RiskEngine, PatternEngine, TrapHunter, SessionAuditor
         from brain_unified import create_brain  # UNIFIED BRAIN
         from execution_engine import ExecutionEngine # REAL EXECUTION
-        from evolution_engine import EvolutionEngine
+        # from evolution_engine import EvolutionEngine  # [v10.2] Disabled - outcome_tracker provides learning
         from strategist import MarketStrategist
         from support_resistance import SupportResistanceEngine
         from option_engine import OptionEngine
@@ -303,7 +303,8 @@ class CoreEngine:
         # Heavy ML (Staggered)
         self.brain = create_brain(enable_rl=True, enable_smc=True)  # Unified v10.0
         gc.collect(); time.sleep(1)
-        self.evolver = EvolutionEngine(self.brain)
+        # self.evolver = EvolutionEngine(self.brain)  # [v10.2] Disabled - outcome_tracker provides learning
+        self.evolver = None  # Placeholder
         gc.collect(); time.sleep(1)
         
         self.pattern_engine = PatternEngine()
