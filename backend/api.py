@@ -95,6 +95,7 @@ class LiveState:
 
         # [Institutional Wave 3] Deduplication & Memory Hygiene
         self.seen_signal_ids = set()
+        self.seen_ids_lock = threading.Lock()  # [v10.2] Thread-safe lock for seen_signal_ids
     
     @property
     def active_signals(self):
