@@ -17,5 +17,6 @@ pytz>=2023.3
 xgboost>=2.1.0
 scikit-learn>=1.5.0
 numpy>=2.2.6,<3.0.0
+psutil>=5.9.0
 # torch removed (handled in Dockerfile for CPU-only optimization)
-# Deployment Version: 9.9.3 - Final Reconcile
+# Deployment Version: 10.2.0 - Enhanced with Health Checks
