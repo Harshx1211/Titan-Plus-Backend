@@ -254,14 +254,15 @@ class OptionEngine:
         # 6. Momentum Stretching
         if is_momentum_dominant:
             target_pct += 0.15 
-            selection_logic += "_MOM_BOOST"
-
         # Final Cap (Institutional Risk Guardrail)
         target_pct = max(0.10, min(0.65, target_pct))
         
+        # [v10.0] NSE Symbol Formatting
+        option_symbol = self._format_nse_symbol(symbol, selected_strike, option_type, days_to_expiry)
+        
         return {
             "strike": selected_strike,
-            "option_symbol": f"{symbol} {selected_strike} {option_type}", # Standard format
+            "option_symbol": option_symbol,
             "premium_entry": float(base_premium),
             "premium_sl": round(base_premium * 0.8, 2), # 20% Option SL Fallback
             "premium_target": round(base_premium * 1.5, 2), # 50% Option Target Fallback
@@ -270,6 +271,38 @@ class OptionEngine:
             "days_to_expiry": days_to_expiry,
             "rejection_reasons": []
         }
+    
+    def _format_nse_symbol(self, symbol: str, strike: int, option_type: str, days_to_expiry: int) -> str:
+        """
+        Format NSE option symbol correctly.
+        
+        Example: NIFTY28FEB24500CE
+        Format: {SYMBOL}{DD}{MMM}{STRIKE}{CE/PE}
+        """
+        from datetime import datetime, timedelta
+        import pytz
+        
+        # Calculate expiry date (next Thursday)
+        ist = pytz.timezone('Asia/Kolkata')
+        now = datetime.now(ist)
+        
+        # Find next Thursday
+        days_ahead = 3 - now.weekday()  # Thursday is 3
+        if days_ahead <= 0:  # Already Thursday or past
+            days_ahead += 7
+        
+        expiry_date = now + timedelta(days=days_ahead)
+        
+        # Format: DDMMMYY (e.g., 28FEB24)
+        day_str = expiry_date.strftime("%d")
+        month_str = expiry_date.strftime("%b").upper()
+        year_str = expiry_date.strftime("%y")
+        
+        # NSE Format: SYMBOL + DDMMM + STRIKE + CE/PE
+        # Example: NIFTY28FEB24500CE
+        nse_symbol = f"{symbol}{day_str}{month_str}{year_str}{strike}{option_type}"
+        
+        return nse_symbol
     
     def analyze_coi(self, current_chain: pd.DataFrame, previous_chain: pd.DataFrame, 
                     spot: float, price_change: float) -> Dict:
