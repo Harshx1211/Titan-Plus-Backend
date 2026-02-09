@@ -52,6 +52,10 @@ class DataProvider:
         """
         return 15.0
 
+    def get_iv_skew(self, symbol: str) -> float:
+        """Returns the IV Skew for a symbol. Neutral fallback for Global."""
+        return 1.0
+
     def get_breadth(self, symbol: str) -> Dict[str, int]:
         """Returns the market breadth. Decommissioned for Global Build."""
         return {"advances": 0, "declines": 0}

@@ -78,7 +78,7 @@ class ConfigValidator:
     
     def _check_broker_credentials(self):
         """Validate broker API credentials."""
-        # [v13.0.3] Global Focus: Indian brokers (Shoonya/Groww) are decommissioned.
+        # [v13.0.4] Global Focus: Indian brokers (Shoonya/Groww) are decommissioned.
         # Only public crypto providers (Binance/KuCoin) are used.
         self.info.append("✓ Global Data Providers configured (Public API + KuCoin Fallback)")
     
