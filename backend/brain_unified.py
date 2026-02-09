@@ -397,7 +397,10 @@ class UnifiedBrainEngine:
         adjusted = {}
         for k, v in features.items():
             reputation = self.feature_reputation.get(k, 1.0)
-            adjusted[k] = v * reputation
+            if isinstance(v, (int, float)):
+                adjusted[k] = v * reputation
+            else:
+                adjusted[k] = v
         return adjusted
     
     def _check_vetoes(self, market_data: Dict, regime: str) -> Tuple[bool, List[str]]:
