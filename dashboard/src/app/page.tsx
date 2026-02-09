@@ -292,7 +292,7 @@ export default function TitanDashboard() {
             <div className="space-y-1 sm:space-y-3">
               <h1 className="text-xl sm:text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-500 tracking-tighter uppercase">
                 Titan<span className="text-white">Plus</span>
-                <span className="ml-2 text-[8px] sm:text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 sm:py-0.5 rounded border border-emerald-500/20 align-top tracking-widest font-mono">v13.0.2_GLOBAL</span>
+                <span className="ml-2 text-[8px] sm:text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 sm:py-0.5 rounded border border-emerald-500/20 align-top tracking-widest font-mono">v13.0.3_GLOBAL</span>
               </h1>
               <div className="flex items-center gap-2 sm:gap-5">
                 <span className="text-[10px] sm:text-institutional text-slate-500 opacity-60">Titan Institutional</span>

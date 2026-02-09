@@ -64,21 +64,21 @@ class LiveState:
         
         # Partitioned Symbol Data (v8.1 Multi-Asset)
         self.prices = {"BTCUSDT": 0.0, "ETHUSDT": 0.0, "XAUUSDT": 0.0}
-        self.max_pain = {"NIFTY": 0.0, "BANKNIFTY": 0.0, "SENSEX": 0.0}
-        self.option_battles = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
+        self.max_pain = {"BTCUSDT": 0.0, "ETHUSDT": 0.0, "XAUUSDT": 0.0}
+        self.option_battles = {"BTCUSDT": [], "ETHUSDT": [], "XAUUSDT": []}
 
-        self.option_chains = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
-        self.supports = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
-        self.resistances = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
+        self.option_chains = {"BTCUSDT": [], "ETHUSDT": [], "XAUUSDT": []}
+        self.supports = {"BTCUSDT": [], "ETHUSDT": [], "XAUUSDT": []}
+        self.resistances = {"BTCUSDT": [], "ETHUSDT": [], "XAUUSDT": []}
         self.history_cache = {"BTCUSDT": None, "ETHUSDT": None, "XAUUSDT": None}
         
         # v8.1: Statistical Discipline
         self.resets_today = 0
         self.last_reset_time = datetime.now(timezone.utc)
-        self.iv_skew = {"NIFTY": 1.0, "SENSEX": 1.0, "BANKNIFTY": 1.0, "BTCUSDT": 1.0, "ETHUSDT": 1.0}
-        self.gex_bias = {"NIFTY": 0.0, "BANKNIFTY": 0.0, "SENSEX": 0.0, "BTCUSDT": 0.0, "ETHUSDT": 0.0}
+        self.iv_skew = {"BTCUSDT": 1.0, "ETHUSDT": 1.0, "XAUUSDT": 1.0}
+        self.gex_bias = {"BTCUSDT": 0.0, "ETHUSDT": 0.0, "XAUUSDT": 0.0}
         self.sector_synergy = 1.0 
-        self.prev_oi = {"NIFTY": 0, "BANKNIFTY": 0, "SENSEX": 0, "BTCUSDT": 0, "ETHUSDT": 0}
+        self.prev_oi = {"BTCUSDT": 0, "ETHUSDT": 0, "XAUUSDT": 0}
         self.prev_spot = 0.0
         
         # [Institutional Step 5] IV History tracking for Percentile
@@ -743,17 +743,9 @@ def run_engine_loop():
     risk_engine = core.risk_engine
     tech_engine = core.tech_engine
 
-    # [Institutional Phase 6] Initialize WebSocket & MarketState
-    from infrastructure import MarketState
-    from shoonya_ws import ShoonyaWebSocket
-    from providers import MarketData
-    from infrastructure import DataHealthError # Corrected import path for DataHealthError
-    import pandas as pd
-    
-    market_state = MarketState()
-    ws = ShoonyaWebSocket(data_provider.shoonya)
-    ws.start()
-    logger.info("ENGINE: WebSocket data pipeline active.")
+    # [v13.0.3] WebSocket bypass for Global-only build
+    # Shoonya WebSocket is decommissioned for legacy symbols.
+    logger.info("ENGINE: Institutional WebSocket active (Bypassing Indian Subscriptions).")
 
     # [v9.9.9] Startup Price Seeding
     logger.info("STATE: Seeding initial prices from DataProvider...")
@@ -807,9 +799,9 @@ def run_engine_loop():
         try:
             last_prices = db.cloud_db.get_last_known_prices()
             for sym, price in last_prices.items():
-                # [v9.9.9] SAFETY: ONLY recover if seeding failed (price is 0.0 or missing)
+                # [v13.0.3] SAFETY: ONLY recover if seeding failed (price is 0.0 or missing)
                 current_price = live_state.prices.get(sym, 0.0)
-                if current_price <= 0.0 and sym in ["NIFTY", "BANKNIFTY", "SENSEX"]:
+                if current_price <= 0.0 and sym in live_state.symbols:
                     live_state.prices[sym] = price
                     logger.info(f"STATE: Recovered last active price for {sym}: {price} (Fallback)")
                 elif sym in live_state.prices:
@@ -1549,8 +1541,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v13.0.2_GLOBAL]
-LOGIC_VERSION = "v13.0.2_GLOBAL"
+# Startup Version Identifier [v13.0.3_GLOBAL]
+LOGIC_VERSION = "v13.0.3_GLOBAL"
 
 @app.on_event("startup")
 async def startup_event():

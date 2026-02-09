@@ -1,4 +1,4 @@
-# Build Identifier: v13.0.0-GLOBAL-PROD
+# Build Identifier: v13.0.3-GLOBAL-PROD
 FROM python:3.12-slim
 
 # Set working directory

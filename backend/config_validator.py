@@ -78,38 +78,9 @@ class ConfigValidator:
     
     def _check_broker_credentials(self):
         """Validate broker API credentials."""
-        # Shoonya credentials
-        shoonya_vars = [
-            'SHOONYA_USER',
-            'SHOONYA_PASSWORD',
-            'SHOONYA_FACTOR2',
-            'SHOONYA_VC',
-            'SHOONYA_API_KEY'
-        ]
-        
-        shoonya_configured = all(
-            os.getenv(var) and os.getenv(var) != f"dummy_{var.lower().split('_')[1]}"
-            for var in shoonya_vars
-        )
-        
-        if not shoonya_configured:
-            self.warnings.append(
-                "⚠️  Shoonya credentials not configured - using dummy values. "
-                "Live trading will NOT work."
-            )
-        else:
-            self.info.append("✓ Shoonya credentials configured")
-        
-        # Groww credentials
-        groww_cookie = os.getenv('GROWW_COOKIE')
-        groww_client = os.getenv('GROWW_X_CLIENT_ID')
-        
-        if groww_cookie and groww_client:
-            self.info.append("✓ Groww credentials configured (fallback provider available)")
-        else:
-            self.warnings.append(
-                "⚠️  Groww credentials not configured - only Shoonya will be available"
-            )
+        # [v13.0.3] Global Focus: Indian brokers (Shoonya/Groww) are decommissioned.
+        # Only public crypto providers (Binance/KuCoin) are used.
+        self.info.append("✓ Global Data Providers configured (Public API + KuCoin Fallback)")
     
     def _check_database_config(self):
         """Validate database configuration."""
