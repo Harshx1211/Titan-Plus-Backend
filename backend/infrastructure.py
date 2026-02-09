@@ -438,7 +438,7 @@ class SupabaseManager:
 
     def get_history(self, limit: int = 50) -> List[Dict]:
         try:
-            res = self.supabase.table("signal_ledger").select("*").order("timestamp", desc=True).limit(limit).execute()
+            res = self.supabase.table("signal_ledger").select("*").order("created_at", desc=True).limit(limit).execute()
             return res.data or []
         except: return []
 
@@ -452,7 +452,7 @@ class SupabaseManager:
         """Recovers signals that haven't been CLOSED or given an OUTCOME."""
         try:
             # Fetch last 100 signals and filter locally for simplicity/resilience
-            res = self.supabase.table("signal_ledger").select("*").order("timestamp", desc=True).limit(100).execute()
+            res = self.supabase.table("signal_ledger").select("*").order("created_at", desc=True).limit(100).execute()
             if not res.data: return []
             
             # Map by ID to find ones without OUTCOME state
