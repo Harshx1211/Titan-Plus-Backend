@@ -252,6 +252,7 @@ class ShoonyaProvider:
                     res_f = self.api.get_quotes(exchange=fut[0], token=fut[1])
                     if res_f and res_f.get('stat') == 'Ok':
                         data['future_lp'] = float(res_f.get('lp', 0))
+                        data['future_oi'] = int(res_f.get('oi', 0))
                 return data
         except Exception as e:
             logger.error(f"SHOONYA_DATA: Error getting market data for {symbol}: {e}")
