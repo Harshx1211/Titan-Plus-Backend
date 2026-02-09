@@ -962,6 +962,8 @@ def run_engine_loop():
             vix_update_counter += 1
             
             for symbol in live_state.symbols:
+                if vix_update_counter % 50 == 0: # Throttled heartbeat
+                    logger.info(f"ANALYSIS_HEARTBEAT: Processing {symbol}...")
                 try:
                     # 1. Fetch Data (Atomic Memory Snapshot)
                     ws_tick = all_snapshots.get(symbol)
@@ -1505,8 +1507,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v10.2.0_ENHANCED]
-LOGIC_VERSION = "v10.2.0_ENHANCED"
+# Startup Version Identifier [v12.6.0_STABLE]
+LOGIC_VERSION = "v12.6.0_STABLE"
 
 @app.on_event("startup")
 async def startup_event():
