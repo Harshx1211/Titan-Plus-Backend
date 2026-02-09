@@ -3,7 +3,7 @@ import pandas as pd
 import time
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from models_v3 import MarketData
 
 logger = logging.getLogger("crypto_provider")
