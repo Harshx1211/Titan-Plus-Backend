@@ -11,7 +11,7 @@ Features:
 - Feature reputation tracking
 
 Author: Titan Plus Team
-Version: 12.6.0
+Version: 12.6.2
 Date: 2026-02-08
 """
 
@@ -108,7 +108,7 @@ class UnifiedBrainEngine:
     """
     
     def __init__(self, config: Optional[BrainConfig] = None):
-        self.version = "12.6.0"
+        self.version = "12.6.2"
         self.config = config or BrainConfig()
         
         # State tracking

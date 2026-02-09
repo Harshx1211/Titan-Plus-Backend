@@ -22,7 +22,7 @@ class CryptoProvider:
         # Common headers
         self.session.headers.update({
             "Content-Type": "application/json",
-            "User-Agent": "Titan-Plus-Institutional/12.6.0"
+            "User-Agent": "Titan-Plus-Institutional/12.6.2"
         })
         self.use_kucoin = False # Global fallback trigger
 
@@ -68,9 +68,9 @@ class CryptoProvider:
     def _get_kucoin_snapshot(self, symbol: str) -> Optional[MarketData]:
         """Fallback: Fetch from KuCoin Futures."""
         try:
-            # KuCoin uses -USDTM suffix for perpetuals
-            kucoin_sym = symbol.replace("USDT", "-USDTM")
-            endpoint = f"{self.KUCOIN_URL}/level1/ticker"
+            # KuCoin Futures uses BTCUSDTM format (no dash usually for perpetuals)
+            kucoin_sym = symbol.replace("USDT", "USDTM")
+            endpoint = f"{self.KUCOIN_URL}/api/v1/ticker"
             params = {"symbol": kucoin_sym}
             
             res = self.session.get(endpoint, params=params, timeout=5)
@@ -79,7 +79,9 @@ class CryptoProvider:
                 return None
                 
             data = res.json()
-            if not data.get('data'): return None
+            if not data.get('data'): 
+                logger.error(f"KuCoin Data Missing for {kucoin_sym}: {data}")
+                return None
             
             price = float(data['data']['price'])
             return MarketData(
@@ -129,17 +131,19 @@ class CryptoProvider:
     def _get_kucoin_history(self, symbol: str, interval: str = "5m", limit: int = 100) -> Optional[pd.DataFrame]:
         """Fallback History: KuCoin Futures."""
         try:
-            kucoin_sym = symbol.replace("USDT", "-USDTM")
+            kucoin_sym = symbol.replace("USDT", "USDTM")
             # KuCoin granularity is in minutes
-            gran_map = {"5m": 5, "1h": 60, "1d": 1440}
+            gran_map = {"5m": 5, "1h": 60, "1d": 1440, "5minute": 5, "60minute": 60}
             gran = gran_map.get(interval, 5)
             
-            endpoint = f"{self.KUCOIN_URL}/kline/query"
-            params = {"symbol": kucoin_sym, "granularity": gran}
+            endpoint = f"{self.KUCOIN_URL}/api/v1/kline/query"
+            params = {"symbol": kucoin_sym, "granularity": gran, "limit": limit}
             
             res = self.session.get(endpoint, params=params, timeout=10)
             data = res.json()
-            if not data.get('data'): return None
+            if not data.get('data'): 
+                logger.error(f"KuCoin History Data Missing: {data}")
+                return None
             
             # KuCoin kline: [time, open, close, high, low, volume, turnover]
             df = pd.DataFrame(data['data'], columns=['timestamp', 'open', 'close', 'high', 'low', 'volume', 'turnover'])

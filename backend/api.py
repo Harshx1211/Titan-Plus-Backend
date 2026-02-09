@@ -458,7 +458,7 @@ async def root():
     """Root endpoint to confirm server is alive."""
     return {
         "message": "Titan Plus API is running. Visit /health for status.",
-        "version": "v12.6.0",
+        "version": "v12.6.2",
         "market": "NSE/BSE/CRYPTO"
     }
 
@@ -677,9 +677,12 @@ def history_refresher_loop(data_provider, state: LiveState, sentinel):
                     else:
                         df_60 = data_provider.get_history(sym, "60minute")
                         
-                    with macro_cache_lock:
-                        macro_cache[sym] = df_60
-                    logger.info(f"CACHE: Refreshed 60m history for {sym}")
+                    if df_60 is not None and not df_60.empty:
+                        with macro_cache_lock:
+                            macro_cache[sym] = df_60
+                        logger.info(f"CACHE: Refreshed 60m history for {sym}")
+                    else:
+                        logger.warning(f"CACHE: Empty history for {sym} - skipping update")
                 except Exception as e:
                     logger.warning(f"CACHE_ERROR: Failed to refresh macro {sym}: {e}")
                 time.sleep(1) # Stagger requests
