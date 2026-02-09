@@ -21,6 +21,8 @@ class MarketSource(str, Enum):
     SHOONYA = "SHOONYA"
     SHOONYA_WS = "SHOONYA_WS"
     GROWW_API = "GROWW_API"
+    BINANCE = "BINANCE"
+    KUCOIN = "KUCOIN"
     FALLBACK = "FALLBACK"
 
 

@@ -22,7 +22,7 @@ class CryptoProvider:
         # Common headers
         self.session.headers.update({
             "Content-Type": "application/json",
-            "User-Agent": "Titan-Plus-Institutional/12.6.3"
+            "User-Agent": "Titan-Plus-Institutional/12.6.4"
         })
         self.use_kucoin = False # Global fallback trigger
 
@@ -58,7 +58,7 @@ class CryptoProvider:
                 oi=1000000, 
                 pcr=1.0, 
                 timestamp=datetime.now(),
-                source="BINANCE_PUBLIC"
+                source="BINANCE"
             )
         except Exception as e:
             logger.error(f"Crypto fetch failed for {symbol}: {e}")
@@ -94,7 +94,7 @@ class CryptoProvider:
                 oi=1000000,
                 pcr=1.0,
                 timestamp=datetime.now(),
-                source="KUCOIN_FALLBACK"
+                source="KUCOIN"
             )
         except Exception as e:
             logger.error(f"KuCoin fallback failed: {e}")
