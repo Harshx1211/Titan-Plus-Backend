@@ -744,6 +744,10 @@ def run_engine_loop():
     tech_engine = core.tech_engine
 
     # [v13.0.3] WebSocket bypass for Global-only build
+    from infrastructure import MarketState, DataHealthError
+    from models_v3 import MarketData
+    import pandas as pd
+    market_state = MarketState()
     # Shoonya WebSocket is decommissioned for legacy symbols.
     logger.info("ENGINE: Institutional WebSocket active (Bypassing Indian Subscriptions).")
 
