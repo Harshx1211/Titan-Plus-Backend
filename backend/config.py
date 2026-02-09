@@ -20,7 +20,7 @@ class Config:
     MAX_OPEN_POSITIONS = 3
     
     # Brain
-    DECISION_THRESHOLD = 0.75
+    DECISION_THRESHOLD = 0.65
     XGBOOST_WEIGHT = 0.40
     RL_WEIGHT = 0.30
     SMC_WEIGHT = 0.30
