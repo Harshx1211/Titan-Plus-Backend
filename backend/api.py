@@ -845,12 +845,16 @@ def run_engine_loop():
                         
                         recovered_sig = TradeSignal(
                             symbol=sym,
+                            action=rec.get('option_type', 'BUY_CALL'),  # Map option_type -> action
+                            quantity=rec.get('quantity', 1),  # Default to 1 lot
+                            confidence=SignalConfidence.MEDIUM,  # Default confidence
                             entry_price=rec.get('entry_price', 0.0),
                             stop_loss=rec.get('stop_loss', 0.0),
-                            target=rec.get('target', 0.0),
-                            timestamp=datetime.fromisoformat(rec['timestamp'].replace('Z', '+00:00')) if 'timestamp' in rec else datetime.now(timezone.utc),
+                            target=rec.get('target_1', rec.get('target', 0.0)),  # Use target_1 or fallback to target
+                            timestamp=datetime.fromisoformat(rec.get('created_at', rec.get('generated_at', datetime.now(timezone.utc).isoformat())).replace('Z', '+00:00')),
                             decision_id=rec.get('signal_id', 'RECOVERED'),
                             reasoning=rec.get('reasoning', 'RECOVERED_TRADE'),
+                            score=rec.get('confluence', 0.0),  # Map confluence -> score
                             is_live=True
                         )
                         live_state.active_signals.append(recovered_sig)
@@ -1586,8 +1590,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v13.1.7_GLOBAL]
-LOGIC_VERSION = "v13.1.7_GLOBAL"
+# Startup Version Identifier [v13.1.8_GLOBAL]
+LOGIC_VERSION = "v13.1.8_GLOBAL"
 
 @app.on_event("startup")
 async def startup_event():
