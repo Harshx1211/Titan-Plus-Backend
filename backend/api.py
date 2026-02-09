@@ -958,12 +958,27 @@ def run_engine_loop():
             live_state.last_update = datetime.now(timezone.utc)
             live_state.data_source = "SHOONYA_WS"
             
-            # [v9.9.9] Update VIX & Global Breadth (Throttled for Stability)
-            if vix_update_counter % 20 == 0: # Every ~4 seconds in a 200ms loop
+            # [v13.0.2] Global Trend Dominance (Bullish vs Bearish Assets)
+            if vix_update_counter % 20 == 0:
                 try:
-                    live_state.vix = data_provider.get_vix()
-                    live_state.breadth = data_provider.get_breadth("NIFTY")
-                except: pass
+                    # Update VIX/Volatility
+                    live_state.vix = data_provider.get_vix() if hasattr(data_provider, 'get_vix') else 15.0
+                    
+                    # Calculate Global Breadth (Trend alignment of BTC/ETH/XAU)
+                    bullish = 0
+                    bearish = 0
+                    for sym in live_state.symbols:
+                        price = live_state.prices.get(sym, 0)
+                        hist = live_state.history_cache.get(sym)
+                        if hist is not None and not hist.empty:
+                            # Use 20 SMA for fast trend detection
+                            sma = hist['close'].tail(20).mean()
+                            if price > sma: bullish += 1
+                            else: bearish += 1
+                    
+                    live_state.breadth = {"advances": bullish, "declines": bearish}
+                except Exception as be:
+                    logger.warning(f"HUD: Global metric update failed: {be}")
             
             vix_update_counter += 1
             
@@ -1534,8 +1549,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v13.0.0_GLOBAL]
-LOGIC_VERSION = "v13.0.0_GLOBAL"
+# Startup Version Identifier [v13.0.2_GLOBAL]
+LOGIC_VERSION = "v13.0.2_GLOBAL"
 
 @app.on_event("startup")
 async def startup_event():
