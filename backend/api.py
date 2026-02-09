@@ -217,7 +217,8 @@ APP_CONFIG = {
     "MARKET_START_HOUR": 9,
     "MARKET_START_MINUTE": 0,
     "MARKET_END_HOUR": 15,
-    "MARKET_END_MINUTE": 30
+    "MARKET_END_MINUTE": 30,
+    "MAX_PAIN_THRESHOLD": 20.0
 }
 evolution_done_date = None
 
