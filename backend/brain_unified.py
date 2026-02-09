@@ -491,7 +491,7 @@ class UnifiedBrainEngine:
                 return 0.5, ["SMC: Insufficient data"]
             
             # Run SMC analysis
-            analysis = self.smc_engine.analyze(ohlcv_df, market_data)
+            analysis = self.smc_engine.analyze(ohlcv_df)
             
             # Normalize confluence score to 0-1
             score = analysis.get('confluence_score', 50) / 100.0
