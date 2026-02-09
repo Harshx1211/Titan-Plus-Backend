@@ -881,7 +881,7 @@ def run_engine_loop():
                     live_state.add_thought("LEARN", f"Starting Overnight Evolution for {today_str}...")
                     live_state.is_learning = True
                     try:
-                        results = evolver.evolve_session(today_str)
+                        results = core.evolver.evolve_session(today_str)
                         evolution_done_date = today_str
                         live_state.is_learning = False
                         
