@@ -569,8 +569,7 @@ class DatabaseManager:
                 
                 # Metadata
                 'state': signal_data.get('state', 'PENDING'),
-                'generated_at': signal_data.get('generated_at'),
-                'brain_version': signal_data.get('brain_version')
+                'generated_at': signal_data.get('generated_at')
             }
             
             self.cloud_db.supabase.table('signal_ledger').insert(formatted_signal).execute()
