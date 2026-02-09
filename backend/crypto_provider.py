@@ -15,6 +15,7 @@ class CryptoProvider:
     """
     
     BASE_URL = "https://fapi.binance.com/fapi/v1"
+    KUCOIN_URL = "https://api-futures.kucoin.com/api/v1"
     
     def __init__(self):
         self.session = requests.Session()
@@ -23,15 +24,26 @@ class CryptoProvider:
             "Content-Type": "application/json",
             "User-Agent": "Titan-Plus-Institutional/12.6.0"
         })
+        self.use_kucoin = False # Global fallback trigger
 
     def get_market_snapshot(self, symbol: str) -> Optional[MarketData]:
-        """Fetch real-time price from Binance Futures."""
+        """Fetch real-time price with automatic multi-source fallback."""
+        if self.use_kucoin:
+            return self._get_kucoin_snapshot(symbol)
+            
         try:
-            # Using Binance Futures Ticker (USDT pairs)
+            # Source 1: Binance
             endpoint = f"{self.BASE_URL}/ticker/price"
             params = {"symbol": symbol}
             
             res = self.session.get(endpoint, params=params, timeout=5)
+            
+            # Detect Geo-Restriction (451 Unavailable For Legal Reasons or specific JSON msg)
+            if res.status_code == 451 or (res.status_code == 400 and "restricted location" in res.text):
+                logger.warning(f"GEO_BLOCK: Binance restricted. Switching to KuCoin for {symbol}.")
+                self.use_kucoin = True
+                return self._get_kucoin_snapshot(symbol)
+
             if res.status_code != 200:
                 logger.error(f"Binance Error: {res.text}")
                 return None
@@ -39,64 +51,105 @@ class CryptoProvider:
             data = res.json()
             price = float(data['price'])
             
-            # For Crypto, we model spot and future as very close 
-            # (or we can use the premium index if needed)
             return MarketData(
                 symbol=symbol,
                 spot_price=price,
-                future_price=price, # Simple parity for initial analysis
-                oi=1000000, # Crypto liquidity is massive, 1M is safe baseline
+                future_price=price,
+                oi=1000000, 
                 pcr=1.0, 
                 timestamp=datetime.now(),
                 source="BINANCE_PUBLIC"
             )
         except Exception as e:
             logger.error(f"Crypto fetch failed for {symbol}: {e}")
+            self.use_kucoin = True # Failover on network error too
+            return self._get_kucoin_snapshot(symbol)
+
+    def _get_kucoin_snapshot(self, symbol: str) -> Optional[MarketData]:
+        """Fallback: Fetch from KuCoin Futures."""
+        try:
+            # KuCoin uses -USDTM suffix for perpetuals
+            kucoin_sym = symbol.replace("USDT", "-USDTM")
+            endpoint = f"{self.KUCOIN_URL}/level1/ticker"
+            params = {"symbol": kucoin_sym}
+            
+            res = self.session.get(endpoint, params=params, timeout=5)
+            if res.status_code != 200:
+                logger.error(f"KuCoin Error: {res.text}")
+                return None
+                
+            data = res.json()
+            if not data.get('data'): return None
+            
+            price = float(data['data']['price'])
+            return MarketData(
+                symbol=symbol,
+                spot_price=price,
+                future_price=price,
+                oi=1000000,
+                pcr=1.0,
+                timestamp=datetime.now(),
+                source="KUCOIN_FALLBACK"
+            )
+        except Exception as e:
+            logger.error(f"KuCoin fallback failed: {e}")
             return None
 
     def get_history(self, symbol: str, interval: str = "5m", limit: int = 100) -> Optional[pd.DataFrame]:
-        """Fetch OHLCV history for technical analysis."""
+        """Fetch history with automatic provider switching."""
+        if self.use_kucoin:
+            return self._get_kucoin_history(symbol, interval, limit)
+            
         # Map internal interval names to Binance format
-        interval_map = {
-            "5minute": "5m",
-            "60minute": "1h",
-            "5m": "5m",
-            "1h": "1h",
-            "1d": "1d"
-        }
+        interval_map = {"5minute": "5m", "60minute": "1h", "5m": "5m", "1h": "1h", "1d": "1d"}
         binance_interval = interval_map.get(interval, interval)
         
         try:
             endpoint = f"{self.BASE_URL}/klines"
-            params = {
-                "symbol": symbol,
-                "interval": binance_interval,
-                "limit": limit
-            }
+            params = {"symbol": symbol, "interval": binance_interval, "limit": limit}
             
             res = self.session.get(endpoint, params=params, timeout=10)
             if res.status_code != 200:
-                logger.error(f"Binance History Error: {res.text}")
-                return None
+                return self._get_kucoin_history(symbol, interval, limit)
                 
             data = res.json()
-            
-            # Binance klines format: [Open time, Open, High, Low, Close, Volume, ...]
             df = pd.DataFrame(data, columns=[
                 'timestamp', 'open', 'high', 'low', 'close', 'volume',
                 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'
             ])
             
-            # Convert types
             for col in ['open', 'high', 'low', 'close', 'volume']:
                 df[col] = df[col].astype(float)
-                
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             df.set_index('timestamp', inplace=True)
-            
             return df[['open', 'high', 'low', 'close', 'volume']]
+        except:
+            return self._get_kucoin_history(symbol, interval, limit)
+
+    def _get_kucoin_history(self, symbol: str, interval: str = "5m", limit: int = 100) -> Optional[pd.DataFrame]:
+        """Fallback History: KuCoin Futures."""
+        try:
+            kucoin_sym = symbol.replace("USDT", "-USDTM")
+            # KuCoin granularity is in minutes
+            gran_map = {"5m": 5, "1h": 60, "1d": 1440}
+            gran = gran_map.get(interval, 5)
+            
+            endpoint = f"{self.KUCOIN_URL}/kline/query"
+            params = {"symbol": kucoin_sym, "granularity": gran}
+            
+            res = self.session.get(endpoint, params=params, timeout=10)
+            data = res.json()
+            if not data.get('data'): return None
+            
+            # KuCoin kline: [time, open, close, high, low, volume, turnover]
+            df = pd.DataFrame(data['data'], columns=['timestamp', 'open', 'close', 'high', 'low', 'volume', 'turnover'])
+            for col in ['open', 'high', 'low', 'close', 'volume']:
+                df[col] = df[col].astype(float)
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            df.set_index('timestamp', inplace=True)
+            return df[['open', 'high', 'low', 'close', 'volume']].sort_index().tail(limit)
         except Exception as e:
-            logger.error(f"Crypto history failed for {symbol}: {e}")
+            logger.error(f"KuCoin history failed: {e}")
             return None
 
     def get_option_chain(self, symbol: str) -> Tuple[pd.DataFrame, bool]:
@@ -107,10 +160,11 @@ if __name__ == "__main__":
     # Test script
     logging.basicConfig(level=logging.INFO)
     provider = CryptoProvider()
-    print("\n--- Testing BTC Live ---")
+    print("\n--- Testing Binance (May fail if restricted) ---")
     data = provider.get_market_snapshot("BTCUSDT")
-    print(data)
+    print(f"Source: {data.source if data else 'None'} | Price: {data.spot_price if data else 'None'}")
     
-    print("\n--- Testing BTC History ---")
-    df = provider.get_history("BTCUSDT", limit=5)
-    print(df)
+    print("\n--- Testing KuCoin Fallback ---")
+    provider.use_kucoin = True
+    data = provider._get_kucoin_snapshot("BTCUSDT")
+    print(f"Source: {data.source if data else 'None'} | Price: {data.spot_price if data else 'None'}")

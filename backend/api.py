@@ -885,34 +885,39 @@ def run_engine_loop():
             if not is_nse_open:
                 # 1. Automated Overnight Learning (Only if NSE just closed)
                 if current_time >= evolution_trigger_time and evolution_done_date != today_str:
-                    logger.info(f"INTELLIGENCE: Triggering automated post-market evolution for {today_str}...")
-                    live_state.add_thought("LEARN", f"Starting Overnight Evolution for {today_str}...")
-                    live_state.is_learning = True
-                    try:
-                        results = core.evolver.evolve_session(today_str)
-                        evolution_done_date = today_str
-                        live_state.is_learning = False
-                        
-                        if results and results.get("status") == "SUCCESS":
-                            status = results.get('governor_status', 'SUCCESS')
-                            live_state.add_thought("LEARN", f"Evolution Complete: {status}. Brain Refined.")
-                            if 'metrics' in results and 'win_rate' in results['metrics']:
-                                wr = results['metrics']['win_rate']
-                                if wr is not None:
-                                    live_state.add_thought("LEARN", f"Session Review: {wr:.1f}% Win Rate analyzed.")
-                                else:
-                                    live_state.add_thought("LEARN", "Session Review: No trades analyzed today.")
-                        else:
-                            reason = results.get("reason", "No data") if results else "Empty Response"
-                            live_state.add_thought("LEARN", f"Evolution Skipped: {reason}")
-                            logger.info(f"INTELLIGENCE: Evolution skipped: {reason}")
+                    if core.evolver:
+                        logger.info(f"INTELLIGENCE: Triggering automated post-market evolution for {today_str}...")
+                        live_state.add_thought("LEARN", f"Starting Overnight Evolution for {today_str}...")
+                        live_state.is_learning = True
+                        try:
+                            results = core.evolver.evolve_session(today_str)
+                            evolution_done_date = today_str
+                            live_state.is_learning = False
                             
-                        if results and results.get("governor_status"):
-                            core.telegram_notifier.send_alert(f"🧠 *Overnight Intelligence*: Evolution process finished for {today_str}.\nStatus: {results.get('governor_status')}")
-                    except Exception as e:
-                        live_state.is_learning = False
-                        logger.error(f"INTELLIGENCE: Evolution failed: {e}")
-                        live_state.add_thought("ERROR", f"Overnight Evolution primary fail: {str(e)}")
+                            if results and results.get("status") == "SUCCESS":
+                                status = results.get('governor_status', 'SUCCESS')
+                                live_state.add_thought("LEARN", f"Evolution Complete: {status}. Brain Refined.")
+                                if 'metrics' in results and 'win_rate' in results['metrics']:
+                                    wr = results['metrics']['win_rate']
+                                    if wr is not None:
+                                        live_state.add_thought("LEARN", f"Session Review: {wr:.1f}% Win Rate analyzed.")
+                                    else:
+                                        live_state.add_thought("LEARN", "Session Review: No trades analyzed today.")
+                            else:
+                                reason = results.get("reason", "No data") if results else "Empty Response"
+                                live_state.add_thought("LEARN", f"Evolution Skipped: {reason}")
+                                logger.info(f"INTELLIGENCE: Evolution skipped: {reason}")
+                                
+                            if results and results.get("governor_status"):
+                                core.telegram_notifier.send_alert(f"🧠 *Overnight Intelligence*: Evolution process finished for {today_str}.\nStatus: {results.get('governor_status')}")
+                        except Exception as e:
+                            live_state.is_learning = False
+                            logger.error(f"INTELLIGENCE: Evolution failed: {e}")
+                            live_state.add_thought("ERROR", f"Overnight Evolution primary fail: {str(e)}")
+                    else:
+                        # [v12.6.1] Self-Healing: If evolver is disabled, mark as done to prevent loop
+                        evolution_done_date = today_str
+                        logger.info(f"INTELLIGENCE: Evolution engine is disabled. Skipping for {today_str}.")
                 
                 if not has_crypto:
                     # 3. Aggressive Sleep during off-hours (1 minute polling)
