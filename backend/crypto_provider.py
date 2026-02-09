@@ -68,10 +68,13 @@ class CryptoProvider:
     def _get_kucoin_snapshot(self, symbol: str) -> Optional[MarketData]:
         """Fallback: Fetch from KuCoin Futures."""
         try:
-            # KuCoin Futures uses XBTUSDTM for BTC and ETHUSDTM for ETH
+            # KuCoin Futures symbols:
+            # BTC -> XBTUSDTM, ETH -> ETHUSDTM, XAU (Gold) -> GUAUSDT
             kucoin_sym = symbol.replace("USDT", "USDTM")
             if "BTC" in kucoin_sym:
                 kucoin_sym = kucoin_sym.replace("BTC", "XBT")
+            elif "XAU" in symbol:
+                kucoin_sym = "GUAUSDT" # Unique Gold mapping
                 
             endpoint = f"{self.KUCOIN_URL}/api/v1/ticker"
             params = {"symbol": kucoin_sym}
@@ -137,6 +140,8 @@ class CryptoProvider:
             kucoin_sym = symbol.replace("USDT", "USDTM")
             if "BTC" in kucoin_sym:
                 kucoin_sym = kucoin_sym.replace("BTC", "XBT")
+            elif "XAU" in symbol:
+                kucoin_sym = "GUAUSDT"
                 
             # KuCoin granularity is in minutes
             gran_map = {"5m": 5, "1h": 60, "1d": 1440, "5minute": 5, "60minute": 60}

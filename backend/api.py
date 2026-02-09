@@ -54,23 +54,23 @@ class LiveState:
         self.current_regime = Regime.NEUTRAL
         self._active_signals = []  # Protected by lock
         self.last_update = datetime.now(timezone.utc)
-        self.symbols = ["NIFTY", "BANKNIFTY", "SENSEX", "BTCUSDT", "ETHUSDT"]
+        self.symbols = ["BTCUSDT", "ETHUSDT", "XAUUSDT"]
         self.current_symbol_idx = 0
         self.vix = APP_CONFIG["VIX_DEFAULT"]
         self.breadth = {"advances": 0, "declines": 0}
         self.market_message = "System Stable"
         self.data_source = "PUBLIC_SCRAPER"
-        self.index_strengths: Dict[str, float] = {"NIFTY": 0.0, "BANKNIFTY": 0.0, "SENSEX": 0.0, "BTCUSDT": 0.0, "ETHUSDT": 0.0}
+        self.index_strengths: Dict[str, float] = {"BTCUSDT": 0.0, "ETHUSDT": 0.0, "XAUUSDT": 0.0}
         
         # Partitioned Symbol Data (v8.1 Multi-Asset)
-        self.prices = {"NIFTY": 25727.0, "BANKNIFTY": 50000.0, "SENSEX": 83739.0, "BTCUSDT": 0.0, "ETHUSDT": 0.0}
+        self.prices = {"BTCUSDT": 0.0, "ETHUSDT": 0.0, "XAUUSDT": 0.0}
         self.max_pain = {"NIFTY": 0.0, "BANKNIFTY": 0.0, "SENSEX": 0.0}
         self.option_battles = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
 
         self.option_chains = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
         self.supports = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
         self.resistances = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
-        self.history_cache = {"NIFTY": None, "BANKNIFTY": None, "SENSEX": None, "BTCUSDT": None, "ETHUSDT": None}
+        self.history_cache = {"BTCUSDT": None, "ETHUSDT": None, "XAUUSDT": None}
         
         # v8.1: Statistical Discipline
         self.resets_today = 0
@@ -82,7 +82,7 @@ class LiveState:
         self.prev_spot = 0.0
         
         # [Institutional Step 5] IV History tracking for Percentile
-        self.iv_history = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": [], "BTCUSDT": [], "ETHUSDT": []}
+        self.iv_history = {"BTCUSDT": [], "ETHUSDT": [], "XAUUSDT": []}
         
         # [v9.4] Epistemic Transparency: Digital Stream of Consciousness
         self.thought_logs = []
@@ -878,12 +878,10 @@ def run_engine_loop():
             market_start = datetime.strptime(f"{APP_CONFIG['MARKET_START_HOUR']}:{APP_CONFIG['MARKET_START_MINUTE']:02d}", "%H:%M").time()
             market_end = datetime.strptime(f"{APP_CONFIG['MARKET_END_HOUR']}:{APP_CONFIG['MARKET_END_MINUTE']:02d}", "%H:%M").time()
             
-            # Post-Market Intelligence Trigger (3:35 PM IST)
-            evolution_trigger_time = datetime.strptime("15:35", "%H:%M").time()
-            
+            # [v13.0] Global Focus: Market is ALWAYS open for BTC/ETH/XAU
             is_nse_open = (market_start <= current_time <= market_end) and (now_ist.weekday() < 5)
-            # [v12.6.0] Hybrid Market Hours: System stays awake if crypto symbols are present
-            has_crypto = any("USDT" in s for s in live_state.symbols)
+            # System stays awake for 24/7 global assets
+            has_crypto = True 
             
             if not is_nse_open:
                 # 1. Automated Overnight Learning (Only if NSE just closed)
@@ -1500,14 +1498,14 @@ def personalized_service_loop(notifier, sentinel):
                 }
                 notifier.send_personalized_greeting("Harsh", stats=stats)
                 
-                # Fetch levels from core if available (global core accessed inside loop)
+                # [v13.0] Global Multi-Asset Blueprint
                 if 'core' in globals() and core.is_initialized:
-                    for symbol in ["NIFTY", "BANKNIFTY", "SENSEX"]:
+                    for symbol in ["BTCUSDT", "ETHUSDT", "XAUUSDT"]:
                         supports = core.state.supports.get(symbol, [])
                         resistances = core.state.resistances.get(symbol, [])
                         trend = "BULLISH" if core.state.index_strengths.get(symbol, 0) > 0 else "BEARISH"
                         
-                        note = f"Institutional accumulation zones detected. Focus on {symbol} {trend} reversals."
+                        note = f"Global institutional liquidity zones detected. High-probability {trend} setup for {symbol}."
                         notifier.engine.send_market_blueprint(
                             symbol=symbol,
                             trend=trend,
@@ -1535,8 +1533,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v12.6.5]
-LOGIC_VERSION = "v12.6.5"
+# Startup Version Identifier [v13.0.0_GLOBAL]
+LOGIC_VERSION = "v13.0.0_GLOBAL"
 
 @app.on_event("startup")
 async def startup_event():

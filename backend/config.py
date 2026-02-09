@@ -1,8 +1,5 @@
-"""
-Titan Plus Configuration
-=========================
-Centralized configuration for all system components.
-"""
+# Startup Version Identifier [v13.0.0_GLOBAL]
+LOGIC_VERSION = "v13.0.0_GLOBAL"
 
 from dataclasses import dataclass
 from typing import List, Dict
