@@ -355,8 +355,8 @@ class DataProvider:
                 symbol=symbol, spot_price=data['lp'], 
                 # [v9.9.9] Audit Fix: Standardize to 0.05% Basis Fallback
                 future_price=data.get('future_lp') or (data['lp'] * 1.00049),
-                # [Institutional Patch] Use Future's OI for index symbols
-                oi=data.get('future_oi') or data.get('oi', 0), 
+                # [Institutional Patch] Use Future's OI for index symbols, or default high (1M)
+                oi=data.get('future_oi') or (1000000 if symbol in ["NIFTY", "BANKNIFTY", "SENSEX"] else data.get('oi', 0)), 
                 pcr=0.95, timestamp=datetime.now(IST), source="SHOONYA"
             )
         

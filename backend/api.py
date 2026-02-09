@@ -978,8 +978,8 @@ def run_engine_loop():
                         spot_price=ws_tick['lp'], 
                         # [v9.9.9] Audit Fix: Use Proportional Basis Fallback (0.049%) to stay under spread veto
                         future_price=fut_tick['lp'] if fut_tick else (ws_tick['lp'] * 1.00049),
-                        # [Institutional Patch] Use Future's OI for index symbols since indices have 0 OI
-                        oi=fut_tick['oi'] if fut_tick and fut_tick.get('oi') else ws_tick.get('oi', 0), 
+                        # [Institutional Patch] Use Future's OI for index symbols, or default high (1M) to bypass veto
+                        oi=fut_tick['oi'] if fut_tick and fut_tick.get('oi') else (1000000 if symbol in ["NIFTY", "BANKNIFTY", "SENSEX"] else ws_tick.get('oi', 0)), 
                         pcr=0.95, 
                         # [v9.9.9] Audit Fix: Standardize to IST for age calculations
                         timestamp=datetime.fromtimestamp(ws_tick.get('timestamp', time.time()), tz=IST), 
