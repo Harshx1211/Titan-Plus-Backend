@@ -353,11 +353,21 @@ def call_brain_safely(action: str, **kwargs):
     
     try:
         if action == "DECIDE":
+            # [v12.6] Robust argument cleaning to prevent "multiple values for keyword argument" error
+            target_keys = ["features", "market_data", "ohlcv_df", "regime"]
+            extracted = {k: kwargs.pop(k, None) for k in target_keys}
+            
+            # Double-scrub: Ensure NO case-variations or duplicates remain in kwargs
+            # This is defensive against unexpected upstream dictionary behavior
+            for k in list(kwargs.keys()):
+                if k.lower() in target_keys:
+                    kwargs.pop(k)
+
             res = core.brain.decide(
-                features=kwargs.get("features"),
-                market_data=kwargs.get("market_data"),
-                ohlcv_df=kwargs.get("ohlcv_df"),
-                regime=kwargs.get("regime"),
+                features=extracted["features"],
+                market_data=extracted["market_data"],
+                ohlcv_df=extracted["ohlcv_df"],
+                regime=extracted["regime"],
                 **kwargs
             )
             if isinstance(res, dict):
@@ -1182,9 +1192,20 @@ def run_engine_loop():
                         "BEARISH" if (pattern_results.get("score", 0) > 0.45 and curr_strength < -0.1) or price_vel_curr < -0.08 else "NEUTRAL"
                     )
                     
+                    # Prepare market data dict for brain engine (Institutional Step 6)
+                    market_data_dict = {
+                        "spot_price": market_data.spot_price,
+                        "future_price": market_data.future_price,
+                        "oi": market_data.oi,
+                        "vix": live_state.vix,
+                        "gex": live_state.gex_bias.get(symbol, 0.0),
+                        "pcr": market_data.pcr
+                    }
+
                     # Pass ohlcv_df to enable SMC Engine
                     decision_id, thoughts = call_brain_safely(
-                        "DECIDE", features=brain_features, regime=live_state.current_regime, 
+                        "DECIDE", features=brain_features, market_data=market_data_dict,
+                        regime=live_state.current_regime, 
                         ohlcv_df=hist_df, is_commit=False, pattern_score=pattern_results["score"],
                         signal_intent=likely_intent, iv_skew=live_state.iv_skew.get(symbol, 1.0)
                     )
