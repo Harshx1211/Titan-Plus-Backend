@@ -1,0 +1,45 @@
+- [x] Complete Indian Market Decommissioning (v13.0.3) <!-- id: 32 -->
+    - [x] Scrub Shoonya/Groww credentials from `config_validator.py` <!-- id: 33 -->
+    - [x] Neutralize token verification in `providers.py` <!-- id: 34 -->
+    - [x] Remove WebSocket subscriptions for NIFTY/BANKNIFTY in `api.py` <!-- id: 35 -->
+    - [x] Scrub `LiveState` dictionaries of all Indian symbols <!-- id: 36 -->
+- [x] Sync system version to `v13.0.4_GLOBAL` <!-- id: 37 -->
+- [x] Verify Hugging Face Deployment <!-- id: 38 -->
+    - [x] Fix NameError in api.py (v13.0.3) <!-- id: 39 -->
+    - [x] Fix AttributeError in providers.py (v13.0.4) <!-- id: 40 -->
+    - [x] Confirm stable engine loop in v13.0.4 logs <!-- id: 41 -->
+- [x] Fix XAU Price Anomaly (v13.0.5) <!-- id: 42 -->
+    - [x] Correct CryptoProvider mapping (XAU -> XAUTUSDTM) <!-- id: 43 -->
+- [x] Final Deployment (v13.0.5) <!-- id: 44 -->
+- [x] Refine Inference Heuristics (v13.0.6) <!-- id: 45 -->
+    - [x] Upgrade brain_unified.py to dynamic continuous scoring <!-- id: 46 -->
+- [x] System Health Audit (v13.0.6) <!-- id: 47 -->
+    - [x] Investigate 0.6% Model Accuracy anomaly <!-- id: 48 -->
+    - [x] Verify OutcomeTracker operational status <!-- id: 49 -->
+    - [x] Confirm threshold (0.65) is working as designed <!-- id: 50 -->
+- [x] System Optimization (v13.0.7) <!-- id: 51 -->
+    - [x] Lower decision threshold from 0.65 to 0.60 <!-- id: 52 -->
+    - [x] Sync version to v13.0.7_GLOBAL <!-- id: 53 -->
+- [x] Critical Bugfix (v13.0.8) <!-- id: 54 -->
+    - [x] Fix brain_unified.py threshold override bug <!-- id: 55 -->
+    - [x] Ensure config always takes priority over saved state <!-- id: 56 -->
+- [x] Critical Bugfix #2 (v13.0.9) <!-- id: 57 -->
+    - [x] Fix BrainConfig hardcoded threshold (0.65 → 0.60) <!-- id: 58 -->
+    - [x] Root cause: BrainConfig dataclass wasn't reading from config.py <!-- id: 59 -->
+- [x] Implement Signal Notification Pipeline (v13.0.10) <!-- id: 60 -->
+    - [x] Create signal notification service that captures brain approvals <!-- id: 61 -->
+    - [x] Calculate SL and targets for approved signals <!-- id: 62 -->
+    - [x] Save signals to Supabase signal_ledger <!-- id: 63 -->
+    - [x] Send Telegram notifications with signal details <!-- id: 64 -->
+    - [x] Add signals to dashboard for manual execution <!-- id: 65 -->
+    - [x] Integrate into api.py analysis loop <!-- id: 66 -->
+    - [x] Update version to v13.0.10_GLOBAL <!-- id: 67 -->
+- [x] Fix Signal Notifier Integration Errors (v13.0.10 Hotfix) <!-- id: 68 -->
+    - [x] Fix dict/TradeSignal object mismatch (removed live_state.add_signal) <!-- id: 69 -->
+    - [x] Fix SupabaseManager.client → .supabase attribute error <!-- id: 70 -->
+    - [x] Add sr_engine null check to prevent AttributeError <!-- id: 71 -->
+    - [x] Fix numpy float32 JSON serialization error <!-- id: 72 -->
+    - [x] Fix Supabase schema mismatch (action → option_type column) <!-- id: 73 -->
+- [x] Final System Stabilization (v13.0.10_GLOBAL) <!-- id: 74 -->
+    - [x] Verify all bug fixes deployed <!-- id: 75 -->
+    - [x] Confirm signal pipeline end-to-end functionality <!-- id: 76 -->
