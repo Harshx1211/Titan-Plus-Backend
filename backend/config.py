@@ -1,5 +1,5 @@
-# Startup Version Identifier [v13.0.6_GLOBAL]
-LOGIC_VERSION = "v13.0.6_GLOBAL"
+# Startup Version Identifier [v13.0.7_GLOBAL]
+LOGIC_VERSION = "v13.0.7_GLOBAL"
 
 from dataclasses import dataclass
 from typing import List, Dict
@@ -17,7 +17,7 @@ class Config:
     MAX_OPEN_POSITIONS = 3
     
     # Brain
-    DECISION_THRESHOLD = 0.65
+    DECISION_THRESHOLD = 0.60  # [v13.0.7] Lowered from 0.65 to allow more signals in sideways markets
     XGBOOST_WEIGHT = 0.40
     RL_WEIGHT = 0.30
     SMC_WEIGHT = 0.30
