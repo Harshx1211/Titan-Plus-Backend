@@ -703,6 +703,12 @@ def run_engine_loop():
     evolver = core.evolver
     session_auditor = core.session_auditor
     health_monitor = core.health_monitor
+    strategist = core.strategist
+    sr_engine = core.sr_engine
+    pattern_engine = core.pattern_engine
+    option_engine = core.option_engine
+    risk_engine = core.risk_engine
+    tech_engine = core.tech_engine
 
     # [Institutional Phase 6] Initialize WebSocket & MarketState
     from infrastructure import MarketState
