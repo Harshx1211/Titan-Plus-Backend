@@ -127,6 +127,14 @@ class UnifiedBrainEngine:
         from collections import deque
         self.basis_history = deque(maxlen=200)
         
+        # [v12.0] Legacy raw history for technical analysis (OI, Basis, etc)
+        self.raw_history = {
+            "OI_RAW": deque(maxlen=200),
+            "BASIS_RAW": deque(maxlen=200),
+            "PCR_RAW": deque(maxlen=200),
+            "ADX_RAW": deque(maxlen=200)
+        }
+        
         # Initialize sub-systems
         self.xgb_engine = None
         self.rl_agent = None
@@ -711,6 +719,25 @@ class UnifiedBrainEngine:
             "sigma_jump": sigma_jump,
             "basis": current_basis
         }
+
+    def update_raw_history(self, raw_data: Dict):
+        """[v12.0] Updates the raw history deques for technical co-variance checks."""
+        for key, val in raw_data.items():
+            if key in self.raw_history:
+                self.raw_history[key].append(val)
+            else:
+                # Dynamic key creation for extended analysis
+                from collections import deque
+                self.raw_history[key] = deque([val], maxlen=200)
+
+    def get_confidence_boost_ml(self, features: Dict, regime_val: str, signal_intent: str, iv_skew: float) -> Tuple[float, List[str]]:
+        """[v12.0] Provides confidence boost probability using XGBoost."""
+        return self._xgboost_analysis(features, regime_val)
+
+    def log_snapshot(self, decision_id: str, outcome: bool, performance: Dict, freeze_authority: bool = False):
+        """[v12.0] Log trade outcome for future learning."""
+        status = "WIN" if outcome else "LOSS"
+        logger.info(f"BRAIN_AUDIT: Signal {decision_id} ended as {status}. Performance: {performance}")
 
 
 # Convenience function for backward compatibility

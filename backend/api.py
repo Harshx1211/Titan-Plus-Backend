@@ -218,7 +218,17 @@ APP_CONFIG = {
     "MARKET_START_MINUTE": 0,
     "MARKET_END_HOUR": 15,
     "MARKET_END_MINUTE": 30,
-    "MAX_PAIN_THRESHOLD": 20.0
+    "MAX_PAIN_THRESHOLD": 20.0,
+    "HIGH_VOLATILITY_VIX": 20.0,
+    "PASSIVE_MODE_THRESHOLD": 300,
+    "PATTERN_SCORE_THRESHOLD_HIGH": 0.75,
+    "LULL_START_HOUR": 11,
+    "LULL_START_MINUTE": 30,
+    "LULL_END_HOUR": 13,
+    "LULL_END_MINUTE": 00,
+    "SIGNAL_TARGET_POINTS": 100,
+    "SIGNAL_STOP_LOSS_POINTS": 50,
+    "DASHBOARD_URL": "http://localhost:3000"
 }
 evolution_done_date = None
 
@@ -1098,8 +1108,16 @@ def run_engine_loop():
                         other_sym = "BANKNIFTY" if symbol == "NIFTY" else "NIFTY"
                         other_data = all_snapshots.get(other_sym) or data_provider.get_market_snapshot(other_sym)
                         if other_data:
+                            # [v12.4] Normalize data access (Works for both MarketData objects and WS dicts)
+                            if isinstance(other_data, dict):
+                                o_spot = other_data.get('lp', 0)
+                                o_fut = other_data.get('fut_lp', o_spot * 1.0005) # Fallback heuristic
+                            else:
+                                o_spot = getattr(other_data, 'spot_price', 0)
+                                o_fut = getattr(other_data, 'future_price', o_spot * 1.0005)
+
                             my_delta = (market_data.spot_price - market_data.future_price + 45)
-                            other_delta = (other_data.spot_price - other_data.future_price + 45)
+                            other_delta = (o_spot - o_fut + 45)
                             is_aligned = (my_delta > 0 and other_delta > 0) or (my_delta < 0 and other_delta < 0)
                             live_state.sector_synergy = 1.3 if is_aligned else 0.4
                             
