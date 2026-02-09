@@ -1248,6 +1248,7 @@ def run_engine_loop():
                     
                     # Prepare market data dict for brain engine (Institutional Step 6)
                     market_data_dict = {
+                        "price": market_data.spot_price,  # [v13.0.10] For SignalNotifier
                         "spot_price": market_data.spot_price,
                         "future_price": market_data.future_price,
                         "oi": market_data.oi,
