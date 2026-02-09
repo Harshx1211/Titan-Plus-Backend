@@ -267,6 +267,7 @@ class CoreEngine:
         self.health_monitor = None
         self.db = None
         self.telegram_notifier = None
+        self.signal_notifier = None  # [v13.0.10] Signal notification pipeline
         self.data_provider = None
         self.execution_engine = None
         self.crypto_provider = None
@@ -306,6 +307,18 @@ class CoreEngine:
         )
         self.outcome_tracker.start_monitoring()
         logger.info("Outcome tracker initialized and monitoring started")
+        time.sleep(1)
+        
+        # [v13.0.10] Initialize Signal Notifier for auto-notification pipeline
+        from signal_notifier import SignalNotifier
+        self.signal_notifier = SignalNotifier(
+            db_manager=self.db,
+            telegram_notifier=self.telegram_notifier,
+            live_state=self.state,
+            sr_engine=self.sr_engine,
+            outcome_tracker=self.outcome_tracker
+        )
+        logger.info("Signal Notifier initialized")
         time.sleep(1)
         
         
@@ -375,7 +388,8 @@ def call_brain_safely(action: str, **kwargs):
                 **kwargs
             )
             if isinstance(res, dict):
-                return res.get('decision_id', 'ERR'), res.get('thoughts', [])
+                # [v13.0.10] Return full decision dict for signal notification pipeline
+                return res, res.get('thoughts', [])
             return res if res is not None else (None, [])
         elif action == "BOOST":
             if core.shadow_engine:
@@ -1243,13 +1257,28 @@ def run_engine_loop():
                     }
 
                     # Pass ohlcv_df to enable SMC Engine
-                    decision_id, thoughts = call_brain_safely(
+                    decision, thoughts = call_brain_safely(
                         "DECIDE", features=brain_features, market_data=market_data_dict,
                         regime=live_state.current_regime, 
                         ohlcv_df=hist_df, is_commit=False, pattern_score=pattern_results["score"],
                         signal_intent=likely_intent, iv_skew=live_state.iv_skew.get(symbol, 1.0)
                     )
                     for t in thoughts: live_state.add_thought("INFERENCE", f"[{symbol}] {t}")
+                    
+                    # [v13.0.10] Process approved signals through notification pipeline
+                    if decision and isinstance(decision, dict) and decision.get('decision') == 'APPROVE':
+                        try:
+                            core.signal_notifier.process_approved_signal(
+                                decision=decision,
+                                symbol=symbol,
+                                market_data=market_data_dict,
+                                ohlcv_df=hist_df
+                            )
+                        except Exception as sig_err:
+                            logger.error(f"Signal notification failed for {symbol}: {sig_err}")
+                    
+                    # Extract decision_id for legacy compatibility
+                    decision_id = decision.get('decision_id', 'ERR') if isinstance(decision, dict) else decision
 
                     confidence_boost, _ = call_brain_safely(
                         "BOOST", features=brain_features, regime=live_state.current_regime,

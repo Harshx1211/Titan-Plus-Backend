@@ -204,6 +204,56 @@ class TelegramNotifier:
         wisdom = random.choice(INSTITUTIONAL_WISDOM)
         msg = f"💡 <b>Institutional Wisdom</b>\n\n<i>\"{wisdom}\"</i>"
         self.engine.client.send(msg)
+    
+    def send_signal_notification(self, signal_data: dict):
+        """
+        [v13.0.10] Send formatted signal notification with SL/targets.
+        
+        Args:
+            signal_data: Complete signal dictionary from SignalNotifier
+        """
+        if not self.enabled: return
+        try:
+            symbol = signal_data.get('symbol', 'UNKNOWN')
+            action = signal_data.get('action', 'HOLD')
+            entry = signal_data.get('entry_price', 0)
+            sl = signal_data.get('stop_loss', 0)
+            t1 = signal_data.get('target_1', 0)
+            t2 = signal_data.get('target_2', 0)
+            
+            sl_pct = signal_data.get('sl_pct', 0)
+            t1_pct = signal_data.get('target1_pct', 0)
+            t2_pct = signal_data.get('target2_pct', 0)
+            
+            confluence = signal_data.get('confluence', 0)
+            xgb = signal_data.get('xgb_score', 0)
+            rl = signal_data.get('rl_score', 0)
+            smc = signal_data.get('smc_score', 0)
+            regime = signal_data.get('regime', 'UNKNOWN')
+            
+            # Format message
+            direction_emoji = "🟢" if action == 'BUY_CALL' else "🔴"
+            
+            message = f"""{direction_emoji} <b>TRADE SIGNAL - {symbol}</b>
+
+<b>Direction:</b> {action}
+<b>Entry:</b> {entry:,.2f}
+<b>Stop Loss:</b> {sl:,.2f} ({sl_pct:+.2f}%)
+<b>Target 1:</b> {t1:,.2f} ({t1_pct:+.2f}%)
+<b>Target 2:</b> {t2:,.2f} ({t2_pct:+.2f}%)
+
+<b>Confluence:</b> {confluence:.3f} ({confluence*100:.1f}%)
+<b>XGB:</b> {xgb:.3f} | <b>RL:</b> {rl:.3f} | <b>SMC:</b> {smc:.3f}
+
+<b>Regime:</b> {regime}
+
+<i>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M IST')}</i>"""
+            
+            self.engine.client.send(message)
+            logging.getLogger("infrastructure").info(f"Telegram signal sent for {symbol}")
+            
+        except Exception as e:
+            logging.getLogger("infrastructure").error(f"Telegram signal failed: {e}")
 
 # ============================================================================
 # 3. Supabase Cloud Memory
@@ -471,6 +521,51 @@ class DatabaseManager:
 
     def get_active_signals(self) -> List[Dict]:
         return self.cloud_db.get_active_signals()
+    
+    def insert_signal(self, signal_data: Dict):
+        """
+        [v13.0.10] Insert a new signal into signal_ledger for tracking and learning.
+        
+        Args:
+            signal_data: Comprehensive signal dictionary with all metadata
+        """
+        try:
+            # Format for Supabase
+            formatted_signal = {
+                'signal_id': signal_data.get('signal_id'),
+                'symbol': signal_data.get('symbol'),
+                'action': signal_data.get('action'),
+                'entry_price': signal_data.get('entry_price'),
+                'stop_loss': signal_data.get('stop_loss'),
+                'target_1': signal_data.get('target_1'),
+                'target_2': signal_data.get('target_2'),
+                
+                # Brain scores
+                'confluence': signal_data.get('confluence'),
+                'xgb_score': signal_data.get('xgb_score'),
+                'rl_score': signal_data.get('rl_score'),
+                'smc_score': signal_data.get('smc_score'),
+                
+                # Market context
+                'regime': signal_data.get('regime'),
+                'vix': signal_data.get('vix'),
+                'volatility': signal_data.get('volatility'),
+                'volume': signal_data.get('volume'),
+                
+                # S/R data (as JSON)
+                'sr_data': json.dumps(signal_data.get('sr_data')) if signal_data.get('sr_data') else None,
+                
+                # Metadata
+                'state': signal_data.get('state', 'PENDING'),
+                'generated_at':signal_data.get('generated_at'),
+                'brain_version': signal_data.get('brain_version')
+            }
+            
+            self.cloud_db.client.table('signal_ledger').insert(formatted_signal).execute()
+            logging.getLogger("infrastructure").info(f"✅ Signal {signal_data['signal_id']} inserted to database")
+            
+        except Exception as e:
+            logging.getLogger("infrastructure").error(f"❌ Failed to insert signal: {e}", exc_info=True)
 
 # 5. [Institutional Phase 6] Market State (Atomic Snapshot)
 # ============================================================================
