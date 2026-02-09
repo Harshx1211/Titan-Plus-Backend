@@ -11,7 +11,7 @@ Features:
 - Feature reputation tracking
 
 Author: Titan Plus Team
-Version: 12.6.4
+Version: 12.6.5
 Date: 2026-02-08
 """
 
@@ -29,7 +29,7 @@ logger = logging.getLogger("brain_unified")
 @dataclass
 class BrainConfig:
     """Brain configuration parameters."""
-    threshold: float = 0.75
+    threshold: float = 0.65
     xgboost_weight: float = 0.40
     rl_weight: float = 0.30
     smc_weight: float = 0.30
@@ -108,7 +108,7 @@ class UnifiedBrainEngine:
     """
     
     def __init__(self, config: Optional[BrainConfig] = None):
-        self.version = "12.6.4"
+        self.version = "12.6.5"
         self.config = config or BrainConfig()
         
         # State tracking
@@ -348,7 +348,24 @@ class UnifiedBrainEngine:
         components['smc'] = smc_score
         thoughts.extend(smc_thoughts)
         
-        # 4. Weighted confluence
+        # 4. Weighted confluence with [v12.6.5] Directional Alignment
+        # If RL suggests a directional move, SMC should support that specific direction.
+        # Neutral SMC (0.0) contributes 0.5 to the decision (half weight).
+        
+        aligned_smc = 0.5
+        if rl_action == 'BUY_CALL':
+            aligned_smc = 0.5 + (smc_score / 2.0)
+        elif rl_action == 'BUY_PUT':
+            aligned_smc = 0.5 - (smc_score / 2.0)
+        else: # HOLD
+            aligned_smc = 0.5
+        
+        # Normalize RL Confidence (0.05 is floor, boost directional signals)
+        # If we have a directional action, base probability is 0.5
+        rl_prob = 0.5
+        if rl_action != 'HOLD':
+            rl_prob = 0.5 + (rl_conf / 2.0)
+
         weights = {
             'xgboost': self.config.xgboost_weight,
             'rl': self.config.rl_weight,
@@ -357,14 +374,14 @@ class UnifiedBrainEngine:
         
         final_probability = (
             weights['xgboost'] * xgb_prob +
-            weights['rl'] * rl_conf +
-            weights['smc'] * smc_score
+            weights['rl'] * rl_prob +
+            weights['smc'] * aligned_smc
         )
         
         thoughts.append(
-            f"Confluence: XGB={xgb_prob:.3f} × {weights['xgboost']}, "
-            f"RL={rl_conf:.3f} × {weights['rl']}, "
-            f"SMC={smc_score:.3f} × {weights['smc']} "
+            f"Confluence [ALIGNED]: XGB={xgb_prob:.3f} × {weights['xgboost']}, "
+            f"RL={rl_prob:.3f} × {weights['rl']}, "
+            f"SMC={aligned_smc:.3f} × {weights['smc']} "
             f"= {final_probability:.3f}"
         )
         
