@@ -1317,19 +1317,30 @@ def run_engine_loop():
                         if signal_type == "NEUTRAL":
                             continue
                         
-                        # [v9.9.9] Institutional Singularity: MAX_CONCURRENT_TRADES = 1
+                        # [v13.1.0] Single-Trade Focus & Opportunity Switching
                         live_signals = [s for s in live_state.active_signals if s.is_live]
-                        if len(live_signals) >= 1:
+                        if len(live_signals) >= APP_CONFIG["MAX_OPEN_POSITIONS"]:
                             live_signal = live_signals[0]
-                            # Potential SWAP: Only if new signal is significantly better
-                            if pattern_results["score"] > (live_signal.score * 1.25):
+                            
+                            # Calculate PnL of active trade
+                            p_delta = (market_data.spot_price - live_signal.entry_price) if "BULLISH" in live_signal.reasoning else (live_signal.entry_price - market_data.spot_price)
+                            
+                            # Opportunity Switch Condition:
+                            # 1. New signal is 15% better (1.15x)
+                            # 2. Current trade is PROFITABLE (p_delta > 0) [User Requirement]
+                            if p_delta > 0 and pattern_results["score"] > (live_signal.score * 1.15):
                                 # Exit current trade before entering new one
-                                p_delta = (market_data.spot_price - live_signal.entry_price) if "BULLISH" in live_signal.reasoning else (live_signal.entry_price - market_data.spot_price)
                                 live_signal.is_live = False
                                 signal_data = live_signal.dict()
                                 signal_data['pnl'] = p_delta
-                                core.telegram_notifier.send_exit(signal_data, "SWAP (Better Setup Found)", f"Closed {live_signal.symbol} to capture 1.25x edge in {symbol}.")
-                                core.db.log_outcome(live_signal.decision_id, "SWAP_EXIT")
+                                
+                                # Send Advisory/Action
+                                core.telegram_notifier.send_exit(
+                                    signal_data, 
+                                    "OPPORTUNITY SWITCH", 
+                                    f"💰 Taking Profit on {live_signal.symbol} (+{p_delta:.2f}) to capture 1.15x stronger edge in {symbol}."
+                                )
+                                core.db.log_outcome(live_signal.decision_id, "SWITCH_EXIT_PROFIT")
                             else:
                                 continue
 
@@ -1575,8 +1586,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v13.0.9_GLOBAL]
-LOGIC_VERSION = "v13.0.9_GLOBAL"
+# Startup Version Identifier [v13.1.0_GLOBAL]
+LOGIC_VERSION = "v13.1.0_GLOBAL"
 
 @app.on_event("startup")
 async def startup_event():

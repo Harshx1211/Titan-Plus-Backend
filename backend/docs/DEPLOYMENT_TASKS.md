@@ -43,3 +43,11 @@
 - [x] Final System Stabilization (v13.0.10_GLOBAL) <!-- id: 74 -->
     - [x] Verify all bug fixes deployed <!-- id: 75 -->
     - [x] Confirm signal pipeline end-to-end functionality <!-- id: 76 -->
+
+- [x] Single-Trade Logic & Opportunity Switching (v13.1.0) <!-- id: 77 -->
+    - [x] Set MAX_OPEN_POSITIONS = 1 in config <!-- id: 78 -->
+    - [x] Implement 'Opportunity Switch' logic in api.py <!-- id: 79 -->
+        - [x] Calculate PnL of active trade during scan <!-- id: 80 -->
+        - [x] Compare new signal score vs active trade score <!-- id: 81 -->
+        - [x] Trigger exit advice if New > Old and PnL > 0 <!-- id: 82 -->
+    - [x] Add 'Trade Closed' and 'Switch Alert' notifications <!-- id: 83 -->

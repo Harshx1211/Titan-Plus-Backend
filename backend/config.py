@@ -1,5 +1,5 @@
 # Startup Version Identifier [v13.0.10_GLOBAL]
-LOGIC_VERSION = "v13.0.10_GLOBAL_FINAL"
+LOGIC_VERSION = "v13.1.0_GLOBAL"
 
 from dataclasses import dataclass
 from typing import List, Dict
@@ -14,7 +14,7 @@ class Config:
     INITIAL_CAPITAL = 100000
     MAX_RISK_PER_TRADE = 0.02  # 2%
     MAX_DAILY_LOSS = -0.05  # -5%
-    MAX_OPEN_POSITIONS = 3
+    MAX_OPEN_POSITIONS = 1
     
     # Brain
     DECISION_THRESHOLD = 0.60  # [v13.0.7] Lowered from 0.65 to allow more signals in sideways markets
