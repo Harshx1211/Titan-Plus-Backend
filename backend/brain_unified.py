@@ -703,7 +703,17 @@ class UnifiedBrainEngine:
                 state = json.load(f)
             
             self.feature_reputation = state.get('feature_reputation', self.feature_reputation)
-            self.decision_threshold = state.get('decision_threshold', self.decision_threshold)
+            
+            # [v13.0.7 CRITICAL FIX] Always use config threshold, never load from state
+            # This prevents old thresholds from persisting after deployments
+            saved_threshold = state.get('decision_threshold', None)
+            if saved_threshold and saved_threshold != self.config.threshold:
+                logger.warning(
+                    f"Saved threshold ({saved_threshold:.2f}) differs from config ({self.config.threshold:.2f}). "
+                    f"Using config value to respect deployment updates."
+                )
+            # Keep using self.decision_threshold from __init__ (which is self.config.threshold)
+            
             self.governor.lock_status = state.get('governor_status', 'ACTIVE')
             self.performance_history = state.get('performance_history', {})
             
