@@ -879,6 +879,7 @@ def run_engine_loop():
             market_end = datetime.strptime(f"{APP_CONFIG['MARKET_END_HOUR']}:{APP_CONFIG['MARKET_END_MINUTE']:02d}", "%H:%M").time()
             
             # [v13.0] Global Focus: Market is ALWAYS open for BTC/ETH/XAU
+            evolution_trigger_time = datetime.strptime("15:35", "%H:%M").time()
             is_nse_open = (market_start <= current_time <= market_end) and (now_ist.weekday() < 5)
             # System stays awake for 24/7 global assets
             has_crypto = True 

@@ -292,7 +292,7 @@ export default function TitanDashboard() {
             <div className="space-y-1 sm:space-y-3">
               <h1 className="text-xl sm:text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-500 tracking-tighter uppercase">
                 Titan<span className="text-white">Plus</span>
-                <span className="ml-2 text-[8px] sm:text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 sm:py-0.5 rounded border border-emerald-500/20 align-top tracking-widest font-mono">v12.6.0</span>
+                <span className="ml-2 text-[8px] sm:text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 sm:py-0.5 rounded border border-emerald-500/20 align-top tracking-widest font-mono">v13.0.0_GLOBAL</span>
               </h1>
               <div className="flex items-center gap-2 sm:gap-5">
                 <span className="text-[10px] sm:text-institutional text-slate-500 opacity-60">Titan Institutional</span>
@@ -346,10 +346,10 @@ export default function TitanDashboard() {
 
         {/* Global Market Intelligence Grid */}
         <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 md:gap-8">
-          <StatCard label="Volatility" value={state?.vix || '14.2'} sub="India VIX Alpha" colorClass="text-cyan-400" />
+          <StatCard label="Volatility" value={state?.vix || '14.2'} sub="Global Risk Index" colorClass="text-cyan-400" />
           <StatCard label="Sentiment" value={(state?.active_signals?.[0]?.score || 0.95).toFixed(2)} sub="Global PCR Bias" colorClass="text-violet-400" />
-          <StatCard label="Advances" value={state?.breadth?.advances || '0'} sub="Bullish Synergy" colorClass="text-emerald-400" />
-          <StatCard label="Declines" value={state?.breadth?.declines || '0'} sub="Bearish Friction" colorClass="text-rose-400" />
+          <StatCard label="Advances" value={state?.breadth?.advances || '0'} sub="Liquidity Score" colorClass="text-emerald-400" />
+          <StatCard label="Declines" value={state?.breadth?.declines || '0'} sub="Volatility Index" colorClass="text-rose-400" />
           <StatCard label="Integrity" value={state?.is_in_recovery ? 'STRICT' : 'MAX'} sub="Governor State" colorClass={state?.is_in_recovery ? 'text-rose-400' : 'text-blue-400'} />
           <StatCard label="Precision" value={accuracy ? `${(accuracy.accuracy * 100).toFixed(1)}%` : '94.2%'} sub="Model Accuracy" colorClass="text-emerald-400" />
         </div>
@@ -359,7 +359,7 @@ export default function TitanDashboard() {
           <div className="2xl:col-span-3 space-y-16">
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-10">
-              {['NIFTY', 'BANKNIFTY', 'SENSEX', 'BTCUSDT', 'ETHUSDT'].map(sym => (
+              {['BTCUSDT', 'ETHUSDT', 'XAUUSDT'].map(sym => (
                 <GlassCard key={sym} variant="premium" className="p-6 md:p-10 group hover:ring-2 ring-blue-500/20 transition-all duration-700">
                   <div className="flex justify-between items-center mb-6 md:mb-10">
                     <span className="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-[0.4em] font-mono">{sym} CORE</span>

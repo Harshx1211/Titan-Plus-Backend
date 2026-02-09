@@ -74,7 +74,7 @@ class CryptoProvider:
             if "BTC" in kucoin_sym:
                 kucoin_sym = kucoin_sym.replace("BTC", "XBT")
             elif "XAU" in symbol:
-                kucoin_sym = "GUAUSDT" # Unique Gold mapping
+                kucoin_sym = "GUAUSDTM" # Unique Gold mapping
                 
             endpoint = f"{self.KUCOIN_URL}/api/v1/ticker"
             params = {"symbol": kucoin_sym}
@@ -141,7 +141,7 @@ class CryptoProvider:
             if "BTC" in kucoin_sym:
                 kucoin_sym = kucoin_sym.replace("BTC", "XBT")
             elif "XAU" in symbol:
-                kucoin_sym = "GUAUSDT"
+                kucoin_sym = "GUAUSDTM"
                 
             # KuCoin granularity is in minutes
             gran_map = {"5m": 5, "1h": 60, "1d": 1440, "5minute": 5, "60minute": 60}
