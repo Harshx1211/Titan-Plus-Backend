@@ -552,17 +552,17 @@ class DatabaseManager:
                 'target_1': to_python_type(signal_data.get('target_1')),
                 'target_2': to_python_type(signal_data.get('target_2')),
                 
-                # Brain scores (Commented out due to Schema Mismatch PGRST204)
-                # 'confluence': to_python_type(signal_data.get('confluence')),
-                # 'xgb_score': to_python_type(signal_data.get('xgb_score')),
-                # 'rl_score': to_python_type(signal_data.get('rl_score')),
-                # 'smc_score': to_python_type(signal_data.get('smc_score')),
+                # Brain scores
+                'confluence': to_python_type(signal_data.get('confluence')),
+                'xgb_score': to_python_type(signal_data.get('xgb_score')),
+                'rl_score': to_python_type(signal_data.get('rl_score')),
+                'smc_score': to_python_type(signal_data.get('smc_score')),
                 
-                # Market context (Commented out due to Schema Mismatch)
-                # 'regime': signal_data.get('regime'),
-                # 'vix': to_python_type(signal_data.get('vix')),
-                # 'volatility': to_python_type(signal_data.get('volatility')),
-                # 'volume': to_python_type(signal_data.get('volume')),
+                # Market context
+                'regime': signal_data.get('regime'),
+                'vix': to_python_type(signal_data.get('vix')),
+                'volatility': to_python_type(signal_data.get('volatility')),
+                'volume': to_python_type(signal_data.get('volume')),
                 
                 # S/R data (as JSON)
                 'sr_data': json.dumps(signal_data.get('sr_data')) if signal_data.get('sr_data') else None,
