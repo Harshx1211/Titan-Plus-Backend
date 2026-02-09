@@ -1,5 +1,5 @@
 # Startup Version Identifier [v13.0.10_GLOBAL]
-LOGIC_VERSION = "v13.0.10_GLOBAL"
+LOGIC_VERSION = "v13.0.10_GLOBAL_FINAL"
 
 from dataclasses import dataclass
 from typing import List, Dict
