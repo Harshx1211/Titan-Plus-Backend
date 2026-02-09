@@ -28,6 +28,7 @@ from models_v3 import Decision, Regime, Action, MarketStructure, TradeSignal, Tr
 # [v10.2] Import enhanced endpoints and health checks
 from health_check_endpoint import health_router
 from api_enhanced_endpoints import outcome_router
+from crypto_provider import CryptoProvider
 import uvicorn
 
 app = FastAPI(title="The Oracle - Titan Plus Institutional")
@@ -53,35 +54,35 @@ class LiveState:
         self.current_regime = Regime.NEUTRAL
         self._active_signals = []  # Protected by lock
         self.last_update = datetime.now(timezone.utc)
-        self.symbols = ["NIFTY", "BANKNIFTY", "SENSEX"]
+        self.symbols = ["NIFTY", "BANKNIFTY", "SENSEX", "BTCUSDT", "ETHUSDT"]
         self.current_symbol_idx = 0
         self.vix = APP_CONFIG["VIX_DEFAULT"]
         self.breadth = {"advances": 0, "declines": 0}
         self.market_message = "System Stable"
         self.data_source = "PUBLIC_SCRAPER"
-        self.index_strengths: Dict[str, float] = {"NIFTY": 0.0, "BANKNIFTY": 0.0, "SENSEX": 0.0}
+        self.index_strengths: Dict[str, float] = {"NIFTY": 0.0, "BANKNIFTY": 0.0, "SENSEX": 0.0, "BTCUSDT": 0.0, "ETHUSDT": 0.0}
         
         # Partitioned Symbol Data (v8.1 Multi-Asset)
-        self.prices = {"NIFTY": 25727.0, "BANKNIFTY": 50000.0, "SENSEX": 83739.0}
+        self.prices = {"NIFTY": 25727.0, "BANKNIFTY": 50000.0, "SENSEX": 83739.0, "BTCUSDT": 0.0, "ETHUSDT": 0.0}
         self.max_pain = {"NIFTY": 0.0, "BANKNIFTY": 0.0, "SENSEX": 0.0}
         self.option_battles = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
 
         self.option_chains = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
         self.supports = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
         self.resistances = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
-        self.history_cache = {"NIFTY": None, "BANKNIFTY": None, "SENSEX": None}
+        self.history_cache = {"NIFTY": None, "BANKNIFTY": None, "SENSEX": None, "BTCUSDT": None, "ETHUSDT": None}
         
         # v8.1: Statistical Discipline
         self.resets_today = 0
         self.last_reset_time = datetime.now(timezone.utc)
-        self.iv_skew = {"NIFTY": 1.0, "SENSEX": 1.0, "BANKNIFTY": 1.0}
-        self.gex_bias = {"NIFTY": 0.0, "BANKNIFTY": 0.0, "SENSEX": 0.0}
+        self.iv_skew = {"NIFTY": 1.0, "SENSEX": 1.0, "BANKNIFTY": 1.0, "BTCUSDT": 1.0, "ETHUSDT": 1.0}
+        self.gex_bias = {"NIFTY": 0.0, "BANKNIFTY": 0.0, "SENSEX": 0.0, "BTCUSDT": 0.0, "ETHUSDT": 0.0}
         self.sector_synergy = 1.0 
-        self.prev_oi = {"NIFTY": 0, "BANKNIFTY": 0, "SENSEX": 0}
+        self.prev_oi = {"NIFTY": 0, "BANKNIFTY": 0, "SENSEX": 0, "BTCUSDT": 0, "ETHUSDT": 0}
         self.prev_spot = 0.0
         
         # [Institutional Step 5] IV History tracking for Percentile
-        self.iv_history = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
+        self.iv_history = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": [], "BTCUSDT": [], "ETHUSDT": []}
         
         # [v9.4] Epistemic Transparency: Digital Stream of Consciousness
         self.thought_logs = []
@@ -268,6 +269,7 @@ class CoreEngine:
         self.telegram_notifier = None
         self.data_provider = None
         self.execution_engine = None
+        self.crypto_provider = None
         self.shadow_engine = None
         self.outcome_tracker = None  # [v10.1] Automatic outcome tracking
         self.is_initialized = False
@@ -293,6 +295,8 @@ class CoreEngine:
         self.telegram_notifier = TelegramNotifier()
         time.sleep(1)
         self.data_provider = DataProvider()
+        time.sleep(1)
+        self.crypto_provider = CryptoProvider()
         time.sleep(1)
         
         # [v10.1] Initialize outcome tracker for automatic learning
@@ -665,9 +669,14 @@ def history_refresher_loop(data_provider, state: LiveState, sentinel):
         try:
             sentinel.record_heartbeat("history_refresher")
             # [v9.9.9] Logic Hardening: Fetch macro-data every 15 minutes
-            for sym in ["NIFTY", "BANKNIFTY", "SENSEX"]:
+            for sym in live_state.symbols:
                 try:
-                    df_60 = data_provider.get_history(sym, "60minute")
+                    # [v12.6.0] Crypto Aware History
+                    if "USDT" in sym:
+                        df_60 = core.crypto_provider.get_history(sym, "60minute")
+                    else:
+                        df_60 = data_provider.get_history(sym, "60minute")
+                        
                     with macro_cache_lock:
                         macro_cache[sym] = df_60
                     logger.info(f"CACHE: Refreshed 60m history for {sym}")
@@ -747,9 +756,15 @@ def run_engine_loop():
     logger.info("STATE: Seeding initial prices from DataProvider...")
     for sym in live_state.symbols:
         try:
-            seed_data = data_provider.get_market_snapshot(sym)
+            # Shift to CryptoProvider for USDT pairs
+            if "USDT" in sym:
+                seed_data = core.crypto_provider.get_market_snapshot(sym)
+            else:
+                seed_data = data_provider.get_market_snapshot(sym)
+                
             if seed_data and seed_data.spot_price > 0:
                 live_state.prices[sym] = seed_data.spot_price
+                # Update MarketState if it's not a WS dictionary but a MarketData object
                 market_state.update({'symbol': sym, 'lp': seed_data.spot_price, 'v': 0, 'oi': seed_data.oi})
                 logger.info(f"STATE_AUDIT: Seeded {sym} @ {seed_data.spot_price} from {seed_data.source}")
         except Exception as e:
@@ -863,19 +878,12 @@ def run_engine_loop():
             # Post-Market Intelligence Trigger (3:35 PM IST)
             evolution_trigger_time = datetime.strptime("15:35", "%H:%M").time()
             
-            is_market_open = (market_start <= current_time <= market_end) and (now_ist.weekday() < 5)
+            is_nse_open = (market_start <= current_time <= market_end) and (now_ist.weekday() < 5)
+            # [v12.6.0] Hybrid Market Hours: System stays awake if crypto symbols are present
+            has_crypto = any("USDT" in s for s in live_state.symbols)
             
-            if not is_market_open:
-                # 1. Dashboard Status
-                status_reason = "Weekend" if now_ist.weekday() >= 5 else "After Hours"
-                live_state.market_message = f"DORMANT: {status_reason} ({current_time.strftime('%H:%M')} IST)"
-                live_state.current_regime = Regime.UNCERTAIN
-                
-                # [v9.6] Ambient Intelligence: Add a "Watching" thought occasionally
-                if random.random() < 0.05: # ~3 times an hour
-                    live_state.add_thought("MONITOR", "Market closed. Watching global cues and preparing for next session.")
-                
-                # 2. Automated Overnight Learning
+            if not is_nse_open:
+                # 1. Automated Overnight Learning (Only if NSE just closed)
                 if current_time >= evolution_trigger_time and evolution_done_date != today_str:
                     logger.info(f"INTELLIGENCE: Triggering automated post-market evolution for {today_str}...")
                     live_state.add_thought("LEARN", f"Starting Overnight Evolution for {today_str}...")
@@ -906,42 +914,33 @@ def run_engine_loop():
                         logger.error(f"INTELLIGENCE: Evolution failed: {e}")
                         live_state.add_thought("ERROR", f"Overnight Evolution primary fail: {str(e)}")
                 
-                # 3. Aggressive Sleep during off-hours (1 minute polling)
-                live_state.last_update = datetime.now(timezone.utc) # Keep heartbeat alive
-                
-                # [v9.9.8] Seed persistence data once every hour during off-hours
-                if current_time.minute == 0 and current_time.second < 10:
-                    for sym in live_state.symbols:
-                        try:
-                            m_data = data_provider.get_market_snapshot(sym)
-                            if m_data:
-                                # [Smart Exploration] Log baseline even for BLOCKS (5% random)
-                                is_exploration_tick = random.random() < 0.05 # 5% baseline
-                                # Assuming 'result', 'features', 'regime_val' are defined in this scope if needed for the new log
-                                # For now, keeping the original log and adding the new one if conditions are met.
-                                # The provided snippet was syntactically incorrect and seemed to merge two different logging intentions.
-                                # I'm interpreting it as adding a new logging condition.
-                                # If the intent was to replace the existing log, the structure would be different.
-                                # For now, I'll assume 'result', 'features', 'regime_val' are placeholders for a future feature.
-                                # Reverting to original behavior for the off-market seed, as the snippet was malformed.
-                                db.cloud_db.log_snapshot(
-                                    signal_data={
-                                        "features": {
-                                            "SPOT_PRICE": m_data.spot_price,
-                                            "FUTURE_PRICE": m_data.future_price,
-                                            "symbol": sym,
-                                            "ADX": 25.0, "PCR": 1.0
+                if not has_crypto:
+                    # 3. Aggressive Sleep during off-hours (1 minute polling)
+                    live_state.last_update = datetime.now(timezone.utc) # Keep heartbeat alive
+                    
+                    # [v9.9.8] Seed persistence data once every hour during off-hours
+                    if current_time.minute == 0 and current_time.second < 10:
+                        for sym in ["NIFTY", "BANKNIFTY", "SENSEX"]:
+                            try:
+                                m_data = data_provider.get_market_snapshot(sym)
+                                if m_data:
+                                    db.cloud_db.log_snapshot(
+                                        signal_data={
+                                            "features": {"SPOT_PRICE": m_data.spot_price, "symbol": sym},
+                                            "decision": "OFF_MARKET_SEED",
+                                            "regime": "UNCERTAIN"
                                         },
-                                        "decision": "OFF_MARKET_SEED",
-                                        "regime": "UNCERTAIN"
-                                    },
-                                    outcome=None
-                                )
-                                logger.info(f"STATE: Persisted off-market price for {sym}")
-                        except: pass
+                                        outcome=None
+                                    )
+                                    logger.info(f"STATE: Persisted off-market price for {sym}")
+                            except: pass
 
-                time.sleep(60)
-                continue
+                    time.sleep(60)
+                    continue
+                else:
+                    # Still loop for crypto, but update dashboard status for NSE
+                    status_reason = "Weekend" if now_ist.weekday() >= 5 else "After Hours"
+                    live_state.market_message = f"COMM: Crypto High-Freq | NSE: {status_reason}"
             
             t_loop_start = time.time()
             now_ist = datetime.now(IST)
@@ -962,37 +961,46 @@ def run_engine_loop():
             vix_update_counter += 1
             
             for symbol in live_state.symbols:
-                if vix_update_counter % 50 == 0: # Throttled heartbeat
+                # [v12.6.0] Market Gate: Only process NSE symbols if NSE is open
+                if "USDT" not in symbol and not is_nse_open:
+                    continue
+                
+                if vix_update_counter % 50 == 0:
                     logger.info(f"ANALYSIS_HEARTBEAT: Processing {symbol}...")
                 try:
                     # 1. Fetch Data (Atomic Memory Snapshot)
-                    ws_tick = all_snapshots.get(symbol)
-                    fut_tick = all_snapshots.get(f"{symbol}_FUT")
-                    
-                    if not ws_tick:
-                        # Fallback for initialization or missing ticks
-                        continue
+                    if "USDT" in symbol:
+                        # [v12.6.0] Integrated Crypto Fetch via Public Binance API
+                        market_data = core.crypto_provider.get_market_snapshot(symbol)
+                        if not market_data: continue
+                    else:
+                        ws_tick = all_snapshots.get(symbol)
+                        fut_tick = all_snapshots.get(f"{symbol}_FUT")
+                        
+                        if not ws_tick:
+                            # Fallback for initialization or missing ticks
+                            continue
 
-                    market_data = MarketData(
-                        symbol=symbol, 
-                        spot_price=ws_tick['lp'], 
-                        # [v9.9.9] Audit Fix: Use Proportional Basis Fallback (0.049%) to stay under spread veto
-                        future_price=fut_tick['lp'] if fut_tick else (ws_tick['lp'] * 1.00049),
-                        # [Institutional Patch] Use Future's OI for index symbols, or default high (1M) to bypass veto
-                        oi=fut_tick['oi'] if fut_tick and fut_tick.get('oi') else (1000000 if symbol in ["NIFTY", "BANKNIFTY", "SENSEX"] else ws_tick.get('oi', 0)), 
-                        pcr=0.95, 
-                        # [v9.9.9] Audit Fix: Standardize to IST for age calculations
-                        timestamp=datetime.fromtimestamp(ws_tick.get('timestamp', time.time()), tz=IST), 
-                        source="SHOONYA_WS"
-                    )
-                    
-                    # [v9.9.9] Audit Fix: Stale Data Guard (IST vs IST)
-                    data_age_seconds = (datetime.now(IST) - market_data.timestamp).total_seconds()
-                    if data_age_seconds > 10:
-                        if random.random() < 0.1: # Throttle logs
-                            logger.warning(f"STALE_DATA: {symbol} data is {data_age_seconds:.1f}s old. Skipping analysis.")
-                        live_state.market_message = f"STALE DATA VETO: {symbol} Lag detected ({data_age_seconds:.1f}s)"
-                        continue
+                        market_data = MarketData(
+                            symbol=symbol, 
+                            spot_price=ws_tick['lp'], 
+                            # [v9.9.9] Audit Fix: Use Proportional Basis Fallback (0.049%) to stay under spread veto
+                            future_price=fut_tick['lp'] if fut_tick else (ws_tick['lp'] * 1.00049),
+                            # [Institutional Patch] Use Future's OI for index symbols, or default high (1M) to bypass veto
+                            oi=fut_tick['oi'] if fut_tick and fut_tick.get('oi') else (1000000 if symbol in ["NIFTY", "BANKNIFTY", "SENSEX"] else ws_tick.get('oi', 0)), 
+                            pcr=0.95, 
+                            # [v9.9.9] Audit Fix: Standardize to IST for age calculations
+                            timestamp=datetime.fromtimestamp(ws_tick.get('timestamp', time.time()), tz=IST), 
+                            source="SHOONYA_WS"
+                        )
+                        
+                        # [v9.9.9] Audit Fix: Stale Data Guard (IST vs IST)
+                        data_age_seconds = (datetime.now(IST) - market_data.timestamp).total_seconds()
+                        if data_age_seconds > 10:
+                            if random.random() < 0.1: # Throttle logs
+                                logger.warning(f"STALE_DATA: {symbol} data is {data_age_seconds:.1f}s old. Skipping analysis.")
+                            live_state.market_message = f"STALE DATA VETO: {symbol} Lag detected ({data_age_seconds:.1f}s)"
+                            continue
 
                     live_state.prices[symbol] = market_data.spot_price
                     detected_patterns = []
@@ -1033,7 +1041,12 @@ def run_engine_loop():
                         # Fallback for initial startup ONLY (Synchronous fetch if cache empty)
                         if random.random() < 0.05: # Rare logging
                             logger.info(f"CACHE_MISS: Priming history for {symbol}...")
-                        hist_df = data_provider.get_history(symbol, interval="5minute")
+                        
+                        if "USDT" in symbol:
+                            hist_df = core.crypto_provider.get_history(symbol, interval="5minute")
+                        else:
+                            hist_df = data_provider.get_history(symbol, interval="5minute")
+                            
                         if hist_df is not None:
                             live_state.history_cache[symbol] = hist_df
                         else:
@@ -1084,7 +1097,10 @@ def run_engine_loop():
                     # [Audit Fix] If cache is empty (init), fetch synchronously once
                     if macro_df.empty:
                         logger.warning(f"ENGINE: Macro cache empty for {symbol}. Performing sync fetch.")
-                        macro_df = data_provider.get_history(symbol, "60minute")
+                        if "USDT" in symbol:
+                            macro_df = core.crypto_provider.get_history(symbol, "60minute")
+                        else:
+                            macro_df = data_provider.get_history(symbol, "60minute")
                         with macro_cache_lock: macro_cache[symbol] = macro_df
 
                     # Phase 2: Technicals & Regime
@@ -1103,7 +1119,10 @@ def run_engine_loop():
                     live_state.add_thought("ANALYSIS", f"[{symbol}] Pattern Score: {pattern_results['score']:.2f}. Found: {', '.join(pattern_results.get('patterns') or ['NONE'])}")
 
                     # Option Chain
-                    chain_df, is_synthetic = data_provider.get_option_chain(symbol)
+                    if "USDT" in symbol:
+                        chain_df, is_synthetic = core.crypto_provider.get_option_chain(symbol)
+                    else:
+                        chain_df, is_synthetic = data_provider.get_option_chain(symbol)
                     if not chain_df.empty:
                         live_state.max_pain[symbol] = option_engine.calculate_max_pain(chain_df)
                         live_state.option_battles[symbol] = core.option_engine.detect_strike_battles(chain_df)
