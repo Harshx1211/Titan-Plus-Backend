@@ -15,14 +15,14 @@ class CryptoProvider:
     """
     
     BASE_URL = "https://fapi.binance.com/fapi/v1"
-    KUCOIN_URL = "https://api-futures.kucoin.com/api/v1"
+    KUCOIN_URL = "https://api-futures.kucoin.com"
     
     def __init__(self):
         self.session = requests.Session()
         # Common headers
         self.session.headers.update({
             "Content-Type": "application/json",
-            "User-Agent": "Titan-Plus-Institutional/12.6.2"
+            "User-Agent": "Titan-Plus-Institutional/12.6.3"
         })
         self.use_kucoin = False # Global fallback trigger
 
@@ -68,8 +68,11 @@ class CryptoProvider:
     def _get_kucoin_snapshot(self, symbol: str) -> Optional[MarketData]:
         """Fallback: Fetch from KuCoin Futures."""
         try:
-            # KuCoin Futures uses BTCUSDTM format (no dash usually for perpetuals)
+            # KuCoin Futures uses XBTUSDTM for BTC and ETHUSDTM for ETH
             kucoin_sym = symbol.replace("USDT", "USDTM")
+            if "BTC" in kucoin_sym:
+                kucoin_sym = kucoin_sym.replace("BTC", "XBT")
+                
             endpoint = f"{self.KUCOIN_URL}/api/v1/ticker"
             params = {"symbol": kucoin_sym}
             
@@ -132,6 +135,9 @@ class CryptoProvider:
         """Fallback History: KuCoin Futures."""
         try:
             kucoin_sym = symbol.replace("USDT", "USDTM")
+            if "BTC" in kucoin_sym:
+                kucoin_sym = kucoin_sym.replace("BTC", "XBT")
+                
             # KuCoin granularity is in minutes
             gran_map = {"5m": 5, "1h": 60, "1d": 1440, "5minute": 5, "60minute": 60}
             gran = gran_map.get(interval, 5)

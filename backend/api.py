@@ -458,7 +458,7 @@ async def root():
     """Root endpoint to confirm server is alive."""
     return {
         "message": "Titan Plus API is running. Visit /health for status.",
-        "version": "v12.6.2",
+        "version": "v12.6.3",
         "market": "NSE/BSE/CRYPTO"
     }
 
