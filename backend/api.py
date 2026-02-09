@@ -458,8 +458,8 @@ async def root():
     """Root endpoint to confirm server is alive."""
     return {
         "message": "Titan Plus API is running. Visit /health for status.",
-        "version": "v9.4.0",
-        "market": "NSE/BSE"
+        "version": "v12.6.0",
+        "market": "NSE/BSE/CRYPTO"
     }
 
 @app.get("/health")

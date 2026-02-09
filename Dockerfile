@@ -1,4 +1,4 @@
-# Build Identifier: v9.9.9-FINAL-PROD
+# Build Identifier: v12.6.0-FINAL-PROD
 FROM python:3.12-slim
 
 # Set working directory
