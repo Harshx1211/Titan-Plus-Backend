@@ -123,6 +123,10 @@ class UnifiedBrainEngine:
             'smc': []
         }
         
+        # [v10.2] Basis history for stability checks
+        from collections import deque
+        self.basis_history = deque(maxlen=200)
+        
         # Initialize sub-systems
         self.xgb_engine = None
         self.rl_agent = None
@@ -656,6 +660,57 @@ class UnifiedBrainEngine:
             
         except Exception as e:
             logger.error(f"Failed to load state: {e}")
+
+
+    def check_basis_stability(self, current_basis: float) -> Dict:
+        """
+        [v10.2] Sigma-based stability gate for basis.
+        Expected by api.py to prevent trading on extreme divergence.
+        """
+        # 1. Update history
+        self.basis_history.append(current_basis)
+        
+        # 2. Extract stats
+        if len(self.basis_history) < 10:
+            return {
+                "is_unstable": False,
+                "reason": "INITIALIZING",
+                "sigma_jump": 0.0,
+                "basis": current_basis
+            }
+            
+        history_list = list(self.basis_history)
+        mean = np.mean(history_list)
+        std = np.std(history_list)
+        
+        # 3. Absolute Check (Threshold from config)
+        # Using 0.5% (0.005) as the default hard limit
+        abs_limit = self.config.basis_max * 100 # Scaling for comparison with percentage basis
+        is_abs_unstable = abs(current_basis) > abs_limit
+        
+        # 4. Sigma Check
+        sigma_limit = 5.0 # Institutional default
+        sigma_jump = 0.0
+        is_sigma_unstable = False
+        
+        if std > 0.01:
+            sigma_jump = abs(current_basis - mean) / std
+            is_sigma_unstable = sigma_jump > sigma_limit
+            
+        is_unstable = is_abs_unstable or is_sigma_unstable
+        
+        reason = "STABLE"
+        if is_abs_unstable:
+            reason = f"ABS_LIMIT_VIOLATION ({current_basis:.2f}% > {abs_limit:.2f}%)"
+        elif is_sigma_unstable:
+            reason = f"SIGMA_JUMP ({sigma_jump:.1f}σ > {sigma_limit}σ)"
+            
+        return {
+            "is_unstable": is_unstable,
+            "reason": reason,
+            "sigma_jump": sigma_jump,
+            "basis": current_basis
+        }
 
 
 # Convenience function for backward compatibility
