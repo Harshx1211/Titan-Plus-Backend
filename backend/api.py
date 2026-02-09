@@ -1478,8 +1478,14 @@ async def startup_event():
     thread = threading.Thread(target=run_engine_loop, daemon=True)
     thread.start()
     
-    # [v12.0.1] Launch Personalized Service Loop with Sentinel
-    pst = threading.Thread(target=personalized_service_loop, args=(core.telegram_notifier, global_sentinel), daemon=True)
+    # [v12.0.1] Launch Personalized Service Loop with Sentinel (Wait for Core initialization)
+    def launch_pst():
+        while not core.is_initialized:
+            time.sleep(1)
+        logger.info("pst: Core initialized. Launching Personalized Service Loop.")
+        personalized_service_loop(core.telegram_notifier, global_sentinel)
+
+    pst = threading.Thread(target=launch_pst, daemon=True)
     pst.start()
 
 if __name__ == "__main__":
