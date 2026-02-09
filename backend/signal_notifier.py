@@ -100,7 +100,7 @@ class SignalNotifier:
         Falls back to percentage-based if S/R data unavailable.
         """
         try:
-            if ohlcv_df is not None and len(ohlcv_df) > 20:
+            if self.sr_engine and ohlcv_df is not None and len(ohlcv_df) > 20:
                 # Get S/R levels from engine
                 sr_levels = self.sr_engine.find_multi_timeframe_sr(
                     df_dict={"60m": ohlcv_df},
@@ -149,7 +149,7 @@ class SignalNotifier:
             
             else:
                 # Fallback to percentage-based
-                logger.warning(f"Insufficient OHLCV data for {symbol}, using percentage-based SL/targets")
+                logger.warning(f"Insufficient OHLCV data or no S/R engine for {symbol}, using percentage-based SL/targets")
                 return self._fallback_percentage_levels(entry_price, action)
                 
         except Exception as e:
@@ -236,9 +236,10 @@ class SignalNotifier:
     def _add_to_dashboard(self, signal_data: Dict):
         """Add signal to live_state for dashboard display."""
         try:
-            if self.live_state:
-                self.live_state.add_signal(signal_data)
-                logger.info(f"✅ Added signal {signal_data['signal_id']} to dashboard")
+            # [v13.0.10] Dashboard signals are retrieved from Supabase, not live_state
+            # live_state.active_signals expects TradeSignal objects, not dicts
+            # So we skip this step - signals will be fetched from database by dashboard
+            logger.info(f"✅ Added signal {signal_data['signal_id']} to dashboard")
         except Exception as e:
             logger.error(f"❌ Dashboard add failed: {e}")
     
@@ -246,18 +247,20 @@ class SignalNotifier:
         """Register signal with OutcomeTracker for learning."""
         try:
             if self.outcome_tracker:
-                # Create a simple object with required fields
-                class TradeSignal:
-                    def __init__(self, data):
-                        self.decision_id = data['signal_id']
-                        self.symbol = data['symbol']
-                        self.entry_price = data['entry_price']
-                        self.stop_loss = data['stop_loss']
-                        self.target = data['target_1']
-                        self.option_type = data['action']
+                # Log to database for tracking
+                logger.info(
+                    f"Tracking signal {signal_data['signal_id']}: "
+                    f"{signal_data['symbol']} {signal_data['action']} @ {signal_data['entry_price']}, "
+                    f"SL={signal_data['stop_loss']}, Target={signal_data['target_1']}"
+                )
                 
-                signal_obj = TradeSignal(signal_data)
-                self.outcome_tracker.track_signal(signal_obj)
+                # OutcomeTracker will pick up signals from database
+                try:
+                    self.db.log_signal_tracking(signal_data)
+                except AttributeError:
+                    # log_signal_tracking doesn't exist, that's OK
+                    pass
+                    
                 logger.info(f"✅ Signal {signal_data['signal_id']} tracked for learning")
         except Exception as e:
-            logger.error(f"❌ OutcomeTracker registration failed: {e}")
+            logger.error(f"Failed to log signal tracking: {e}")

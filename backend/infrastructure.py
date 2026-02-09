@@ -561,7 +561,7 @@ class DatabaseManager:
                 'brain_version': signal_data.get('brain_version')
             }
             
-            self.cloud_db.client.table('signal_ledger').insert(formatted_signal).execute()
+            self.cloud_db.supabase.table('signal_ledger').insert(formatted_signal).execute()
             logging.getLogger("infrastructure").info(f"✅ Signal {signal_data['signal_id']} inserted to database")
             
         except Exception as e:
