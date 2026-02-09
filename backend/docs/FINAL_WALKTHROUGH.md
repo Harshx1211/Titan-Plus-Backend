@@ -1,9 +1,9 @@
-# v13.1.3_GLOBAL Final Deployment Walkthrough
+# v13.1.6_GLOBAL Final Deployment Walkthrough
 
 ## Signal Notification Pipeline - STABLE
 
 **Deployment Date**: 2026-02-09  
-**Version**: v13.1.3_GLOBAL  
+**Version**: v13.1.6_GLOBAL  
 **Status**: 🟢 OPERATIONAL
 
 ---
@@ -32,7 +32,8 @@ All deployment issues have been identified and resolved:
 | **Supabase Client Error** | ✅ Fixed | Changed `client` → `supabase` |
 | **S/R Engine None** | ✅ Fixed | Added null check for `sr_engine` |
 | **Float32 Serialization** | ✅ Fixed | Added `to_python_type()` converter for numpy types |
-| **Schema Mismatch (PGRST204)** | ✅ Fixed | Patched Supabase schema (added missing columns) + Reloaded Cache |
+| **Schema Mismatch (PGRST204)** | ✅ Fixed | **NUCLEAR FIX**: Dropped & Recreated `signal_ledger` table |
+| **Timestamp Column Error** | ✅ Fixed | Updated code to sort by `created_at` (v13.1.6) |
 | **Single Trade Logic** | ✅ **NEW** | Implemented `MAX_OPEN_POSITIONS = 1` & `Opportunity Switching` |
 
 ---

@@ -462,8 +462,8 @@ class SupabaseManager:
                 if sid not in id_map: id_map[sid] = []
                 id_map[sid].append(row['state'])
             
-            active_ids = [sid for sid, states in id_map.items() if "OUTCOME" not in states]
-            return [row for row in res.data if row['signal_id'] in active_ids and row['state'] == "INTENT"]
+            active_ids = [sid for sid, states in id_map.items() if "OUTCOME" not in states and "CLOSED" not in states]
+            return [row for row in res.data if row['signal_id'] in active_ids and row['state'] in ["INTENT", "PENDING", "ACTIVE"]]
         except Exception as e:
             logging.getLogger("infrastructure").error(f"SUPABASE: Signal recovery failed: {e}")
             return []
@@ -568,7 +568,7 @@ class DatabaseManager:
                 'sr_data': json.dumps(signal_data.get('sr_data')) if signal_data.get('sr_data') else None,
                 
                 # Metadata
-                'state': signal_data.get('state', 'PENDING'),
+                'state': signal_data.get('state', 'ACTIVE'),
                 'generated_at': signal_data.get('generated_at')
             }
             
