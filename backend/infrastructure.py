@@ -522,6 +522,7 @@ class DatabaseManager:
     def get_active_signals(self) -> List[Dict]:
         return self.cloud_db.get_active_signals()
     
+    
     def insert_signal(self, signal_data: Dict):
         """
         [v13.0.10] Insert a new signal into signal_ledger for tracking and learning.
@@ -530,34 +531,45 @@ class DatabaseManager:
             signal_data: Comprehensive signal dictionary with all metadata
         """
         try:
-            # Format for Supabase
+            # Helper to convert numpy/pandas types to Python native types
+            def to_python_type(val):
+                """Convert numpy/pandas types to JSON-serializable Python types."""
+                if val is None:
+                    return None
+                if hasattr(val, 'item'):  # numpy scalar
+                    return val.item()
+                if isinstance(val, (int, float, str, bool)):
+                    return val
+                return str(val)  # fallback for unknown types
+            
+            # Format for Supabase with type conversion
             formatted_signal = {
                 'signal_id': signal_data.get('signal_id'),
                 'symbol': signal_data.get('symbol'),
                 'action': signal_data.get('action'),
-                'entry_price': signal_data.get('entry_price'),
-                'stop_loss': signal_data.get('stop_loss'),
-                'target_1': signal_data.get('target_1'),
-                'target_2': signal_data.get('target_2'),
+                'entry_price': to_python_type(signal_data.get('entry_price')),
+                'stop_loss': to_python_type(signal_data.get('stop_loss')),
+                'target_1': to_python_type(signal_data.get('target_1')),
+                'target_2': to_python_type(signal_data.get('target_2')),
                 
                 # Brain scores
-                'confluence': signal_data.get('confluence'),
-                'xgb_score': signal_data.get('xgb_score'),
-                'rl_score': signal_data.get('rl_score'),
-                'smc_score': signal_data.get('smc_score'),
+                'confluence': to_python_type(signal_data.get('confluence')),
+                'xgb_score': to_python_type(signal_data.get('xgb_score')),
+                'rl_score': to_python_type(signal_data.get('rl_score')),
+                'smc_score': to_python_type(signal_data.get('smc_score')),
                 
                 # Market context
                 'regime': signal_data.get('regime'),
-                'vix': signal_data.get('vix'),
-                'volatility': signal_data.get('volatility'),
-                'volume': signal_data.get('volume'),
+                'vix': to_python_type(signal_data.get('vix')),
+                'volatility': to_python_type(signal_data.get('volatility')),
+                'volume': to_python_type(signal_data.get('volume')),
                 
                 # S/R data (as JSON)
                 'sr_data': json.dumps(signal_data.get('sr_data')) if signal_data.get('sr_data') else None,
                 
                 # Metadata
                 'state': signal_data.get('state', 'PENDING'),
-                'generated_at':signal_data.get('generated_at'),
+                'generated_at': signal_data.get('generated_at'),
                 'brain_version': signal_data.get('brain_version')
             }
             
