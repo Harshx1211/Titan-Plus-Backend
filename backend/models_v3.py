@@ -19,6 +19,7 @@ from enum import Enum
 class MarketSource(str, Enum):
     """Data source identifier"""
     SHOONYA = "SHOONYA"
+    SHOONYA_WS = "SHOONYA_WS"
     GROWW_API = "GROWW_API"
     FALLBACK = "FALLBACK"
 
