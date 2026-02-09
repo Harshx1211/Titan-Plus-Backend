@@ -546,7 +546,7 @@ class DatabaseManager:
             formatted_signal = {
                 'signal_id': signal_data.get('signal_id'),
                 'symbol': signal_data.get('symbol'),
-                'action': signal_data.get('action'),
+                'option_type': signal_data.get('action'),  # Map action -> option_type for schema compatibility
                 'entry_price': to_python_type(signal_data.get('entry_price')),
                 'stop_loss': to_python_type(signal_data.get('stop_loss')),
                 'target_1': to_python_type(signal_data.get('target_1')),
