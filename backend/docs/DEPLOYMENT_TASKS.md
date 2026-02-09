@@ -51,3 +51,4 @@
         - [x] Compare new signal score vs active trade score <!-- id: 81 -->
         - [x] Trigger exit advice if New > Old and PnL > 0 <!-- id: 82 -->
     - [x] Add 'Trade Closed' and 'Switch Alert' notifications <!-- id: 83 -->
+    - [x] Fix Supabase Schema (Add missing columns & Reload Cache) <!-- id: 84 -->
