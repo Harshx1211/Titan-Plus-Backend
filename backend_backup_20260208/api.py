@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 # import pandas as pd
 # import pandas_ta as ta
 from pytz import timezone as pytz_timezone
-from config import config  # Centralized config
 
 # Configure logging
 from fastapi import FastAPI, HTTPException
@@ -24,17 +23,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 # from models import Regime, DivergenceType, TradeSignal, SignalConfidence # DEPRECATED
 from models_v3 import Decision, Regime, Action, MarketStructure, TradeSignal, TradeSnapshot, DivergenceType, SignalConfidence
-
-# [v10.2] Import enhanced endpoints and health checks
-from health_check_endpoint import health_router
-from api_enhanced_endpoints import outcome_router
 import uvicorn
 
 app = FastAPI(title="The Oracle - Titan Plus Institutional")
-
-# [v10.2] Register enhanced routers
-app.include_router(health_router)
-app.include_router(outcome_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -47,11 +38,8 @@ app.add_middleware(
 # Persistent State Storage
 class LiveState:
     def __init__(self):
-        # [v10.0] Thread Safety - RLock for all state access
-        self._lock = threading.RLock()
-        
         self.current_regime = Regime.NEUTRAL
-        self._active_signals = []  # Protected by lock
+        self.active_signals = []
         self.last_update = datetime.now(timezone.utc)
         self.symbols = ["NIFTY", "BANKNIFTY", "SENSEX"]
         self.current_symbol_idx = 0
@@ -69,11 +57,12 @@ class LiveState:
         self.option_chains = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
         self.supports = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
         self.resistances = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
-        self.history_cache = {"NIFTY": None, "BANKNIFTY": None, "SENSEX": None}
+        self.history_cache = {"NIFTY": None, "BANKNIFTY": None, "SENSEX": None} # [v9.9.9] Architecture 10/10
         
         # v8.1: Statistical Discipline
         self.resets_today = 0
-        self.last_reset_time = datetime.now(timezone.utc)
+        self.last_reset_time = datetime.now(timezone.utc)  # FIX: Use timezone-aware
+        self.iv_skew = {"NIFTY": 1.0, "SENSEX": 1.0, "BANKNIFTY": 1.0}
         self.iv_skew = {"NIFTY": 1.0, "SENSEX": 1.0, "BANKNIFTY": 1.0}
         self.gex_bias = {"NIFTY": 0.0, "BANKNIFTY": 0.0, "SENSEX": 0.0}
         self.sector_synergy = 1.0 
@@ -84,151 +73,46 @@ class LiveState:
         self.iv_history = {"NIFTY": [], "BANKNIFTY": [], "SENSEX": []}
         
         # [v9.4] Epistemic Transparency: Digital Stream of Consciousness
-        self.thought_logs = []
-        self.last_thoughts_by_type = {}
+        self.thought_logs = [] # List of { "timestamp": iso, "type": "VETO|LEARN|SIGNAL", "msg": "..." }
+        self.last_thoughts_by_type = {} # [v9.9.9] Deduplication Cache
         self.is_learning = False
         self.integrity = DivergenceType.NONE
-        self.direct_execution_active = False
-        
-        # [v10.0] Emergency Controls
-        self.emergency_mode = False  # Set to True to halt all trading
+        self.direct_execution_active = False # [Institutional Lockdown] Hard-locked to False
 
         # [Institutional Wave 3] Deduplication & Memory Hygiene
         self.seen_signal_ids = set()
-        self.seen_ids_lock = threading.Lock()  # [v10.2] Thread-safe lock for seen_signal_ids
-    
-    @property
-    def active_signals(self):
-        """Thread-safe getter for active signals."""
-        with self._lock:
-            return self._active_signals.copy()
-    
-    def add_signal(self, signal):
-        """Thread-safe signal addition."""
-        with self._lock:
-            self._active_signals.append(signal)
-    
-    def remove_signal(self, signal_id: str):
-        """Thread-safe signal removal."""
-        with self._lock:
-            self._active_signals = [s for s in self._active_signals if s.decision_id != signal_id]
-    
-    def clear_signals(self):
-        """Thread-safe signal clearing."""
-        with self._lock:
-            self._active_signals = []
+        self.seen_ids_lock = threading.Lock()
 
     def add_thought(self, thought_type: str, msg: str):
-        """[v10.0] Thread-safe thought logger with type-aware de-duplication."""
-        with self._lock:
-            # Type-aware suppression
-            if self.last_thoughts_by_type.get(thought_type) == msg:
-                return
-                
-            self.last_thoughts_by_type[thought_type] = msg
+        """[v9.5.4] Standardized thought logger with type-aware de-duplication."""
+        # [v9.9.9] Type-aware suppression: Don't repeat the exact same message for the same type
+        if self.last_thoughts_by_type.get(thought_type) == msg:
+            return
             
-            self.thought_logs.append({
-                "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-                "type": thought_type,
-                "msg": msg
-            })
-            
-            # Keep logs lean for dashboard stability
-            if len(self.thought_logs) > 40:
-                self.thought_logs.pop(0)
-
-def emergency_shutdown(reason: str):
-    """
-    [v10.0] Nuclear option: Close everything immediately on critical failures.
-    
-    Triggers:
-    - Both data providers fail
-    - Database connection lost
-    - Critical system error
-    - Manual intervention required
-    """
-    logger.critical(f"🚨 EMERGENCY SHUTDOWN INITIATED: {reason}")
-    
-    # 1. Stop accepting new signals
-    live_state.emergency_mode = True
-    
-    # 2. Close all open positions at MARKET (fastest exit)
-    closed_count = 0
-    failed_exits = []
-    
-    for signal in live_state.active_signals:
-        try:
-            if hasattr(core, 'execution_engine') and core.execution_engine:
-                # Use execution engine's emergency exit
-                core.execution_engine.emergency_exit(
-                    signal.decision_id,
-                    reason=f"EMERGENCY_SHUTDOWN: {reason}"
-                )
-                closed_count += 1
-                logger.info(f"Emergency exit: {signal.symbol} @ {signal.decision_id}")
-            else:
-                logger.warning(f"No execution engine - cannot close {signal.symbol}")
-                failed_exits.append(signal.symbol)
-        except Exception as e:
-            logger.error(f"Emergency exit failed for {signal.symbol}: {e}")
-            failed_exits.append(signal.symbol)
-    
-    # 3. Alert via all channels
-    alert_message = (
-        f"🚨 EMERGENCY SHUTDOWN\n\n"
-        f"Reason: {reason}\n"
-        f"Positions closed: {closed_count}\n"
-        f"Failed exits: {len(failed_exits)}\n"
-        f"System locked. Manual restart required."
-    )
-    
-    try:
-        if hasattr(core, 'telegram_notifier') and core.telegram_notifier:
-            core.telegram_notifier.send_alert(alert_message)
-    except Exception as e:
-        logger.error(f"Failed to send Telegram alert: {e}")
-    
-    # 4. Save state before exit
-    try:
-        if hasattr(core, 'brain') and core.brain:
-            core.brain.save_state()
-        if hasattr(core, 'db') and core.db:
-            core.db.log_event("EMERGENCY_SHUTDOWN", {
-                "reason": reason,
-                "closed_count": closed_count,
-                "failed_exits": failed_exits,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
-    except Exception as e:
-        logger.error(f"Failed to save state during shutdown: {e}")
-    
-    # 5. Hard exit (bypass normal shutdown)
-    logger.critical("System halting now.")
-    os._exit(1)  # Immediate termination
+        self.last_thoughts_by_type[thought_type] = msg
+        
+        self.thought_logs.append({
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "type": thought_type,
+            "msg": msg
+        })
+        
+        # Keep logs lean for dashboard stability
+        if len(self.thought_logs) > 40:
+            self.thought_logs.pop(0)
 
 # Config & Global Placeholders
-# [v10.0] Loaded from config.py
+# [v9.9.7] Essential defaults for LiveState before background thread fills it
 APP_CONFIG = {
     "VIX_DEFAULT": 15.0,
-    "SIGNAL_ACTIVE_CAP": config.MAX_OPEN_POSITIONS,
+    "SIGNAL_ACTIVE_CAP": 20,
     "ENGINE_POLLING_BASE_SECONDS": 1,
     "ENGINE_POLLING_JITTER_SECONDS": 1,
     "ENGINE_ERROR_SLEEP_TIME": 5,
     "MARKET_START_HOUR": 9,
     "MARKET_START_MINUTE": 0,
     "MARKET_END_HOUR": 15,
-    "MARKET_END_MINUTE": 30,
-    "MAX_PAIN_THRESHOLD": 20.0,
-    "HIGH_VOLATILITY_VIX": 20.0,
-    "PASSIVE_MODE_THRESHOLD": 300,
-    "PATTERN_SCORE_THRESHOLD_HIGH": 0.75,
-    "LULL_START_HOUR": 11,
-    "LULL_START_MINUTE": 30,
-    "LULL_END_HOUR": 13,
-    "LULL_END_MINUTE": 00,
-    "SIGNAL_TARGET_POINTS": 100,
-    "SIGNAL_STOP_LOSS_POINTS": 50,
-    "DASHBOARD_URL": "http://localhost:3000"
+    "MARKET_END_MINUTE": 30
 }
 evolution_done_date = None
 
@@ -267,9 +151,7 @@ class CoreEngine:
         self.db = None
         self.telegram_notifier = None
         self.data_provider = None
-        self.execution_engine = None
         self.shadow_engine = None
-        self.outcome_tracker = None  # [v10.1] Automatic outcome tracking
         self.is_initialized = False
 
     def initialize(self):
@@ -279,29 +161,18 @@ class CoreEngine:
         from infrastructure import SupabaseManager, DatabaseManager, TelegramNotifier, SystemHealthMonitor
         from providers import DataProvider
         from engines import DataSentinel, RiskEngine, PatternEngine, TrapHunter, SessionAuditor
-        from brain_unified import create_brain  # UNIFIED BRAIN
-        from execution_engine import ExecutionEngine # REAL EXECUTION
-        # from evolution_engine import EvolutionEngine  # [v10.2] Disabled - outcome_tracker provides learning
+        from brain_engine_enhanced import EnhancedBrainEngine
+        from evolution_engine import EvolutionEngine
         from strategist import MarketStrategist
         from support_resistance import SupportResistanceEngine
         from option_engine import OptionEngine
         from technical_engine import TechnicalEngine
-        from outcome_tracker import OutcomeTracker  # [v10.1] Automatic learning
         
         self.db = DatabaseManager()
         time.sleep(1)
         self.telegram_notifier = TelegramNotifier()
         time.sleep(1)
         self.data_provider = DataProvider()
-        time.sleep(1)
-        
-        # [v10.1] Initialize outcome tracker for automatic learning
-        self.outcome_tracker = OutcomeTracker(
-            data_provider=self.data_provider,
-            db_manager=self.db
-        )
-        self.outcome_tracker.start_monitoring()
-        logger.info("Outcome tracker initialized and monitoring started")
         time.sleep(1)
         
         
@@ -312,11 +183,9 @@ class CoreEngine:
         self.session_auditor = SessionAuditor()
         
         # Heavy ML (Staggered)
-        # Heavy ML (Staggered)
-        self.brain = create_brain(enable_rl=True, enable_smc=True)  # Unified v10.0
+        self.brain = EnhancedBrainEngine(enable_rl=True, enable_smc=True)
         gc.collect(); time.sleep(1)
-        # self.evolver = EvolutionEngine(self.brain)  # [v10.2] Disabled - outcome_tracker provides learning
-        self.evolver = None  # Placeholder
+        self.evolver = EvolutionEngine(self.brain)
         gc.collect(); time.sleep(1)
         
         self.pattern_engine = PatternEngine()
@@ -324,15 +193,6 @@ class CoreEngine:
         self.trap_hunter = TrapHunter()
         self.option_engine = OptionEngine()
         self.tech_engine = TechnicalEngine()
-        
-        # Real Execution Engine
-        self.execution_engine = ExecutionEngine(
-            broker_api=self.data_provider,  # Using data provider as broker interface for now
-            risk_manager=self.risk_engine,  # Link to risk engine
-            db_manager=self.db
-        )
-        self.execution_engine.start_monitoring()
-        logger.info("CORE: Execution Engine monitoring active.")
         
         if os.getenv("SHADOW_MODE", "false").lower() == "true":
             from shadow_mode import ShadowMode
@@ -353,21 +213,11 @@ def call_brain_safely(action: str, **kwargs):
     
     try:
         if action == "DECIDE":
-            # [v12.6] Robust argument cleaning to prevent "multiple values for keyword argument" error
-            target_keys = ["features", "market_data", "ohlcv_df", "regime"]
-            extracted = {k: kwargs.pop(k, None) for k in target_keys}
-            
-            # Double-scrub: Ensure NO case-variations or duplicates remain in kwargs
-            # This is defensive against unexpected upstream dictionary behavior
-            for k in list(kwargs.keys()):
-                if k.lower() in target_keys:
-                    kwargs.pop(k)
-
             res = core.brain.decide(
-                features=extracted["features"],
-                market_data=extracted["market_data"],
-                ohlcv_df=extracted["ohlcv_df"],
-                regime=extracted["regime"],
+                features=kwargs.get("features"),
+                market_data=kwargs.get("market_data"),
+                ohlcv_df=kwargs.get("ohlcv_df"),
+                regime=kwargs.get("regime"),
                 **kwargs
             )
             if isinstance(res, dict):
@@ -558,61 +408,18 @@ async def post_feedback(signal_id: int, outcome: str, override: bool = False):
     return {"status": "success"}
 
 @app.post("/execute_trade")
-async def execute_trade(signal_id: str, admin_key: str = ""):
-    """
-    [DISABLED - ANALYSIS-ONLY MODE]
-    
-    This system is configured as an ANALYSIS-ONLY tool.
-    All trade execution must be done MANUALLY by the user.
-    
-    The system will:
-    - Generate signals and recommendations
-    - Display them on the dashboard
-    - Log them to the database
-    
-    The user must:
-    - Review signals manually
-    - Execute trades on their broker
-    - Log outcomes for learning
-    
-    This endpoint is disabled to prevent accidental auto-execution.
-    """
-    logger.info(f"API: Auto-execution blocked for Signal ID: {signal_id} (Analysis-only mode)")
-    
-    return {
-        "status": "disabled",
-        "message": "AUTO-EXECUTION DISABLED: This is an analysis-only system. Please execute trades manually on your broker.",
-        "signal_id": signal_id,
-        "recommendation": "Review signal on dashboard and execute manually if you agree with the analysis."
-    }
-
-@app.get("/outcome_stats")
-async def get_outcome_stats():
-    """
-    [v10.1] Get automatic outcome tracking statistics.
-    
-    Returns:
-    - Win rate percentage
-    - Total wins/losses/expired
-    - Currently monitoring signals
-    - Recent outcomes (last 20)
-    """
-    if not core.outcome_tracker:
-        return {"error": "Outcome tracker not initialized"}
-    
+async def execute_trade(signal_id: str, token: str = None):
+    if token != admin_token:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    logger.info(f"API: Trade execution requested for Signal ID: {signal_id}")
     try:
-        stats = core.outcome_tracker.get_statistics()
-        recent = core.outcome_tracker.get_recent_outcomes(limit=20)
-        
-        return {
-            "status": "success",
-            "statistics": stats,
-            "recent_outcomes": recent,
-            "learning_active": True
-        }
+        # In a real system, this would involve integration with a broker API
+        # For now, we just log and return a success status
+        live_state.add_thought("TRADE", f"Simulating trade execution for {signal_id}")
+        return {"status": "trade_executed", "signal_id": signal_id}
     except Exception as e:
-        logger.error(f"Failed to get outcome stats: {e}")
-        return {"error": str(e)}
+        logger.error(f"API: Failed to execute trade for Signal ID {signal_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to execute trade: {e}")
 
 @app.post("/evolve")
 async def trigger_evolution(date: Optional[str] = None, token: str = None):
@@ -724,12 +531,6 @@ def run_engine_loop():
     evolver = core.evolver
     session_auditor = core.session_auditor
     health_monitor = core.health_monitor
-    strategist = core.strategist
-    sr_engine = core.sr_engine
-    pattern_engine = core.pattern_engine
-    option_engine = core.option_engine
-    risk_engine = core.risk_engine
-    tech_engine = core.tech_engine
 
     # [Institutional Phase 6] Initialize WebSocket & MarketState
     from infrastructure import MarketState
@@ -962,8 +763,6 @@ def run_engine_loop():
             vix_update_counter += 1
             
             for symbol in live_state.symbols:
-                if vix_update_counter % 50 == 0: # Throttled heartbeat
-                    logger.info(f"ANALYSIS_HEARTBEAT: Processing {symbol}...")
                 try:
                     # 1. Fetch Data (Atomic Memory Snapshot)
                     ws_tick = all_snapshots.get(symbol)
@@ -976,10 +775,9 @@ def run_engine_loop():
                     market_data = MarketData(
                         symbol=symbol, 
                         spot_price=ws_tick['lp'], 
-                        # [v9.9.9] Audit Fix: Use Proportional Basis Fallback (0.049%) to stay under spread veto
-                        future_price=fut_tick['lp'] if fut_tick else (ws_tick['lp'] * 1.00049),
-                        # [Institutional Patch] Use Future's OI for index symbols since indices have 0 OI
-                        oi=fut_tick['oi'] if fut_tick and fut_tick.get('oi') else ws_tick.get('oi', 0), 
+                        # [v9.9.9] Audit Fix: Use Proportional Basis Fallback (0.05%) instead of flat +5.0
+                        future_price=fut_tick['lp'] if fut_tick else (ws_tick['lp'] * 1.0005),
+                        oi=ws_tick.get('oi', 0), 
                         pcr=0.95, 
                         # [v9.9.9] Audit Fix: Standardize to IST for age calculations
                         timestamp=datetime.fromtimestamp(ws_tick.get('timestamp', time.time()), tz=IST), 
@@ -998,9 +796,9 @@ def run_engine_loop():
                     detected_patterns = []
                     signal_type = None
 
-                    # [v9.8.5] Spread Check (Lenient 0.06% to prevent self-veto on synthesized data)
+                    # [v9.8.5] Spread Check
                     current_spread = abs(market_data.future_price - market_data.spot_price)
-                    spread_max = market_data.spot_price * 0.0006
+                    spread_max = market_data.spot_price * 0.0005
                     if current_spread > spread_max:
                         if "SPREAD" not in live_state.market_message:
                             live_state.add_thought("SPREAD_VETO", f"Spread Spike: {current_spread:.2f} > {spread_max:.2f}. Vetoing.")
@@ -1121,16 +919,8 @@ def run_engine_loop():
                         other_sym = "BANKNIFTY" if symbol == "NIFTY" else "NIFTY"
                         other_data = all_snapshots.get(other_sym) or data_provider.get_market_snapshot(other_sym)
                         if other_data:
-                            # [v12.4] Normalize data access (Works for both MarketData objects and WS dicts)
-                            if isinstance(other_data, dict):
-                                o_spot = other_data.get('lp', 0)
-                                o_fut = other_data.get('fut_lp', o_spot * 1.0005) # Fallback heuristic
-                            else:
-                                o_spot = getattr(other_data, 'spot_price', 0)
-                                o_fut = getattr(other_data, 'future_price', o_spot * 1.0005)
-
                             my_delta = (market_data.spot_price - market_data.future_price + 45)
-                            other_delta = (o_spot - o_fut + 45)
+                            other_delta = (other_data.spot_price - other_data.future_price + 45)
                             is_aligned = (my_delta > 0 and other_delta > 0) or (my_delta < 0 and other_delta < 0)
                             live_state.sector_synergy = 1.3 if is_aligned else 0.4
                             
@@ -1195,20 +985,9 @@ def run_engine_loop():
                         "BEARISH" if (pattern_results.get("score", 0) > 0.45 and curr_strength < -0.1) or price_vel_curr < -0.08 else "NEUTRAL"
                     )
                     
-                    # Prepare market data dict for brain engine (Institutional Step 6)
-                    market_data_dict = {
-                        "spot_price": market_data.spot_price,
-                        "future_price": market_data.future_price,
-                        "oi": market_data.oi,
-                        "vix": live_state.vix,
-                        "gex": live_state.gex_bias.get(symbol, 0.0),
-                        "pcr": market_data.pcr
-                    }
-
                     # Pass ohlcv_df to enable SMC Engine
                     decision_id, thoughts = call_brain_safely(
-                        "DECIDE", features=brain_features, market_data=market_data_dict,
-                        regime=live_state.current_regime, 
+                        "DECIDE", features=brain_features, regime=live_state.current_regime, 
                         ohlcv_df=hist_df, is_commit=False, pattern_score=pattern_results["score"],
                         signal_intent=likely_intent, iv_skew=live_state.iv_skew.get(symbol, 1.0)
                     )
@@ -1362,19 +1141,48 @@ def run_engine_loop():
                             # Direct connection to Broker API; bypasses Telegram/Human latency.
                             t_signal = time.time()
                             
-                            # [v10.0] ANALYSIS-ONLY MODE: No auto-execution
                             if new_signal.option_symbol and not shadow_mode_enabled:
-                                live_state.add_thought("SIGNAL", f"📊 ANALYSIS: {new_signal.option_symbol} (Manual review required)")
-                                core.telegram_notifier.send_entry(new_signal.dict(), "SIGNAL GENERATED (Analysis-only mode)")
-                            
-                            # [v10.1] Start tracking outcome for automatic learning
-                            if core.outcome_tracker:
-                                try:
-                                    core.outcome_tracker.track_signal(new_signal)
-                                    logger.info(f"Outcome tracking started for {new_signal.decision_id}")
-                                except Exception as e:
-                                    logger.error(f"Failed to start outcome tracking: {e}")
-                            
+                                # Two-Step Safety: Master .env flag AND Live UI toggle must be TRUE
+                                # [Wave 4] THREE-Step Safety: Must also be the LEADER instance
+                                if APP_CONFIG.get("DIRECT_EXECUTION_ENABLED") and live_state.direct_execution_active:
+                                    if not core.db.is_leader:
+                                        logger.warning(f"EXECUTION_VETO: Instance {core.db.instance_id} is in FOLLOWER mode. Blocking order for {new_signal.option_symbol}.")
+                                        new_signal.rejection_reasons.append("FOLLOWER_NODE_VETO")
+                                    else:
+                                        try:
+                                            logger.info(f"EXECUTION: Sending direct order for {new_signal.option_symbol} (Qty: {new_signal.quantity})")
+                                            order_res = data_provider.execute_order(
+                                                symbol=new_signal.option_symbol,
+                                                exchange='NFO',
+                                                side='BUY',
+                                                qty=new_signal.quantity
+                                            )
+                                            t_order_ack = time.time()
+                                            
+                                            if order_res and order_res.get('stat') == 'Ok':
+                                                order_id = order_res.get('order_id')
+                                                # [Wave 4] Order Verification (Confirmation Polling)
+                                                verify_status = data_provider.shoonya.verify_order_status(order_id)
+                                                
+                                                if verify_status == 'COMPLETE':
+                                                    new_signal.order_id = order_id
+                                                    new_signal.latency_ms = (t_order_ack - t_signal) * 1000
+                                                    new_signal.fill_time = datetime.now(timezone.utc)
+                                                    logger.info(f"LATENCY: {new_signal.symbol} Signal-to-Ack: {new_signal.latency_ms:.2f}ms | OrderID: {new_signal.order_id}")
+                                                else:
+                                                    logger.error(f"EXECUTION: Order {order_id} failed exchange verification: {verify_status}")
+                                                    new_signal.rejection_reasons.append(f"EXCHANGE_REJECT: {verify_status}")
+                                            else:
+                                                emsg = order_res.get('emsg', 'Unknown Broker Error')
+                                                new_signal.rejection_reasons.append(f"BROKER_REJECT: {emsg}")
+                                                logger.error(f"EXECUTION: Order rejected for {symbol}: {emsg}")
+                                        except Exception as exec_err:
+                                            logger.error(f"EXECUTION: Order bridge critical failure: {exec_err}")
+                                            new_signal.rejection_reasons.append(f"BRIDGE_ERROR: {str(exec_err)}")
+                                else:
+                                    logger.info(f"EXECUTION: Direct execution is DISABLED via safety switch. Signaling only.")
+                                    new_signal.rejection_reasons.append("DIRECT_EXECUTION_DISABLED")
+
                             # [Institutional Responsibility] Auto-Approval & Full Accountability
                             # Mark as HUMAN_APPROVED immediately for training/evolution audit.
                             new_signal.is_auto_approved = True
@@ -1508,33 +1316,18 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v12.6.0_STABLE]
-LOGIC_VERSION = "v12.6.0_STABLE"
+# Startup Version Identifier [v9.9.9_FINAL_STABLE]
+LOGIC_VERSION = "v9.9.9_FINAL_STABLE"
 
 @app.on_event("startup")
 async def startup_event():
     logger.info(f"API: Starting Titan Plus Institutional Engine [{LOGIC_VERSION}]")
-    
-    # [v10.2] Validate configuration first
-    from config_validator import validate_config_on_startup
-    
-    if not validate_config_on_startup():
-        logger.critical("Configuration validation failed. Exiting...")
-        import sys
-        sys.exit(1)
-    
     logger.info("API: Launching background engine loop...")
     thread = threading.Thread(target=run_engine_loop, daemon=True)
     thread.start()
     
-    # [v12.0.1] Launch Personalized Service Loop with Sentinel (Wait for Core initialization)
-    def launch_pst():
-        while not core.is_initialized:
-            time.sleep(1)
-        logger.info("pst: Core initialized. Launching Personalized Service Loop.")
-        personalized_service_loop(core.telegram_notifier, global_sentinel)
-
-    pst = threading.Thread(target=launch_pst, daemon=True)
+    # [v12.0.1] Launch Personalized Service Loop with Sentinel
+    pst = threading.Thread(target=personalized_service_loop, args=(core.telegram_notifier, global_sentinel), daemon=True)
     pst.start()
 
 if __name__ == "__main__":
