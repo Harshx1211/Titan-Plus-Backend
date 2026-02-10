@@ -376,9 +376,6 @@ class ShoonyaProvider:
             logger.error(f"SHOONYA_EXEC: Exception during order placement: {e}")
             self.circuit.record_failure()
             return {"stat": "Fail", "emsg": str(e)}
-        except Exception as e:
-            logger.error(f"SHOONYA_EXEC: Exception during order: {e}")
-            return {"stat": "Fail", "emsg": str(e)}
 
     def get_order_status(self, order_id: str):
         if not self.authenticated and not self.login(): return None
@@ -387,6 +384,18 @@ class ShoonyaProvider:
         except Exception as e:
             logger.error(f"SHOONYA_EXEC: Error getting order status for {order_id}: {e}")
             return None
+
+    def _watchdog_loop(self):
+        """[v14.2.0] Monitors the connection state and force-restarts if dead."""
+        while True:
+            try:
+                time.sleep(30) # Check every 30 seconds
+                global_sentinel.record_heartbeat("shoonya_ws_watchdog")
+                if not self.is_connected:
+                    logger.warning("SHOONYA_WS: WebSocket connection lost. Attempting reconnect.")
+                    self.start_websocket() # Reconnect
+            except Exception as e:
+                logger.error(f"SHOONYA_WS: Watchdog error: {e}")
 
 # ============================================================================
 # 3. Data Orchestrator (DataProvider)
@@ -593,20 +602,7 @@ class DataProvider:
                 "call_gamma": 0.002, "put_gamma": 0.002 # prevent GM crash
             })
         
-        logger.warning(f"DATA_FETCH: Using SYNTHETIC option chain for {symbol} (Market Closed or Data Lag)")
         return pd.DataFrame(strikes), True
-
-    def _watchdog_loop(self):
-        """Monitors the connection state and force-restarts if dead."""
-        while True:
-            try:
-                time.sleep(30) # Check every 30 seconds
-                global_sentinel.record_heartbeat("shoonya_ws_watchdog")
-                if not self.is_connected:
-                    logger.warning("SHOONYA_WS: WebSocket connection lost. Attempting reconnect.")
-                    self.start_websocket() # Reconnect
-            except Exception as e:
-                logger.error(f"SHOONYA_WS: Watchdog error: {e}")
             
     def get_vix(self) -> float:
         """Returns the India VIX value with historical fallback."""
