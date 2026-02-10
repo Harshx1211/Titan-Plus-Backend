@@ -17,6 +17,7 @@ from datetime import datetime, timezone, timedelta
 from supabase import create_client, Client
 from dotenv import load_dotenv
 from models_v3 import TradeSignal
+from config import config
 
 class DataHealthError(Exception):
     """[v9.9.9] Raised when no valid real-time data sources are available."""
