@@ -1645,8 +1645,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v14.2.0_NSE]
-LOGIC_VERSION = "v14.2.0_NSE"
+# Startup Version Identifier [v14.2.4_NSE]
+LOGIC_VERSION = "v14.2.4_NSE"
 
 @app.on_event("startup")
 async def startup_event():
