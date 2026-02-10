@@ -616,7 +616,6 @@ class DatabaseManager:
                 
                 # Metadata
                 'state': signal_data.get('state', 'ACTIVE'),
-                'asset_class': signal_data.get('asset_class', AssetClass.NSE),
                 'generated_at': signal_data.get('generated_at')
             }
             

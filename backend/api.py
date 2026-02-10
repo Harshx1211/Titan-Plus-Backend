@@ -1690,8 +1690,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v15.3.2_HELIOS]
-LOGIC_VERSION = "v15.3.2_HELIOS"
+# Startup Version Identifier [v15.3.3_HELIOS]
+LOGIC_VERSION = "v15.3.3_HELIOS"
 
 @app.on_event("startup")
 async def startup_event():
