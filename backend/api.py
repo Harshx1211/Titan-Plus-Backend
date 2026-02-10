@@ -211,7 +211,7 @@ def emergency_shutdown(reason: str):
 # [v10.0] Loaded from config.py
 APP_CONFIG = {
     "VIX_DEFAULT": 15.0,
-    "SIGNAL_ACTIVE_CAP": config.MAX_OPEN_POSITIONS,
+    "MAX_OPEN_POSITIONS": config.MAX_OPEN_POSITIONS,
     "ENGINE_POLLING_BASE_SECONDS": 1,
     "ENGINE_POLLING_JITTER_SECONDS": 1,
     "ENGINE_ERROR_SLEEP_TIME": 5,
