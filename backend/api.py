@@ -110,6 +110,12 @@ class LiveState:
         with self._lock:
             return self._active_signals.copy()
     
+    @active_signals.setter
+    def active_signals(self, value):
+        """Thread-safe setter for active signals."""
+        with self._lock:
+            self._active_signals = value
+    
     def add_signal(self, signal):
         """Thread-safe signal addition."""
         with self._lock:
@@ -1275,6 +1281,7 @@ def run_engine_loop():
                     oi_res = oi_change - (oi_beta * price_vel_curr)
                     basis_res = raw_basis - (basis_beta * price_vel_curr)
                     live_state.prev_oi[symbol] = market_data.oi
+                    current_spread = abs(market_data.future_price - market_data.spot_price) if market_data.future_price and market_data.spot_price else 0.5
 
                     brain_features = {
                         "OI_RES": oi_res, "PCR": market_data.pcr, "BASIS_RES": basis_res, "ADX": adx_val,
@@ -1425,6 +1432,7 @@ def run_engine_loop():
                             continue
 
                         # [v15.0] Option-Engine Bypass for GLOBAL Futures
+                        precision_levels = {} # Default for safety
                         if is_nse:
                             # [Phase 5] Precision Levels & Smart Stops (Order Blocks, Fractals, OI Walls)
                             precision_levels = tech_engine.calculate_precision_levels(hist_df, market_data.spot_price, chain_df)

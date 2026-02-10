@@ -262,6 +262,15 @@ class TelegramNotifier:
 # ============================================================================
 
 class SupabaseManager:
+    """[v9.9.9] Cloud Memory Engine with institutional persistence."""
+    
+    @staticmethod
+    def to_python_type(val):
+        """Convert numpy/pandas types to JSON-serializable Python types."""
+        if val is None: return None
+        if hasattr(val, 'item'): return val.item()
+        if isinstance(val, (int, float, str, bool)): return val
+        return str(val)
     """Cloud Memory with Dynamic Schema Resilience."""
     _instance = None
     def __new__(cls):
@@ -400,15 +409,16 @@ class SupabaseManager:
         self.queue.put(("intent", data))
 
     def log_outcome(self, signal_id: str, outcome: str):
-        with self.seq_lock: self.seq_id += 1
-        data = {"signal_id": signal_id, "timestamp": datetime.now().isoformat(), "seq_id": self.seq_id, "state": "OUTCOME", "value": outcome}
-        self.queue.put(("outcome", data))
+        """[v10.2] Outcome logging now uses UPDATE to avoid null-symbol constraints in schema."""
+        data = {"signal_id": signal_id, "state": "OUTCOME", "value": outcome, "timestamp": datetime.now().isoformat()}
+        self.queue.put(("update", data))
 
     def update_signal_state(self, signal_id: str, state: str, value: Any = None):
         """Update an existing signal record instead of inserting a new row."""
         data = {"signal_id": signal_id, "state": state, "timestamp": datetime.now().isoformat()}
         if value is not None:
-            data["value"] = value
+            data["value"] = self.to_python_type(value)
+        # [v10.2] Ensure the state update is queued for async processing
         self.queue.put(("update", data))
 
     def log_snapshot(self, signal_data: Dict, outcome: int, stage: int = 1, efficacy: Optional[int] = None, asset_class: AssetClass = AssetClass.NSE):
@@ -521,6 +531,24 @@ class DatabaseManager:
         """Proxies outcome logging to Cloud Memory."""
         self.cloud_db.log_outcome(signal_id, outcome)
 
+    def update_signal_state(self, signal_id: str, state: str, value: Any = None):
+        """Proxies state updates to Cloud Memory."""
+        self.cloud_db.update_signal_state(signal_id, state, value)
+
+    def log_signal_tracking(self, outcome):
+        """[v10.1] Standardize tracking start in cloud ledger."""
+        self.update_signal_state(outcome.signal_id, state="MONITORING")
+
+    def log_signal_outcome(self, outcome):
+        """[v10.1] Proxy final result and update learning snapshots."""
+        self.update_signal_state(outcome.signal_id, state="OUTCOME", value=outcome.outcome)
+        # Detailed snapshot for Brain evolution
+        self.cloud_db.log_snapshot(
+            signal_data={'decision': outcome.outcome},
+            outcome=1 if outcome.outcome == "WIN" else 0,
+            asset_class=getattr(outcome, 'asset_class', AssetClass.NSE)
+        )
+
     def get_accuracy_report(self) -> Dict:
         return self.cloud_db.get_accuracy_report()
 
@@ -536,45 +564,34 @@ class DatabaseManager:
             signal_data: Comprehensive signal dictionary with all metadata
         """
         try:
-            # Helper to convert numpy/pandas types to Python native types
-            def to_python_type(val):
-                """Convert numpy/pandas types to JSON-serializable Python types."""
-                if val is None:
-                    return None
-                if hasattr(val, 'item'):  # numpy scalar
-                    return val.item()
-                if isinstance(val, (int, float, str, bool)):
-                    return val
-                return str(val)  # fallback for unknown types
-            
             # Format for Supabase with type conversion
             formatted_signal = {
                 'signal_id': signal_data.get('signal_id'),
                 'symbol': signal_data.get('symbol'),
-                'option_type': signal_data.get('action'),  # Map action -> option_type for schema compatibility
-                'entry_price': to_python_type(signal_data.get('entry_price')),
-                'stop_loss': to_python_type(signal_data.get('stop_loss')),
-                'target_1': to_python_type(signal_data.get('target_1')),
-                'target_2': to_python_type(signal_data.get('target_2')),
+                'option_type': signal_data.get('action'),
+                'entry_price': self.cloud_db.to_python_type(signal_data.get('entry_price')),
+                'stop_loss': self.cloud_db.to_python_type(signal_data.get('stop_loss')),
+                'target_1': self.cloud_db.to_python_type(signal_data.get('target_1')),
+                'target_2': self.cloud_db.to_python_type(signal_data.get('target_2')),
                 
                 # Brain scores
-                'confluence': to_python_type(signal_data.get('confluence')),
-                'xgb_score': to_python_type(signal_data.get('xgb_score')),
-                'rl_score': to_python_type(signal_data.get('rl_score')),
-                'smc_score': to_python_type(signal_data.get('smc_score')),
+                'confluence': self.cloud_db.to_python_type(signal_data.get('confluence')),
+                'xgb_score': self.cloud_db.to_python_type(signal_data.get('xgb_score')),
+                'rl_score': self.cloud_db.to_python_type(signal_data.get('rl_score')),
+                'smc_score': self.cloud_db.to_python_type(signal_data.get('smc_score')),
                 
                 # Market context
                 'regime': signal_data.get('regime'),
-                'vix': to_python_type(signal_data.get('vix')),
-                'volatility': to_python_type(signal_data.get('volatility')),
-                'volume': to_python_type(signal_data.get('volume')),
+                'vix': self.cloud_db.to_python_type(signal_data.get('vix')),
+                'volatility': self.cloud_db.to_python_type(signal_data.get('volatility')),
+                'volume': self.cloud_db.to_python_type(signal_data.get('volume')),
                 
                 # S/R data (as JSON)
                 'sr_data': json.dumps(signal_data.get('sr_data')) if signal_data.get('sr_data') else None,
                 
                 # Metadata
                 'state': signal_data.get('state', 'ACTIVE'),
-                'asset_class': signal_data.get('asset_class', AssetClass.NSE), # [v15.0]
+                'asset_class': signal_data.get('asset_class', AssetClass.NSE),
                 'generated_at': signal_data.get('generated_at')
             }
             
