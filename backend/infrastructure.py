@@ -16,7 +16,7 @@ from datetime import datetime, timezone, timedelta
 # import pandas as pd (Moved to local scope)
 from supabase import create_client, Client
 from dotenv import load_dotenv
-from models_v3 import TradeSignal
+from models_v3 import TradeSignal, AssetClass
 from config import config
 
 class DataHealthError(Exception):

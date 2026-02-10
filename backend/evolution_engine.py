@@ -4,8 +4,8 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from infrastructure import SupabaseManager
-# from brain_engine_enhanced import EnhancedBrainEngine
-from brain_unified import UnifiedBrainEngine, AssetClass
+from brain_unified import UnifiedBrainEngine
+from models_v3 import AssetClass
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("evolution_engine")
