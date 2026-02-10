@@ -29,7 +29,7 @@ logger = logging.getLogger("brain_unified")
 @dataclass
 class BrainConfig:
     """Brain configuration parameters."""
-    threshold: float = 0.60  # [v13.0.9] Lowered from 0.65 for sideways market adaptability
+    threshold: float = 0.55  # [v14.2.0] Lowered from 0.60 for sideways market adaptability
     xgboost_weight: float = 0.40
     rl_weight: float = 0.30
     smc_weight: float = 0.30

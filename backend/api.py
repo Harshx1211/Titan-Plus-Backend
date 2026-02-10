@@ -876,7 +876,7 @@ def run_engine_loop():
                             score=rec.get('confluence', 0.0),  # Map confluence -> score
                             is_live=True
                         )
-                        live_state.active_signals.append(recovered_sig)
+                        live_state.add_signal(recovered_sig)
                         logger.info(f"STATE: Hyper-Resilience: Recovered active trade for {sym} (ID: {rec.get('signal_id')})")
                     except Exception as parse_err:
                         logger.warning(f"STATE: Failed to parse recovered signal for {sym}: {parse_err}")
@@ -1296,17 +1296,7 @@ def run_engine_loop():
                     )
                     for t in thoughts: live_state.add_thought("INFERENCE", f"[{symbol}] {t}")
                     
-                    # [v13.0.10] Process approved signals through notification pipeline
-                    if decision and isinstance(decision, dict) and decision.get('decision') == 'APPROVE':
-                        try:
-                            core.signal_notifier.process_approved_signal(
-                                decision=decision,
-                                symbol=symbol,
-                                market_data=market_data_dict,
-                                ohlcv_df=hist_df
-                            )
-                        except Exception as sig_err:
-                            logger.error(f"Signal notification failed for {symbol}: {sig_err}")
+                    # [v13.0.10] Signal Notifier logic moved after Opportunity Switch check (Line 1378)
                     
                     # Extract decision_id for legacy compatibility
                     decision_id = decision.get('decision_id', 'ERR') if isinstance(decision, dict) else decision
@@ -1360,7 +1350,9 @@ def run_engine_loop():
                             # 2. Current trade is PROFITABLE (p_delta > 0) [User Requirement]
                             if p_delta > 0 and pattern_results["score"] > (live_signal.score * 1.15):
                                 # Exit current trade before entering new one
-                                live_signal.is_live = False
+                                with live_state._lock:
+                                    live_signal.is_live = False
+                                
                                 signal_data = live_signal.dict()
                                 signal_data['pnl'] = p_delta
                                 
@@ -1371,8 +1363,16 @@ def run_engine_loop():
                                     f"💰 Taking Profit on {live_signal.symbol} (+{p_delta:.2f}) to capture 1.15x stronger edge in {symbol}."
                                 )
                                 core.db.log_outcome(live_signal.decision_id, "SWITCH_EXIT_PROFIT")
+                                
+                                # Set a flag to indicate this is a swap for the new signal
+                                is_swap_entry = True
+                                swapped_from_id = live_signal.decision_id
+                                live_state.market_message = f"SWAPPING: {live_signal.symbol} -> {symbol} (Edge Upgrade)"
                             else:
                                 continue
+                        else:
+                            is_swap_entry = False
+                            swapped_from_id = None
 
                         # [Wave 3] Double-Entry Deduplication Lock
                         with live_state.seen_ids_lock:
@@ -1488,12 +1488,27 @@ def run_engine_loop():
                             new_signal.is_auto_approved = True
                             core.db.log_outcome(new_signal.decision_id, "HUMAN_APPROVED")
                             
-                            live_state.active_signals.append(new_signal)
+                            if locals().get('is_swap_entry'):
+                                new_signal.reasoning += f" | ⚡ SWAP from {swapped_from_id}"
+                                new_signal.is_swap = True # Extra field
+                                decision['is_swap'] = True
+                                decision['swapped_from'] = swapped_from_id
                             
-                            # Log intent to Signal Ledger
-                            core.db.log_intent(new_signal.dict())
+                            live_state.add_signal(new_signal)
                             
-                            core.telegram_notifier.send_signal(new_signal.dict(), dashboard_url=APP_CONFIG.get("DASHBOARD_URL", ""))
+                            # [v13.0.10] Use unified SignalNotifier for DB and Telegram
+                            try:
+                                core.signal_notifier.process_approved_signal(
+                                    decision=decision,
+                                    symbol=symbol,
+                                    market_data=market_data_dict,
+                                    ohlcv_df=hist_df
+                                )
+                            except Exception as sig_err:
+                                logger.error(f"Signal notification failed for {symbol}: {sig_err}")
+                                # Fallback to legacy logging/notification if notifier fails
+                                core.db.log_intent(new_signal.dict())
+                                core.telegram_notifier.send_signal(new_signal.dict(), dashboard_url=APP_CONFIG.get("DASHBOARD_URL", ""))
 
                     # [v9.9.9] Modular Management: Priority-Based Exit Evaluation
                     for sig in live_state.active_signals:
