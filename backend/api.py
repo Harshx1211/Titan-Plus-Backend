@@ -1311,9 +1311,9 @@ def run_engine_loop():
                     
                     if pattern_results["score"] > APP_CONFIG["PATTERN_SCORE_THRESHOLD_HIGH"] and applied_boost > APP_CONFIG["PATTERN_SCORE_THRESHOLD_HIGH"]:
                         if live_state.sector_synergy > 1.0: pattern_results["score"] *= 1.1
-                    elif pattern_results["score"] <= APP_CONFIG["PATTERN_SCORE_THRESHOLD_HIGH"] and confidence_boost > 0.60:
-                        # [v11.0.0] BRAIN_PULL Hardening: Multiplier instead of override
-                        pattern_results["score"] = min(0.85, pattern_results["score"] * 1.5) 
+                    elif pattern_results["score"] <= APP_CONFIG["PATTERN_SCORE_THRESHOLD_HIGH"] and confidence_boost >= config.DECISION_THRESHOLD:
+                        # [v14.2.2] BRAIN_PULL: Neural consensus overrides weak technical scores if a pattern exists
+                        pattern_results["score"] = 1.0 # Allow Brain (applied_boost) to be final arbiter
                         pattern_results["patterns"] = pattern_results.get("patterns", []) + ["BRAIN_PULL"]
                     
                     pattern_results["score"] *= applied_boost
