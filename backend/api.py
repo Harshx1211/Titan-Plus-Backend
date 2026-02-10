@@ -1315,6 +1315,7 @@ def run_engine_loop():
                         # [v14.2.2] BRAIN_PULL: Neural consensus overrides weak technical scores if a pattern exists
                         pattern_results["score"] = 1.0 # Allow Brain (applied_boost) to be final arbiter
                         pattern_results["patterns"] = pattern_results.get("patterns", []) + ["BRAIN_PULL"]
+                        live_state.add_thought("ANALYSIS", f"[{symbol}] BRAIN_PULL Triggered: Confidence ({confidence_boost:.2f}) overriding weak technical score ({pattern_results['score']:.2f})")
                     
                     pattern_results["score"] *= applied_boost
 
@@ -1378,16 +1379,25 @@ def run_engine_loop():
                         # [Wave 3] Double-Entry Deduplication Lock
                         with live_state.seen_ids_lock:
                             if decision_id in live_state.seen_signal_ids:
+                                live_state.add_thought("DEDUPE", f"[{symbol}] Skipping Approval: Signal {decision_id} was already processed in this session.")
                                 continue
                             live_state.seen_signal_ids.add(decision_id)
                                 
                         # Correlated Risk Check: Pass currently active symbols
                         active_syms = [s.symbol for s in live_state.active_signals if s.is_live]
                         
-                        if core.risk_engine.is_blown_today(): continue
+                        if core.risk_engine.is_blown_today(): 
+                            live_state.add_thought("RISK", f"[{symbol}] VETO: Daily Loss Limit or Max Drawdown hit. Ceasing execution for protection.")
+                            continue
 
-                        if signal_type == "BULLISH" and any(abs(market_data.spot_price - r) < 25 for r in live_state.resistances.get(symbol, [])): continue
-                        if signal_type == "BEARISH" and any(abs(market_data.spot_price - s) < 25 for s in live_state.supports.get(symbol, [])): continue
+                        if signal_type == "BULLISH" and any(abs(market_data.spot_price - r) < 25 for r in live_state.resistances.get(symbol, [])):
+                            res_level = next(r for r in live_state.resistances[symbol] if abs(market_data.spot_price - r) < 25)
+                            live_state.add_thought("STRUCTURE", f"[{symbol}] BULLISH VETO: Price too close to identified resistance at {res_level:.2f}.")
+                            continue
+                        if signal_type == "BEARISH" and any(abs(market_data.spot_price - s) < 25 for s in live_state.supports.get(symbol, [])):
+                            sup_level = next(s for s in live_state.supports[symbol] if abs(market_data.spot_price - s) < 25)
+                            live_state.add_thought("STRUCTURE", f"[{symbol}] BEARISH VETO: Price too close to identified support at {sup_level:.2f}.")
+                            continue
 
                         # [Phase 5] Precision Levels & Smart Stops (Order Blocks, Fractals, OI Walls)
                         precision_levels = tech_engine.calculate_precision_levels(hist_df, market_data.spot_price, chain_df)
