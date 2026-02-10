@@ -936,7 +936,7 @@ def run_engine_loop():
                     
                     # [v14.0] Seed persistence data for core symbols
                     if current_time.minute == 0 and current_time.second < 10:
-                        for sym in live_state.symbols[:3]: # NIFTY, BANKNIFTY, FINNIFTY
+                        for sym in live_state.symbols: # Core 3: NIFTY, BANKNIFTY, SENSEX
                             try:
                                 m_data = data_provider.get_market_snapshot(sym)
                                 if m_data:
@@ -1585,8 +1585,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v14.1.0_NSE]
-LOGIC_VERSION = "v14.1.0_NSE"
+# Startup Version Identifier [v14.1.1_NSE]
+LOGIC_VERSION = "v14.1.1_NSE"
 
 @app.on_event("startup")
 async def startup_event():

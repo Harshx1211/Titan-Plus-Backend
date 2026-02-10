@@ -301,7 +301,7 @@ class OutcomeTracker:
             BANKNIFTY28FEB2450000PE -> BANKNIFTY
             SENSEX28FEB2483000CE -> SENSEX
         """
-        known_symbols = ["BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTY", "SENSEX"]
+        known_symbols = ["BANKNIFTY", "NIFTY", "SENSEX"]
         
         for sym in known_symbols:
             if symbol.startswith(sym):
