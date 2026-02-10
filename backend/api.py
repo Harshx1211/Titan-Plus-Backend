@@ -862,7 +862,8 @@ def run_engine_loop():
 
         # [v9.9.9] Nuclear Signal Recovery (Container Resilience)
         try:
-            records = db.cloud_db.get_active_signals()
+            # [v15.3.2] Respect MAX_OPEN_POSITIONS during recovery
+            records = db.cloud_db.get_active_signals(limit=APP_CONFIG.get("MAX_OPEN_POSITIONS", 1))
             for rec in records:
                 sym = rec.get('symbol')
                 if sym and sym in live_state.symbols:
@@ -1689,8 +1690,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v15.3.1_HELIOS]
-LOGIC_VERSION = "v15.3.1_HELIOS"
+# Startup Version Identifier [v15.3.2_HELIOS]
+LOGIC_VERSION = "v15.3.2_HELIOS"
 
 @app.on_event("startup")
 async def startup_event():

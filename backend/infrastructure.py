@@ -463,22 +463,47 @@ class SupabaseManager:
             return res.data or []
         except: return []
 
-    def get_active_signals(self) -> List[Dict]:
-        """Recovers signals that haven't been CLOSED or given an OUTCOME."""
+    def get_active_signals(self, limit: int = 100) -> List[Dict]:
+        """Recovers signals that haven't been CLOSED or given an OUTCOME.
+        [v15.3.2] Added 24h filter and explicit limit to prevent ghost trade flooding.
+        """
         try:
-            # Fetch last 100 signals and filter locally for simplicity/resilience
+            # 1. Fetch recent signals (last 100)
             res = self.supabase.table("signal_ledger").select("*").order("created_at", desc=True).limit(100).execute()
             if not res.data: return []
             
-            # Map by ID to find ones without OUTCOME state
-            id_map = {}
+            # 2. Filter for 24h freshness to avoid stale "ghost" signals from crashes
+            now_utc = datetime.now(timezone.utc)
+            cutoff = now_utc - timedelta(hours=24)
+            
+            recent_data = []
             for row in res.data:
+                try:
+                    ts_str = row.get('created_at', row.get('generated_at', ''))
+                    if ts_str:
+                        ts = datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
+                        if ts > cutoff:
+                            recent_data.append(row)
+                except: continue
+
+            if not recent_data: return []
+
+            # 3. Map by ID to find ones without OUTCOME/CLOSED state
+            id_map = {}
+            for row in recent_data:
                 sid = row['signal_id']
                 if sid not in id_map: id_map[sid] = []
                 id_map[sid].append(row['state'])
             
             active_ids = [sid for sid, states in id_map.items() if "OUTCOME" not in states and "CLOSED" not in states]
-            return [row for row in res.data if row['signal_id'] in active_ids and row['state'] in ["INTENT", "PENDING", "ACTIVE"]]
+            
+            # 4. Filter for active records and apply limit
+            active_rows = [row for row in recent_data if row['signal_id'] in active_ids and row['state'] in ["INTENT", "PENDING", "ACTIVE"]]
+            
+            # Sort by timestamp descending and apply limit
+            active_rows.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+            return active_rows[:limit]
+
         except Exception as e:
             logging.getLogger("infrastructure").error(f"SUPABASE: Signal recovery failed: {e}")
             return []
@@ -552,8 +577,8 @@ class DatabaseManager:
     def get_accuracy_report(self) -> Dict:
         return self.cloud_db.get_accuracy_report()
 
-    def get_active_signals(self) -> List[Dict]:
-        return self.cloud_db.get_active_signals()
+    def get_active_signals(self, limit: int = 100) -> List[Dict]:
+        return self.cloud_db.get_active_signals(limit=limit)
     
     
     def insert_signal(self, signal_data: Dict):
