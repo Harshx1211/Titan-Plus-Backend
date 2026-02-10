@@ -464,9 +464,14 @@ class UnifiedBrainEngine:
         
         # Low liquidity veto
         if self.config.veto_low_liquidity:
-            oi = market_data.get('oi', 0)
-            if oi < self.config.oi_min:
-                vetoes.append(f"Low OI: {oi} < {self.config.oi_min}")
+            symbol = market_data.get('symbol', 'UNKNOWN')
+            # [v14.2.0] Skip OI check for core indices as they naturally have 0 OI
+            # Only apply liquidity vetoes to derivatives (Futures/Options)
+            is_index = any(idx in symbol for idx in ["NIFTY", "BANKNIFTY", "SENSEX"]) 
+            if not is_index:
+                oi = market_data.get('oi', 0)
+                if oi < self.config.oi_min:
+                    vetoes.append(f"Low OI: {oi} < {self.config.oi_min}")
         
         # Extreme GEX veto
         if self.config.veto_extreme_gex:

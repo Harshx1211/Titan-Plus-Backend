@@ -1044,8 +1044,8 @@ def run_engine_loop():
                             spot_price=ws_tick['lp'], 
                             # [v9.9.9] Audit Fix: Use Proportional Basis Fallback (0.049%) to stay under spread veto
                             future_price=ws_tick.get('future_lp', ws_tick['lp'] * 1.00049),
-                            # [Institutional Patch] Use Future's OI for index symbols
-                            oi=ws_tick.get('oi', 1000000 if symbol in ["NIFTY", "BANKNIFTY", "SENSEX"] else 0), 
+                            # [Institutional Patch] Use Future's OI for index symbols. Fallback to 1M if missing/zero.
+                            oi=ws_tick.get('oi') if ws_tick.get('oi', 0) > 0 else (1000000 if symbol in ["NIFTY", "BANKNIFTY", "SENSEX"] else 0), 
                             pcr=0.95, 
                             timestamp=datetime.fromtimestamp(ws_tick.get('timestamp', time.time()), tz=IST), 
                             source="SHOONYA_WS"
