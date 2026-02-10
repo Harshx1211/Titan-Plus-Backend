@@ -706,7 +706,8 @@ def history_refresher_loop(data_provider, state: LiveState, sentinel):
                 active_db = core.db.get_active_signals()
                 active_mem_ids = [s.decision_id for s in state.active_signals]
                 for db_sig in active_db:
-                    if db_sig['signal_id'] not in active_mem_ids:
+                    sym = db_sig.get('symbol')
+                    if sym in state.symbols and db_sig['signal_id'] not in active_mem_ids:
                         logger.warning(f"WATCHDOG: Ghost signal {db_sig['signal_id']} found in DB but not memory. Synchronizing...")
                         # Recovery logic could be added here if needed
 
@@ -827,7 +828,7 @@ def run_engine_loop():
             for rec in records:
                 sym = rec.get('symbol')
                 if sym and sym in live_state.symbols:
-                    # [v14.0.2] IGNORE stale symbols from previous versions (e.g. Crypto)
+                    # [v14.0.3] IGNORE stale symbols from previous versions (e.g. Crypto)
                     # [v9.9.9] Reconstruct TradeSignal object from DB record
                     # We map the dictionary keys to Pydantic model fields
                     try:
@@ -1584,8 +1585,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v14.0.2_NSE]
-LOGIC_VERSION = "v14.0.2_NSE"
+# Startup Version Identifier [v14.0.3_NSE]
+LOGIC_VERSION = "v14.0.3_NSE"
 
 @app.on_event("startup")
 async def startup_event():
