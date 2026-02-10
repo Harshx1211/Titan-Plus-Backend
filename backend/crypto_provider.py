@@ -1,6 +1,7 @@
 import requests
 import pandas as pd
 import time
+import threading
 import logging
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
@@ -25,6 +26,31 @@ class CryptoProvider:
             "User-Agent": "Titan-Plus-Institutional/12.6.4"
         })
         self.use_kucoin = False # Global fallback trigger
+        
+        # [v15.0] USD-INR Converter State
+        self.usd_to_inr = 83.0 # Static fallback
+        self.rate_lock = threading.Lock()
+        threading.Thread(target=self._rate_refresher, daemon=True).start()
+
+    def _rate_refresher(self):
+        """[v15.0] Periodic background refresh of USD-INR exchange rate."""
+        while True:
+            try:
+                # Use a reliable public API (No Key Required for v4)
+                res = requests.get("https://api.exchangerate-api.com/v4/latest/USD", timeout=10)
+                if res.status_code == 200:
+                    data = res.json()
+                    new_rate = data.get('rates', {}).get('INR', 83.0)
+                    with self.rate_lock:
+                        self.usd_to_inr = float(new_rate)
+                    logger.info(f"FOREX: Refreshed USD-INR Rate: {self.usd_to_inr:.2f}")
+                else:
+                    logger.warning(f"FOREX: Failed to fetch rate, using fallback {self.usd_to_inr}")
+            except Exception as e:
+                logger.error(f"FOREX: Rate refresh error: {e}")
+            
+            # Refresh every 4 hours (Forex is slow moving)
+            time.sleep(14400)
 
     def get_market_snapshot(self, symbol: str) -> Optional[MarketData]:
         """Fetch real-time price with automatic multi-source fallback."""
@@ -55,6 +81,7 @@ class CryptoProvider:
                 symbol=symbol,
                 spot_price=price,
                 future_price=price,
+                inr_price=price * self.usd_to_inr,
                 oi=1000000, 
                 pcr=1.0, 
                 timestamp=datetime.now(),
@@ -94,6 +121,7 @@ class CryptoProvider:
                 symbol=symbol,
                 spot_price=price,
                 future_price=price,
+                inr_price=price * self.usd_to_inr,
                 oi=1000000,
                 pcr=1.0,
                 timestamp=datetime.now(),

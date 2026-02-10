@@ -33,6 +33,7 @@ interface TradeSignal {
   mae?: number;
   confidence_val?: number;
   score?: number;
+  asset_class?: 'NSE' | 'GLOBAL';
 }
 
 interface SystemState {
@@ -165,7 +166,7 @@ const SignalCard = ({ signal, onExecute }: { signal: TradeSignal, onExecute: (id
             <div key={i} className="bg-black/20 rounded-xl sm:rounded-[1.5rem] p-3 sm:p-6 border border-white/5 hover:border-white/10 transition-all duration-300 group/item">
               <p className="text-[8px] sm:text-[9px] font-black text-slate-500 uppercase tracking-[0.15em] sm:tracking-[0.2em] mb-1 sm:mb-3 group-hover/item:text-slate-400 transition-colors">{d.label}</p>
               <p className={`text-lg sm:text-2xl font-black font-mono tracking-tighter ${d.color}`}>
-                {i < 3 ? `₹${d.val.toLocaleString()}` : d.val}
+                {i < 3 ? (signal.asset_class === 'GLOBAL' ? `$${d.val.toLocaleString()}` : `₹${d.val.toLocaleString()}`) : d.val}
               </p>
             </div>
           ))}
@@ -292,7 +293,7 @@ export default function TitanDashboard() {
             <div className="space-y-1 sm:space-y-3">
               <h1 className="text-xl sm:text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-500 tracking-tighter uppercase">
                 Titan<span className="text-white">Plus</span>
-                <span className="ml-2 text-[8px] sm:text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 sm:py-0.5 rounded border border-emerald-500/20 align-top tracking-widest font-mono">v14.0.4_NSE</span>
+                <span className="ml-2 text-[8px] sm:text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 sm:py-0.5 rounded border border-emerald-500/20 align-top tracking-widest font-mono">v15.0_HELIOS</span>
               </h1>
               <div className="flex items-center gap-2 sm:gap-5">
                 <span className="text-[10px] sm:text-institutional text-slate-500 opacity-60">Titan Institutional</span>

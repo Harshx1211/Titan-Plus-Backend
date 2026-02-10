@@ -4,8 +4,8 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from infrastructure import SupabaseManager
-# from brain_engine import BrainEngine
-from brain_engine_enhanced import EnhancedBrainEngine
+# from brain_engine_enhanced import EnhancedBrainEngine
+from brain_unified import UnifiedBrainEngine, AssetClass
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("evolution_engine")
@@ -53,21 +53,22 @@ class EvolutionEngine:
     [v9.0.0] The Evolutionary Organism (Advisory Mode).
     Uses Feature Reputation (Bounded) instead of permanent mutation.
     """
-    def __init__(self, brain: EnhancedBrainEngine):
+    def __init__(self, brain: UnifiedBrainEngine):
         self.db = SupabaseManager()
         self.brain = brain
-        self.governor = MetaGovernor()
+        # MetaGovernor is now part of the brain instance
+        self.governor = brain.governor
         # Reputation decays towards 1.0 (Half-life logic)
         self.reputation_decay = 0.95 
 
-    def evolve_session(self, date_str: Optional[str] = None):
+    def evolve_session(self, date_str: Optional[str] = None, asset_class: AssetClass = AssetClass.NSE):
         """
         Runs the post-session post-mortem and updates Feature Reputation.
         """
         if not date_str:
             date_str = (datetime.now() - timedelta(hours=5)).strftime("%Y-%m-%d")
 
-        logger.info(f"EVOLUTION: Starting Advisory Audit for {date_str}...")
+        logger.info(f"EVOLUTION [{asset_class}]: Starting Advisory Audit for {date_str}...")
         
         # 1. Fetch History (Snapshots)
         history = self.db.get_snapshots(limit=500)
@@ -87,7 +88,12 @@ class EvolutionEngine:
 
         df = pd.DataFrame(cleaned_history)
         df['timestamp'] = pd.to_datetime(df['timestamp'])
-        session_df = df[df['timestamp'].dt.strftime('%Y-%m-%d') == date_str]
+        
+        # [v15.0] Partition by Date AND Asset Class
+        session_df = df[
+            (df['timestamp'].dt.strftime('%Y-%m-%d') == date_str) & 
+            (df.get('asset_class', AssetClass.NSE) == asset_class)
+        ]
         
         if session_df.empty: 
             logger.info(f"EVOLUTION: No snapshot data found for {date_str}. Skipping.")
@@ -159,10 +165,12 @@ class EvolutionEngine:
         missed_alpha_pct = (missed / total_opps * 100) if total_opps > 0 else 0.0
         
         metrics = {"win_rate": win_rate, "missed_alpha": missed_alpha_pct, "trades": total_trades}
-        new_threshold = self.governor.audit_threshold_proposal(0.75, metrics if win_rate is not None else {"win_rate": 50.0})
-        if new_threshold > 0.75:
-             logger.warning(f"GOVERNOR DECREE: System needs tightening to {new_threshold}")
-             self.brain.update_threshold(new_threshold)
+        current_threshold = self.brain.decision_threshold.get(asset_class, 0.75)
+        new_threshold = self.governor.audit_threshold_proposal(current_threshold, metrics if win_rate is not None else {"win_rate": 50.0}, asset_class=asset_class)
+        
+        if new_threshold != current_threshold:
+             logger.warning(f"GOVERNOR DECREE [{asset_class}]: Adjusted threshold to {new_threshold}")
+             self.brain.decision_threshold[asset_class] = new_threshold
 
         # Save State
         self.brain.save_state()
@@ -175,7 +183,8 @@ class EvolutionEngine:
         }
 
 if __name__ == "__main__":
-    from brain_engine_enhanced import EnhancedBrainEngine
-    brain = EnhancedBrainEngine()
+    from brain_unified import UnifiedBrainEngine
+    brain = UnifiedBrainEngine()
     evolver = EvolutionEngine(brain)
-    evolver.evolve_session()
+    evolver.evolve_session(asset_class=AssetClass.NSE)
+    evolver.evolve_session(asset_class=AssetClass.GLOBAL)

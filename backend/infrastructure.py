@@ -411,7 +411,7 @@ class SupabaseManager:
             data["value"] = value
         self.queue.put(("update", data))
 
-    def log_snapshot(self, signal_data: Dict, outcome: int, stage: int = 1, efficacy: Optional[int] = None):
+    def log_snapshot(self, signal_data: Dict, outcome: int, stage: int = 1, efficacy: Optional[int] = None, asset_class: AssetClass = AssetClass.NSE):
         with self.seq_lock: self.seq_id += 1
         features = signal_data.get("features", {})
         
@@ -423,6 +423,7 @@ class SupabaseManager:
             "outcome": outcome,
             "efficacy": efficacy,
             "stage": stage,
+            "asset_class": asset_class,
             "regime": signal_data.get("regime", "UNCERTAIN")
         }
         self.queue.put(("snapshot", data))
@@ -573,6 +574,7 @@ class DatabaseManager:
                 
                 # Metadata
                 'state': signal_data.get('state', 'ACTIVE'),
+                'asset_class': signal_data.get('asset_class', AssetClass.NSE), # [v15.0]
                 'generated_at': signal_data.get('generated_at')
             }
             

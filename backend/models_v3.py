@@ -65,6 +65,12 @@ class DivergenceType(str, Enum):
     HARD = "HARD"
 
 
+class AssetClass(str, Enum):
+    """Asset class identifier for isolation"""
+    NSE = "NSE"
+    GLOBAL = "GLOBAL"
+
+
 class SignalConfidence(str, Enum):
     """Trading signal confidence level"""
     LOW = "LOW"
@@ -85,6 +91,7 @@ class MarketData(BaseModel):
     oi: float = 0.0
     pcr: float = 0.95
     timestamp: datetime
+    inr_price: Optional[float] = None # [v15.0] New INR Display field
     source: MarketSource = MarketSource.FALLBACK
     
     class Config:
@@ -322,6 +329,7 @@ class TradeSignal(BaseModel):
     reasoning: Optional[str] = None
     decision_id: str
     timestamp: datetime
+    asset_class: AssetClass = AssetClass.NSE  # Default to NSE for safety
     divergence: DivergenceType = DivergenceType.NONE
     is_live: bool = True
     mfe: float = 0.0
@@ -380,6 +388,7 @@ class TradeSnapshot(BaseModel):
     veto_reasons: List[str]
     efficacy: Optional[int] = None  # 1=win, 0=loss, None=pending
     pnl: Optional[float] = None
+    asset_class: AssetClass = AssetClass.NSE # [v15.0] For Learning Isolation
     timestamp: datetime
     
     class Config:

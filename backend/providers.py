@@ -417,6 +417,8 @@ class DataProvider:
         self.circuit_groww = CircuitBreaker("GROWW", threshold=3, recovery_timeout=180)
         self.bot = None
         self.use_groww = False
+        from crypto_provider import CryptoProvider
+        self.crypto_provider = CryptoProvider() # [v15.0]
         if self.groww_key and self.groww_secret:
             try:
                 token = GrowwAPI.get_access_token(api_key=self.groww_key, secret=self.groww_secret)
@@ -643,6 +645,14 @@ class DataProvider:
                 # Found data in Shoonya, proceed
                 logger.info(f"DATA_FETCH: Successfully retrieved {len(raw)} candles for {symbol} from Shoonya")
                 pass
+        
+        # [v15.0] Delegate to CryptoProvider for Global Assets
+        if "USDT" in symbol:
+            logger.info(f"DATA_FETCH: Delegating {symbol} to CryptoProvider")
+            df = self.crypto_provider.get_history(symbol, interval=f"{interval}minute")
+            if df is not None:
+                # Format to match internal requirements if needed
+                return df
         
         # Priority 2: Groww Fallback (if Shoonya is empty or unauth)
         if not raw and self.use_groww and self.bot:

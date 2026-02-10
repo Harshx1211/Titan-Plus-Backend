@@ -22,6 +22,7 @@ import numpy as np
 from typing import Dict, Tuple, Optional, List
 from datetime import datetime
 from dataclasses import dataclass
+from models_v3 import AssetClass
 
 logger = logging.getLogger("brain_unified")
 
@@ -67,15 +68,16 @@ class MetaGovernor:
     def __init__(self):
         self.min_win_rate = 40.0
         self.max_missed_alpha = 50.0
-        self.lock_status = "ACTIVE"  # ACTIVE, STRICT, OVERRIDE
+        self.lock_status = {AssetClass.NSE: "ACTIVE", AssetClass.GLOBAL: "ACTIVE"}
     
     def audit_threshold_proposal(
         self, 
         current_threshold: float, 
-        performance_metrics: Dict
+        performance_metrics: Dict,
+        asset_class: AssetClass = AssetClass.NSE
     ) -> float:
         """
-        Evaluate whether to tighten or maintain threshold.
+        Evaluate whether to tighten or maintain threshold for a specific asset class.
         
         Returns:
             Approved threshold value
@@ -85,18 +87,18 @@ class MetaGovernor:
         
         # Rule 1: Auto-tighten on poor performance
         if win_rate < self.min_win_rate:
-            logger.warning(f"GOVERNOR: Win rate {win_rate}% critical. TIGHTENING threshold.")
-            self.lock_status = "STRICT"
+            logger.warning(f"GOVERNOR [{asset_class}]: Win rate {win_rate}% critical. TIGHTENING threshold.")
+            self.lock_status[asset_class] = "STRICT"
             return min(0.95, current_threshold + 0.05)
         
         # Rule 2: Controlled loosening (only if performance elite)
         if win_rate > 65.0 and missed_alpha > self.max_missed_alpha:
-            logger.info(f"GOVERNOR: Elite performance ({win_rate}%). Relaxing threshold slightly.")
+            logger.info(f"GOVERNOR [{asset_class}]: Elite performance ({win_rate}%). Relaxing threshold slightly.")
             return max(0.50, current_threshold - 0.01)
         
         # Rule 3: Block auto-loosening otherwise
         if missed_alpha > self.max_missed_alpha:
-            logger.info(f"GOVERNOR: High missed alpha ({missed_alpha}%). Loosening BLOCKED.")
+            logger.info(f"GOVERNOR [{asset_class}]: High missed alpha ({missed_alpha}%). Loosening BLOCKED.")
             return current_threshold
         
         return current_threshold
@@ -108,12 +110,16 @@ class UnifiedBrainEngine:
     """
     
     def __init__(self, config: Optional[BrainConfig] = None):
-        self.version = "12.6.5"
+        self.version = "12.7.0"  # [v15.0] Neural Isolation Upgrade
         self.config = config or BrainConfig()
         
         # State tracking
         self.feature_reputation = {feat: 1.0 for feat in self.config.features}
-        self.decision_threshold = self.config.threshold
+        # Thresholds per asset class
+        self.decision_threshold = {
+            AssetClass.NSE: self.config.threshold,
+            AssetClass.GLOBAL: self.config.threshold
+        }
         self.governor = MetaGovernor()
         
         # Performance tracking
@@ -313,6 +319,7 @@ class UnifiedBrainEngine:
         market_data: Dict,
         regime: str,
         ohlcv_df=None,
+        asset_class: AssetClass = AssetClass.NSE,
         **kwargs
     ) -> Dict:
         """
@@ -347,8 +354,8 @@ class UnifiedBrainEngine:
         adjusted_features = self._apply_reputation(features)
         thoughts.append(f"Features adjusted by reputation")
         
-        # 2. Meta-vetoes (hard blocks)
-        veto_active, veto_reasons = self._check_vetoes(market_data, regime)
+        # 2. Meta-vetoes (hard blocks) - [v15.0] Asset Class Aware
+        veto_active, veto_reasons = self._check_vetoes(market_data, regime, asset_class)
         if veto_active:
             thoughts.extend([f"VETO: {r}" for r in veto_reasons])
             return self._blocked_decision(decision_id, veto_reasons, thoughts)
@@ -409,12 +416,13 @@ class UnifiedBrainEngine:
         )
         
         # 5. Governor threshold check
-        approved = final_probability > self.decision_threshold
+        current_threshold = self.decision_threshold.get(asset_class, self.config.threshold)
+        approved = final_probability > current_threshold
         
         if approved:
-            thoughts.append(f"✓ APPROVED: {final_probability:.3f} > {self.decision_threshold}")
+            thoughts.append(f"✓ APPROVED [{asset_class}]: {final_probability:.3f} > {current_threshold}")
         else:
-            thoughts.append(f"✗ BLOCKED: {final_probability:.3f} ≤ {self.decision_threshold}")
+            thoughts.append(f"✗ BLOCKED [{asset_class}]: {final_probability:.3f} ≤ {current_threshold}")
         
         # 6. Construct response
         return {
@@ -425,7 +433,8 @@ class UnifiedBrainEngine:
             'action': rl_action if approved else 'HOLD',
             'components': components,
             'weights': weights,
-            'threshold': self.decision_threshold,
+            'threshold': current_threshold,
+            'asset_class': asset_class,
             'vetoes': [],
             'thoughts': thoughts,
             'regime': regime,
@@ -443,41 +452,50 @@ class UnifiedBrainEngine:
                 adjusted[k] = v
         return adjusted
     
-    def _check_vetoes(self, market_data: Dict, regime: str) -> Tuple[bool, List[str]]:
-        """Check all meta-vetoes."""
+    def _check_vetoes(self, market_data: Dict, regime: str, asset_class: AssetClass = AssetClass.NSE) -> Tuple[bool, List[str]]:
+        """
+        Check all meta-vetoes.
+        [v15.0] Implements Neural Isolation: VIX and Basis only affect NSE.
+        """
         vetoes = []
         
-        # VIX spike veto
-        if self.config.veto_vix_spike:
+        # VIX spike veto (NSE ONLY)
+        if asset_class == AssetClass.NSE and self.config.veto_vix_spike:
             vix = market_data.get('vix', 15)
             if vix > self.config.vix_max:
-                vetoes.append(f"VIX too high: {vix:.1f} > {self.config.vix_max}")
+                vetoes.append(f"NSE VIX too high: {vix:.1f} > {self.config.vix_max}")
         
-        # Basis instability veto
-        if self.config.veto_basis_instability:
+        # Basis instability veto (NSE ONLY)
+        if asset_class == AssetClass.NSE and self.config.veto_basis_instability:
             spot = market_data.get('spot_price', 0)
             future = market_data.get('future_price', spot)
             if spot > 0:
                 basis = abs(future - spot) / spot
                 if basis > self.config.basis_max:
-                    vetoes.append(f"Basis unstable: {basis:.4f} > {self.config.basis_max}")
+                    vetoes.append(f"NSE Basis unstable: {basis:.4f} > {self.config.basis_max}")
         
         # Low liquidity veto
         if self.config.veto_low_liquidity:
             symbol = market_data.get('symbol', 'UNKNOWN')
-            # [v14.2.0] Skip OI check for core indices as they naturally have 0 OI
-            # Only apply liquidity vetoes to derivatives (Futures/Options)
+            # Skip OI check for core indices
             is_index = any(idx in symbol for idx in ["NIFTY", "BANKNIFTY", "SENSEX"]) 
+            
+            # [v15.0] Global crypto often has low 'official' OI on small pairs, 
+            # we allow bypass if it's GLOBAL and not a major pair.
+            is_major_crypto = any(m in symbol for m in ["BTC", "ETH", "SOL"])
+            
             if not is_index:
                 oi = market_data.get('oi', 0)
                 if oi < self.config.oi_min:
-                    vetoes.append(f"Low OI: {oi} < {self.config.oi_min}")
+                    # Allow non-major global assets to bypass OI check if needed, 
+                    # but for now keep it strict for stability.
+                    vetoes.append(f"Low Liquidity ({asset_class}): {oi} < {self.config.oi_min}")
         
-        # Extreme GEX veto
-        if self.config.veto_extreme_gex:
+        # Extreme GEX veto (NSE ONLY - GEX is an options market metric)
+        if asset_class == AssetClass.NSE and self.config.veto_extreme_gex:
             gex = market_data.get('gex', 0)
             if abs(gex) > self.config.gex_max:
-                vetoes.append(f"Extreme GEX: {abs(gex):.1f} > {self.config.gex_max}")
+                vetoes.append(f"NSE Extreme GEX: {abs(gex):.1f} > {self.config.gex_max}")
         
         return len(vetoes) > 0, vetoes
     
@@ -632,6 +650,7 @@ class UnifiedBrainEngine:
             'threshold': self.decision_threshold,
             'vetoes': reasons,
             'thoughts': thoughts,
+            'asset_class': AssetClass.NSE, # Default for blocked
             'timestamp': datetime.now().isoformat()
         }
     
@@ -655,32 +674,35 @@ class UnifiedBrainEngine:
                 self.feature_reputation[feature] = new_value
                 logger.info(f"Updated {feature} reputation: {current:.2f} → {new_value:.2f}")
     
-    def update_threshold(self, performance_metrics: Dict):
+    def update_threshold(self, performance_metrics: Dict, asset_class: AssetClass = AssetClass.NSE):
         """
         Update decision threshold via governor.
         
         Args:
             performance_metrics: Dict with 'win_rate', 'missed_alpha', etc.
+            asset_class: Target asset class for update
         """
+        current = self.decision_threshold.get(asset_class, self.config.threshold)
         new_threshold = self.governor.audit_threshold_proposal(
-            self.decision_threshold,
-            performance_metrics
+            current,
+            performance_metrics,
+            asset_class
         )
         
-        if new_threshold != self.decision_threshold:
+        if new_threshold != current:
             logger.info(
-                f"Threshold updated: {self.decision_threshold:.2f} → {new_threshold:.2f} "
-                f"(Governor: {self.governor.lock_status})"
+                f"Threshold [{asset_class}] updated: {current:.2f} → {new_threshold:.2f} "
+                f"(Governor: {self.governor.lock_status.get(asset_class)})"
             )
-            self.decision_threshold = new_threshold
+            self.decision_threshold[asset_class] = new_threshold
     
     def save_state(self):
         """Save brain state to disk."""
         state = {
             'version': self.version,
             'feature_reputation': self.feature_reputation,
-            'decision_threshold': self.decision_threshold,
-            'governor_status': self.governor.lock_status,
+            'decision_thresholds': {k.value: v for k, v in self.decision_threshold.items()},
+            'governor_status': {k.value: v for k, v in self.governor.lock_status.items()},
             'weights': {
                 'xgboost': self.config.xgboost_weight,
                 'rl': self.config.rl_weight,
@@ -709,17 +731,24 @@ class UnifiedBrainEngine:
             
             self.feature_reputation = state.get('feature_reputation', self.feature_reputation)
             
-            # [v13.0.7 CRITICAL FIX] Always use config threshold, never load from state
-            # This prevents old thresholds from persisting after deployments
-            saved_threshold = state.get('decision_threshold', None)
-            if saved_threshold and saved_threshold != self.config.threshold:
-                logger.warning(
-                    f"Saved threshold ({saved_threshold:.2f}) differs from config ({self.config.threshold:.2f}). "
-                    f"Using config value to respect deployment updates."
-                )
-            # Keep using self.decision_threshold from __init__ (which is self.config.threshold)
+            # [v13.0.7 CRITICAL FIX] Always prioritize config threshold for NSE
+            # [v15.0] Handle threshold mapping for multi-asset
+            saved_thresholds = state.get('decision_thresholds', {})
+            for ac in AssetClass:
+                self.decision_threshold[ac] = self.config.threshold # Default to config
+                if ac.value in saved_thresholds:
+                    # Optional: Could allow loading for GLOBAL, but kept strict for NSE
+                    pass
+
+            gov_status = state.get('governor_status', {})
+            if isinstance(gov_status, dict):
+                for k, v in gov_status.items():
+                    try:
+                        self.governor.lock_status[AssetClass(k)] = v
+                    except: pass
+            else:
+                self.governor.lock_status = {AssetClass.NSE: 'ACTIVE', AssetClass.GLOBAL: 'ACTIVE'}
             
-            self.governor.lock_status = state.get('governor_status', 'ACTIVE')
             self.performance_history = state.get('performance_history', {})
             
             logger.info(f"Brain state loaded (version: {state.get('version', 'unknown')})")

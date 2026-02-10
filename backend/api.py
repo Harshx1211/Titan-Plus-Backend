@@ -54,7 +54,7 @@ class LiveState:
         self.current_regime = Regime.NEUTRAL
         self._active_signals = []  # Protected by lock
         self.last_update = datetime.now(timezone.utc)
-        self.symbols = ["NIFTY", "BANKNIFTY", "SENSEX"]
+        self.symbols = ["NIFTY", "BANKNIFTY", "SENSEX", "BTCUSDT", "ETHUSDT"]
         self.current_symbol_idx = 0
         self.vix = APP_CONFIG["VIX_DEFAULT"]
         self.breadth = {"advances": 0, "declines": 0}
@@ -97,6 +97,12 @@ class LiveState:
         # [Institutional Wave 3] Deduplication & Memory Hygiene
         self.seen_signal_ids = set()
         self.seen_ids_lock = threading.Lock()  # [v10.2] Thread-safe lock for seen_signal_ids
+
+    def get_asset_class(self, symbol: str) -> AssetClass:
+        """[v15.0] Categorize symbol for Neural Isolation."""
+        if any(idx in symbol for idx in ["NIFTY", "BANKNIFTY", "SENSEX", "FINNIFTY", "MIDCPNIFTY"]):
+            return AssetClass.NSE
+        return AssetClass.GLOBAL
     
     @property
     def active_signals(self):
@@ -294,7 +300,7 @@ class CoreEngine:
         self.signal_notifier = None  # [v13.0.10] Signal notification pipeline
         self.data_provider = None
         self.execution_engine = None
-        self.crypto_provider = None
+        self.crypto_provider = None # [v15.0] Core Crypto Provider
         self.shadow_engine = None
         self.outcome_tracker = None  # [v10.1] Automatic outcome tracking
         self.is_initialized = False
@@ -321,13 +327,15 @@ class CoreEngine:
         time.sleep(1)
         self.data_provider = DataProvider()
         time.sleep(1)
-        # self.crypto_provider = CryptoProvider() [Decommissioned]
-        # time.sleep(1)
+        from crypto_provider import CryptoProvider
+        self.crypto_provider = CryptoProvider() # [v15.0] Actual Implementation
+        time.sleep(1)
         
         # [v10.1] Initialize outcome tracker for automatic learning
         self.outcome_tracker = OutcomeTracker(
             data_provider=self.data_provider,
-            db_manager=self.db
+            db_manager=self.db,
+            crypto_provider=self.crypto_provider # [v15.0]
         )
         self.outcome_tracker.start_monitoring()
         logger.info("Outcome tracker initialized and monitoring started")
@@ -913,9 +921,9 @@ def run_engine_loop():
             
             # [v14.0] Indian Market Restoration
             evolution_trigger_time = datetime.strptime("15:35", "%H:%M").time()
+            # [v15.0] Check if we have global assets to keep engine active
+            has_crypto = any(live_state.get_asset_class(s) == AssetClass.GLOBAL for s in live_state.symbols)
             is_nse_open = (market_start <= current_time <= market_end) and (now_ist.weekday() < 5)
-            # System sleeps during off-hours for Indian markets
-            has_crypto = False 
             
             if not is_nse_open:
                 # 1. Automated Overnight Learning (Only if NSE just closed)
@@ -925,26 +933,23 @@ def run_engine_loop():
                         live_state.add_thought("LEARN", f"Starting Overnight Evolution for {today_str}...")
                         live_state.is_learning = True
                         try:
-                            results = core.evolver.evolve_session(today_str)
+                            # [v15.0] Dual-Class Evolution
+                            res_nse = core.evolver.evolve_session(today_str, asset_class=AssetClass.NSE)
+                            res_global = core.evolver.evolve_session(today_str, asset_class=AssetClass.GLOBAL)
+                            
                             evolution_done_date = today_str
                             live_state.is_learning = False
                             
-                            if results and results.get("status") == "SUCCESS":
-                                status = results.get('governor_status', 'SUCCESS')
-                                live_state.add_thought("LEARN", f"Evolution Complete: {status}. Brain Refined.")
-                                if 'metrics' in results and 'win_rate' in results['metrics']:
-                                    wr = results['metrics']['win_rate']
-                                    if wr is not None:
-                                        live_state.add_thought("LEARN", f"Session Review: {wr:.1f}% Win Rate analyzed.")
-                                    else:
-                                        live_state.add_thought("LEARN", "Session Review: No trades analyzed today.")
-                            else:
-                                reason = results.get("reason", "No data") if results else "Empty Response"
-                                live_state.add_thought("LEARN", f"Evolution Skipped: {reason}")
-                                logger.info(f"INTELLIGENCE: Evolution skipped: {reason}")
-                                
-                            if results and results.get("governor_status"):
-                                core.telegram_notifier.send_alert(f"🧠 *Overnight Intelligence*: Evolution process finished for {today_str}.\nStatus: {results.get('governor_status')}")
+                            # Combine results for UI/Alerts
+                            status_nse = res_nse.get('governor_status', 'IDLE')
+                            status_global = res_global.get('governor_status', 'IDLE')
+                            
+                            live_state.add_thought("LEARN", f"Evolution Complete: NSE({status_nse}), Global({status_global}).")
+                            
+                            alert_msg = f"🧠 *Overnight Intelligence* for {today_str}:\n"
+                            alert_msg += f"• NSE: {status_nse}\n"
+                            alert_msg += f"• Global: {status_global}"
+                            core.telegram_notifier.send_alert(alert_msg)
                         except Exception as e:
                             live_state.is_learning = False
                             logger.error(f"INTELLIGENCE: Evolution failed: {e}")
@@ -970,7 +975,8 @@ def run_engine_loop():
                                             "decision": "OFF_MARKET_SEED",
                                             "regime": "UNCERTAIN"
                                         },
-                                        outcome=None
+                                        outcome=None,
+                                        asset_class=AssetClass.NSE # Seeding for core NSE symbols
                                     )
                                     logger.info(f"STATE: Persisted off-market price for {sym}")
                             except: pass
@@ -1016,8 +1022,11 @@ def run_engine_loop():
             vix_update_counter += 1
             
             for symbol in live_state.symbols:
-                # [v12.6.0] Market Gate: Only process NSE symbols if NSE is open
-                if "USDT" not in symbol and not is_nse_open:
+                asset_class = live_state.get_asset_class(symbol)
+                is_nse = (asset_class == AssetClass.NSE)
+                
+                # [v15.0] Market Gate: Only process NSE symbols if NSE is open. GLOBAL stays active.
+                if is_nse and not is_nse_open:
                     continue
                 
                 if vix_update_counter % 50 == 0:
@@ -1048,6 +1057,7 @@ def run_engine_loop():
                             oi=ws_tick.get('oi') if ws_tick.get('oi', 0) > 0 else (1000000 if symbol in ["NIFTY", "BANKNIFTY", "SENSEX"] else 0), 
                             pcr=0.95, 
                             timestamp=datetime.fromtimestamp(ws_tick.get('timestamp', time.time()), tz=IST), 
+                            inr_price=ws_tick['lp'], # NSE is already in INR
                             source="SHOONYA_WS"
                         )
                         
@@ -1219,6 +1229,12 @@ def run_engine_loop():
                             if not is_aligned: 
                                 live_state.add_thought("SYNERGY", f"Correlated Asset Divergence ({symbol} vs {other_sym}). BLOCKED.")
                                 pattern_results["score"] *= 0.1 # Hard block
+                        else:
+                            # Reset synergy if other index data is missing
+                            live_state.sector_synergy = 1.0
+                    else:
+                        # [v15.0] Reset synergy for non-core symbols to prevent leakage
+                        live_state.sector_synergy = 1.0
 
                     is_trap, trap_reason = strategist.is_trap(hist_df, market_data)
                     if is_trap:
@@ -1228,12 +1244,13 @@ def run_engine_loop():
                     # VIX & Breadth (Updated globally in outer loop)
                     live_state.iv_skew[symbol] = data_provider.get_iv_skew(symbol)
                     
-                    # [Phase 3.5] Strict VIX Cap
-                    if live_state.vix > 25.0: # User requested 25 cap
-                        live_state.add_thought("RISK", f"High VIX ({live_state.vix:.2f} > 25). Market too dangerous.")
-                        pattern_results["score"] *= 0.1
-                    elif live_state.vix > APP_CONFIG.get("HIGH_VOLATILITY_VIX", 20.0):
-                        pattern_results["score"] *= 0.8
+                    # [Phase 3.5] Strict VIX Cap - [v15.0] NSE ONLY
+                    if is_nse:
+                        if live_state.vix > 25.0: # User requested 25 cap
+                            live_state.add_thought("RISK", f"High VIX ({live_state.vix:.2f} > 25). Market too dangerous.")
+                            pattern_results["score"] *= 0.1
+                        elif live_state.vix > APP_CONFIG.get("HIGH_VOLATILITY_VIX", 20.0):
+                            pattern_results["score"] *= 0.8
                         
                     
                     # 4. Feature Engineering
@@ -1284,7 +1301,8 @@ def run_engine_loop():
                         "oi": market_data.oi,
                         "vix": live_state.vix,
                         "gex": live_state.gex_bias.get(symbol, 0.0),
-                        "pcr": market_data.pcr
+                        "pcr": market_data.pcr,
+                        "inr_price": market_data.inr_price # [v15.0]
                     }
 
                     # Pass ohlcv_df to enable SMC Engine
@@ -1292,9 +1310,14 @@ def run_engine_loop():
                         "DECIDE", features=brain_features, market_data=market_data_dict,
                         regime=live_state.current_regime, 
                         ohlcv_df=hist_df, is_commit=False, pattern_score=pattern_results["score"],
-                        signal_intent=likely_intent, iv_skew=live_state.iv_skew.get(symbol, 1.0)
+                        signal_intent=likely_intent, iv_skew=live_state.iv_skew.get(symbol, 1.0),
+                        asset_class=asset_class
                     )
                     for t in thoughts: live_state.add_thought("INFERENCE", f"[{symbol}] {t}")
+                    
+                    # [v15.0] Dual-Currency Transparency in Dashboard logs
+                    if asset_class == AssetClass.GLOBAL and market_data.inr_price:
+                        live_state.add_thought("CURRENCY", f"[{symbol}] Current Price: ₹{market_data.inr_price:,.2f} (Rate: {core.crypto_provider.usd_to_inr:.2f})")
                     
                     # [v13.0.10] Signal Notifier logic moved after Opportunity Switch check (Line 1378)
                     
@@ -1319,11 +1342,11 @@ def run_engine_loop():
                     
                     pattern_results["score"] *= applied_boost
 
-                    # Lull Filter (IST-aware)
+                    # Lull Filter (IST-aware) - [v15.0] NSE ONLY
                     now_time = now_ist.time()
                     lull_start = datetime.strptime(f"{APP_CONFIG['LULL_START_HOUR']}:{APP_CONFIG['LULL_START_MINUTE']:02d}", "%H:%M").time()
                     lull_end = datetime.strptime(f"{APP_CONFIG['LULL_END_HOUR']}:{APP_CONFIG['LULL_END_MINUTE']:02d}", "%H:%M").time()
-                    if lull_start <= now_time <= lull_end and "BRAIN_PULL" not in pattern_results.get("patterns", []):
+                    if is_nse and lull_start <= now_time <= lull_end and "BRAIN_PULL" not in pattern_results.get("patterns", []):
                         pattern_results["score"] *= 0.5
 
                     # 6. Signal Execution
@@ -1386,7 +1409,9 @@ def run_engine_loop():
                         # Correlated Risk Check: Pass currently active symbols
                         active_syms = [s.symbol for s in live_state.active_signals if s.is_live]
                         
-                        if core.risk_engine.is_blown_today(): 
+                        # [v15.0] Blown Today only caps NSE execution. 
+                        # GLOBAL execution in mock mode is permitted for learning.
+                        if is_nse and core.risk_engine.is_blown_today(): 
                             live_state.add_thought("RISK", f"[{symbol}] VETO: Daily Loss Limit or Max Drawdown hit. Ceasing execution for protection.")
                             continue
 
@@ -1399,38 +1424,48 @@ def run_engine_loop():
                             live_state.add_thought("STRUCTURE", f"[{symbol}] BEARISH VETO: Price too close to identified support at {sup_level:.2f}.")
                             continue
 
-                        # [Phase 5] Precision Levels & Smart Stops (Order Blocks, Fractals, OI Walls)
-                        precision_levels = tech_engine.calculate_precision_levels(hist_df, market_data.spot_price, chain_df)
+                        # [v15.0] Option-Engine Bypass for GLOBAL Futures
+                        if is_nse:
+                            # [Phase 5] Precision Levels & Smart Stops (Order Blocks, Fractals, OI Walls)
+                            precision_levels = tech_engine.calculate_precision_levels(hist_df, market_data.spot_price, chain_df)
 
-                        # [Institutional Step 5] Expiry Sensitivity (Precision Greeks)
-                        minutes_to_expiry = get_minutes_to_expiry()
-                        days_to_expiry = max(1, round(minutes_to_expiry / (24 * 60)))
-                        
-                        opt_trade = option_engine.find_executable_option(
-                            symbol, market_data.spot_price, signal_type, precision_levels=precision_levels,
-                            is_momentum_dominant=strategist.is_momentum_dominant(hist_df), 
-                            days_to_expiry=days_to_expiry, 
-                            chain_df=chain_df, is_synthetic=is_synthetic
-                        )
-                        
-                        # IV Percentile & Smooth Scaling
-                        cur_iv = market_data.iv if hasattr(market_data, 'iv') else 20.0
-                        if not cur_iv: # Support synthetic chain lingo
-                             row = chain_df[chain_df['strike'] == opt_trade.get('strike')].iloc[0] if not chain_df.empty else None
-                             cur_iv = row.get(f"{opt_trade['option_type'].lower()}_iv", 20.0) if row is not None else 20.0
-                        
-                        live_state.iv_history[symbol].append(cur_iv)
-                        # Keep 90 trades of history
-                        if len(live_state.iv_history[symbol]) > 90: live_state.iv_history[symbol].pop(0)
-                        
-                        iv_data = option_engine.calculate_iv_percentile(cur_iv, live_state.iv_history[symbol])
-                        iv_scaling = iv_data['scaling_factor']
-                        
-                        # High Fidelity Greeks
-                        greeks = option_engine.calculate_precision_greeks(
-                            market_data.spot_price, opt_trade['strike'], cur_iv/100.0, 
-                            minutes_to_expiry, opt_trade['option_type']
-                        )
+                            # [Institutional Step 5] Expiry Sensitivity (Precision Greeks)
+                            minutes_to_expiry = get_minutes_to_expiry()
+                            days_to_expiry = max(1, round(minutes_to_expiry / (24 * 60)))
+                            
+                            opt_trade = option_engine.find_executable_option(
+                                symbol, market_data.spot_price, signal_type, precision_levels=precision_levels,
+                                is_momentum_dominant=strategist.is_momentum_dominant(hist_df), 
+                                days_to_expiry=days_to_expiry, 
+                                chain_df=chain_df, is_synthetic=is_synthetic
+                            )
+                            
+                            # IV Percentile & Smooth Scaling
+                            cur_iv = market_data.iv if hasattr(market_data, 'iv') else 20.0
+                            if not cur_iv: # Support synthetic chain lingo
+                                row = chain_df[chain_df['strike'] == opt_trade.get('strike')].iloc[0] if not chain_df.empty else None
+                                cur_iv = row.get(f"{opt_trade['option_type'].lower()}_iv", 20.0) if row is not None else 20.0
+                            
+                            live_state.iv_history[symbol].append(cur_iv)
+                            if len(live_state.iv_history[symbol]) > 90: live_state.iv_history[symbol].pop(0)
+                            
+                            iv_data = option_engine.calculate_iv_percentile(cur_iv, live_state.iv_history[symbol])
+                            iv_scaling = iv_data['scaling_factor']
+                            
+                            # High Fidelity Greeks
+                            greeks = option_engine.calculate_precision_greeks(
+                                market_data.spot_price, opt_trade['strike'], cur_iv/100.0, 
+                                minutes_to_expiry, opt_trade['option_type']
+                            )
+                        else:
+                            # Global Futures: Use direct underlying parameters
+                            opt_trade = {
+                                "strike": market_data.spot_price,
+                                "option_type": "FUTURES",
+                                "rejection_reasons": []
+                            }
+                            iv_scaling = 1.0
+                            greeks = {"delta": 1.0, "gamma": 0.0, "theta": 0.0, "vega": 0.0}
                         
                         if not opt_trade.get("rejection_reasons"):
                             # [Institutional Step 3] Cost Realism & Yield Veto
@@ -1464,6 +1499,7 @@ def run_engine_loop():
                                 confidence=SignalConfidence.HIGH if pattern_results["score"] > 0.9 else SignalConfidence.MEDIUM,
                                 regime=live_state.current_regime, reasoning=f"{signal_type} | {', '.join(detected_patterns)}",
                                 timestamp=datetime.now(timezone.utc), decision_id=decision_id,
+                                asset_class=asset_class,
                                 logic_version="v9.9.9_FINAL_STABLE", spread_at_entry=current_spread,
                                 slippage_est=slippage_est, expected_edge=expected_edge,
                                 iv_scaling=iv_scaling, greeks=greeks,

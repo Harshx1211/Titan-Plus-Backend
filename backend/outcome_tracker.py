@@ -55,9 +55,10 @@ class OutcomeTracker:
     ENHANCED: Automatically tracks signal outcomes with improved reliability.
     """
     
-    def __init__(self, data_provider, db_manager):
+    def __init__(self, data_provider, db_manager, crypto_provider=None):
         self.data_provider = data_provider
         self.db = db_manager
+        self.crypto_provider = crypto_provider # [v15.0] Support for Global Assets
         
         self.active_monitors: Dict[str, SignalOutcome] = {}
         self.completed_outcomes: List[SignalOutcome] = []
@@ -113,10 +114,13 @@ class OutcomeTracker:
             entry_price=signal.entry_price,
             stop_loss=signal.stop_loss,
             target=signal.target,
-            direction=signal.option_type,
+            direction=signal.option_type if signal.option_type else (signal.action.value if hasattr(signal.action, 'value') else str(signal.action)),
             outcome="MONITORING",
             generated_at=datetime.now(timezone.utc)
         )
+        
+        # [v15.0] Tag outcome with asset class for specialized tracking
+        outcome.asset_class = getattr(signal, 'asset_class', 'NSE')
         
         self.active_monitors[signal.decision_id] = outcome
         
@@ -178,8 +182,12 @@ class OutcomeTracker:
                     if cooldown_elapsed < self.retry_cooldown_seconds:
                         continue  # Skip this check, wait for cooldown
                 
-                # Get current market price for the option
-                current_price = self._get_current_option_price(outcome)
+                # [v15.0] Specialized Price Fetching by Asset Class
+                asset_class = getattr(outcome, 'asset_class', 'NSE')
+                if asset_class == 'GLOBAL' or 'USDT' in outcome.symbol:
+                    current_price = self._get_current_crypto_price(outcome)
+                else:
+                    current_price = self._get_current_option_price(outcome)
                 
                 # NEW: Track fetch failures
                 outcome.last_fetch_time = now
@@ -243,6 +251,20 @@ class OutcomeTracker:
                 except Exception as e:
                     logger.error(f"Failed to log outcome: {e}")
     
+    def _get_current_crypto_price(self, outcome: SignalOutcome) -> Optional[float]:
+        """[v15.0] Fetch current crypto spot/perp price for global asset tracking."""
+        try:
+            if not self.crypto_provider:
+                return None
+            
+            snapshot = self.crypto_provider.get_market_snapshot(outcome.symbol)
+            if snapshot:
+                return float(snapshot.spot_price)
+            return None
+        except Exception as e:
+            logger.error(f"Failed to fetch crypto price for {outcome.symbol}: {e}")
+            return None
+
     def _get_current_option_price(self, outcome: SignalOutcome) -> Optional[float]:
         """
         IMPROVED: Fetch current option premium with better parsing and fallbacks.
