@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 from NorenRestApiPy.NorenApi import NorenApi
 from growwapi import GrowwAPI
 from models_v3 import MarketData
-from infrastructure import CircuitBreaker, IST, global_sentinel
+from infrastructure import CircuitBreaker, IST, global_sentinel, MarketState
 
 load_dotenv()
 logger = logging.getLogger("providers")
@@ -116,6 +116,8 @@ class ShoonyaProvider:
         self.imei = f"{os.getenv('SHOONYA_IMEI', 'ab234')}_{''.join(random.choices(string.ascii_lowercase + string.digits, k=4))}"
         self.api = ShoonyaApiPy()
         self.authenticated = False
+        self.is_connected = False
+        self.market_state = MarketState()
         self._login_lock = threading.Lock() if 'threading' in globals() else None
         self.index_tokens = {
             "NIFTY": ("NSE", "26000"), "BANKNIFTY": ("NSE", "26009"), "SENSEX": ("BSE", "1"),
@@ -137,6 +139,7 @@ class ShoonyaProvider:
                 self.authenticated = True
                 self.circuit.record_success()
                 self.validate_market_tokens()
+                self.start_websocket() # [v14.2.0] Activate Real-time Feed
                 return True
         except: 
             self.circuit.record_failure()
@@ -227,6 +230,75 @@ class ShoonyaProvider:
             logger.info(f"VALIDATION_PULSE: All tokens verified. Indices: {len(self.index_tokens)}, Futures: {len(self.future_tokens)}")
         except Exception as e:
             logger.error(f"VALIDATION_PULSE: Error during token verification: {e}")
+
+    # ========================================================================
+    # WebSocket Logic (Real-time Feed)
+    # ========================================================================
+
+    def start_websocket(self):
+        """[v14.2.0] Initializes and subscribes to real-time WebSocket feeds."""
+        if not self.authenticated: return
+        
+        try:
+            def on_tick_update(tick):
+                """Callback: Process incoming WebSocket ticks."""
+                try:
+                    # Map Noren feed fields to unified internal format
+                    # 'lp' = Last Price, 'v' = Volume, 'oi' = Open Interest
+                    symbol = None
+                    # Reverse lookup token to symbol
+                    token = tick.get('tk')
+                    for s, m in self.index_tokens.items():
+                        if m[1] == token: symbol = s; break
+                    if not symbol:
+                        for s, m in self.future_tokens.items():
+                            if m[1] == token: symbol = f"{s}_FUT"; break
+                    
+                    if symbol:
+                        update_data = {'symbol': symbol, 'timestamp': time.time()}
+                        if 'lp' in tick: update_data['lp'] = float(tick['lp'])
+                        if 'v' in tick: update_data['v'] = int(tick['v'])
+                        if 'oi' in tick: update_data['oi'] = int(tick['oi'])
+                        if 'poi' in tick: update_data['poi'] = int(tick['poi'])
+                        
+                        self.market_state.update(update_data)
+                except Exception as e:
+                    logger.error(f"SHOONYA_WS_CALLBACK: Error processing tick: {e}")
+
+            def on_opened():
+                """Callback: WebSocket connection successful."""
+                self.is_connected = True
+                logger.info("SHOONYA_WS: Connection established. Subscribing to core assets...")
+                
+                # Subscribe to Core Indices
+                subs = []
+                for s, m in self.index_tokens.items():
+                    subs.append(f"{m[0]}|{m[1]}")
+                
+                # Subscribe to Core Futures
+                for s, m in self.future_tokens.items():
+                    subs.append(f"{m[0]}|{m[1]}")
+                
+                if subs:
+                    self.api.subscribe(subs)
+                    logger.info(f"SHOONYA_WS: Subscribed to {len(subs)} instruments: {subs}")
+
+            def on_error(err):
+                logger.error(f"SHOONYA_WS: Error: {err}")
+                self.is_connected = False
+
+            # Start WS in background thread
+            self.api.start_websocket(
+                subscribe_callback=on_tick_update,
+                socket_open_callback=on_opened,
+                socket_error_callback=on_error
+            )
+            
+            # Start watchdog in background
+            threading.Thread(target=self._watchdog_loop, daemon=True).start()
+            
+        except Exception as e:
+            logger.error(f"SHOONYA_WS: Failed to start WebSocket: {e}")
 
     def get_market_data(self, symbol: str) -> Dict:
         """[v9.9.9] Optimized snapshot fetcher with future matching."""
@@ -476,14 +548,13 @@ class DataProvider:
         
         return self.get_intraday_history(symbol, start_time, end_time, noren_interval)
 
-    def get_option_chain(self, symbol: str) -> Tuple[pd.DataFrame, bool]:
+    def get_option_chain(self, symbol: str, spot_price: float = None) -> Tuple[pd.DataFrame, bool]:
         """[Institutional Phase 16] Fetches real option chain from Shoonya. Falls back to synthetic if market closed."""
         try:
              if self.shoonya.authenticated:
                  # 1. Determine Expiry (Current week)
-                 # Real implementation would call get_option_chain endpoint
-                 # For now, we search for ATM strikes to build a structured view
-                 spot = self.get_market_snapshot(symbol).spot_price
+                 # [v14.2.0] Use provided spot_price to avoid redundant poll
+                 spot = spot_price or self.get_market_snapshot(symbol).spot_price
                  base = round(spot / 100) * 100 if symbol != "SENSEX" else round(spot / 100) * 100
                  
                  exch = "BFO" if symbol == "SENSEX" else "NFO"
@@ -540,7 +611,11 @@ class DataProvider:
     def get_vix(self) -> float:
         """Returns the India VIX value with historical fallback."""
         try:
-            # Priority 1: Live Quote (Shoonya)
+            # Priority 1: MarketState Snapshot (WebSocket)
+            ws_vix = self.shoonya.market_state.get_symbol_price("INDIA VIX")
+            if ws_vix > 0: return ws_vix
+
+            # Priority 2: Live Quote (Shoonya HTTP fallback)
             data = self.shoonya.get_market_data("INDIA VIX")
             if data and data['lp'] > 0:
                 return data['lp']

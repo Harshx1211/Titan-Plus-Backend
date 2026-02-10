@@ -1,5 +1,5 @@
 # Startup Version Identifier [v14.1.1_NSE]
-LOGIC_VERSION = "v14.1.1_NSE"
+LOGIC_VERSION = "v14.2.0_NSE" # Optimized Latency & WebSocket
 
 from dataclasses import dataclass
 from typing import List, Dict

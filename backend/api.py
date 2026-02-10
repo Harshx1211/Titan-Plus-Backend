@@ -243,7 +243,31 @@ macro_cache = {}
 macro_cache_lock = threading.Lock()
 
 # ============================================================================
-# Core Intelligence Orchestrator (Phase 3 Multi-Process Scaffolding)
+# 0. Performance Hygiene (TechnicalCache)
+# ============================================================================
+
+class TechnicalCache:
+    """[v14.2.0] Throttles expensive indicator calculations (ADX, ATR, RSI)."""
+    def __init__(self, ttl_seconds: int = 15):
+        self.cache = {}
+        self.ttl = ttl_seconds
+        self.lock = threading.Lock()
+
+    def get(self, symbol: str, key: str):
+        with self.lock:
+            entry = self.cache.get(f"{symbol}_{key}")
+            if entry and (time.time() - entry['ts']) < self.ttl:
+                return entry['val']
+        return None
+
+    def set(self, symbol: str, key: str, val):
+        with self.lock:
+            self.cache[f"{symbol}_{key}"] = {'val': val, 'ts': time.time()}
+
+tech_cache = TechnicalCache(ttl_seconds=10) # 10s refresh for indicators
+
+# ============================================================================
+# 1. State Management
 # ============================================================================
 
 class CoreEngine:
@@ -1009,28 +1033,30 @@ def run_engine_loop():
                         fut_tick = all_snapshots.get(f"{symbol}_FUT")
                         
                         if not ws_tick:
-                            # Fallback for initialization or missing ticks
+                            # [v14.2.0] High-Freq Optimization: Skip analysis if no WS data
+                            # Reduce dashboard spam with "Waiting" message
+                            if random.random() < 0.05:
+                                live_state.market_message = f"SYNCING: Waiting for WS snapshot ({symbol})"
                             continue
 
                         market_data = MarketData(
                             symbol=symbol, 
                             spot_price=ws_tick['lp'], 
                             # [v9.9.9] Audit Fix: Use Proportional Basis Fallback (0.049%) to stay under spread veto
-                            future_price=fut_tick['lp'] if fut_tick else (ws_tick['lp'] * 1.00049),
-                            # [Institutional Patch] Use Future's OI for index symbols, or default high (1M) to bypass veto
-                            oi=fut_tick['oi'] if fut_tick and fut_tick.get('oi') else (1000000 if symbol in ["NIFTY", "BANKNIFTY", "SENSEX"] else ws_tick.get('oi', 0)), 
+                            future_price=ws_tick.get('future_lp', ws_tick['lp'] * 1.00049),
+                            # [Institutional Patch] Use Future's OI for index symbols
+                            oi=ws_tick.get('oi', 1000000 if symbol in ["NIFTY", "BANKNIFTY", "SENSEX"] else 0), 
                             pcr=0.95, 
-                            # [v9.9.9] Audit Fix: Standardize to IST for age calculations
                             timestamp=datetime.fromtimestamp(ws_tick.get('timestamp', time.time()), tz=IST), 
                             source="SHOONYA_WS"
                         )
                         
                         # [v9.9.9] Audit Fix: Stale Data Guard (IST vs IST)
                         data_age_seconds = (datetime.now(IST) - market_data.timestamp).total_seconds()
-                        if data_age_seconds > 10:
-                            if random.random() < 0.1: # Throttle logs
-                                logger.warning(f"STALE_DATA: {symbol} data is {data_age_seconds:.1f}s old. Skipping analysis.")
-                            live_state.market_message = f"STALE DATA VETO: {symbol} Lag detected ({data_age_seconds:.1f}s)"
+                        if data_age_seconds > 10 and not data_provider.shoonya.is_connected:
+                            # If WS is dead, don't just hang, log warning
+                            if random.random() < 0.01:
+                                logger.warning(f"STALE_DATA: {symbol} is {data_age_seconds:.1f}s old. WS state: {data_provider.shoonya.is_connected}")
                             continue
 
                     live_state.prices[symbol] = market_data.spot_price
@@ -1084,22 +1110,26 @@ def run_engine_loop():
                             continue
 
                     # [v9.9.9] Technical Indicators Calculation
-                    # ADX
-                    adx_df = hist_df.ta.adx()
-                    if adx_df is not None and 'ADX_14' in adx_df.columns:
-                        val = adx_df['ADX_14'].iloc[-1]
-                        adx_val = 25.0 if pd.isna(val) or val != val else float(val)
-                    else: adx_val = 25.0
-                    
-                    # ATR
-                    atr_df = hist_df.ta.atr()
-                    raw_atr = atr_df.iloc[-1] if atr_df is not None and not atr_df.empty else 0.0
-                    atr_val = 0.0 if pd.isna(raw_atr) else float(raw_atr)
-                    
-                    # RSI (Added in Audit Fix)
-                    rsi_series = hist_df.ta.rsi()
-                    raw_rsi = rsi_series.iloc[-1] if rsi_series is not None and not rsi_series.empty else 50.0
-                    rsi_val = 50.0 if pd.isna(raw_rsi) else float(raw_rsi)
+                    # 3. Technical Indicators (Throttled via TechnicalCache)
+                    adx_val = tech_cache.get(symbol, "ADX")
+                    rsi_val = tech_cache.get(symbol, "RSI")
+                    atr_val = tech_cache.get(symbol, "ATR")
+
+                    if adx_val is None or rsi_val is None or atr_val is None:
+                        import pandas_ta as ta
+                        adx_df = ta.adx(hist_df.high, hist_df.low, hist_df.close, length=14)
+                        adx_val = float(adx_df.iloc[-1]['ADX_14']) if adx_df is not None and not adx_df.empty else 0.0
+                        rsi_df = ta.rsi(hist_df.close, length=14)
+                        rsi_val = float(rsi_df.iloc[-1]) if rsi_df is not None and not rsi_df.empty else 50.0
+                        atr_df = ta.atr(hist_df.high, hist_df.low, hist_df.close, length=14)
+                        atr_val = float(atr_df.iloc[-1]) if atr_df is not None and not atr_df.empty else 0.0
+                        
+                        tech_cache.set(symbol, "ADX", adx_val)
+                        tech_cache.set(symbol, "RSI", rsi_val)
+                        tech_cache.set(symbol, "ATR", atr_val)
+                        
+                        if random.random() < 0.05:
+                            logger.info(f"PERF: Refreshed indicators for {symbol} (Cache expired)")
 
                     # [Institutional Step 4] Realized Volatility (StdDev)
                     raw_std = hist_df['close'].tail(20).std() if len(hist_df) >= 20 else 0.0
@@ -1149,11 +1179,12 @@ def run_engine_loop():
                     )
                     live_state.add_thought("ANALYSIS", f"[{symbol}] Pattern Score: {pattern_results['score']:.2f}. Found: {', '.join(pattern_results.get('patterns') or ['NONE'])}")
 
-                    # Option Chain
+                    # Option Chain (Optimized with cached spot)
                     if "USDT" in symbol:
                         chain_df, is_synthetic = core.crypto_provider.get_option_chain(symbol)
                     else:
-                        chain_df, is_synthetic = data_provider.get_option_chain(symbol)
+                        # [v14.2.0] Pass spot_price to avoid redundant HTTP quote inside provider
+                        chain_df, is_synthetic = data_provider.get_option_chain(symbol, spot_price=market_data.spot_price)
                     if not chain_df.empty:
                         live_state.max_pain[symbol] = option_engine.calculate_max_pain(chain_df)
                         live_state.option_battles[symbol] = core.option_engine.detect_strike_battles(chain_df)
@@ -1585,8 +1616,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v14.1.1_NSE]
-LOGIC_VERSION = "v14.1.1_NSE"
+# Startup Version Identifier [v14.2.0_NSE]
+LOGIC_VERSION = "v14.2.0_NSE"
 
 @app.on_event("startup")
 async def startup_event():
