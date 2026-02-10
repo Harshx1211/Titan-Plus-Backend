@@ -3,12 +3,12 @@ Titan Plus - Data Models
 =========================
 Pydantic models for type safety and validation
 
-Version: 9.9.9
+Version: 15.3.1
 """
 
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, List, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 

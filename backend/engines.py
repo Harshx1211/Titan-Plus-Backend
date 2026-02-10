@@ -3,7 +3,7 @@ import time
 import json
 import pandas as pd
 import pandas_ta as ta
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Optional, Any, Union
 from models_v3 import TradeSignal, SignalConfidence, DivergenceType, MarketData
 from infrastructure import SupabaseManager

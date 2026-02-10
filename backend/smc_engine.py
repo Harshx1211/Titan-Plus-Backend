@@ -8,7 +8,7 @@ Institutional-grade price action analysis including:
 - Imbalances & Breaker Blocks
 - Market Structure Analysis
 
-Version: 9.9.9 (Phase 3)
+Version: 15.3.1 (Phase 3)
 Author: Titan Plus Development Team
 """
 
@@ -16,7 +16,7 @@ import logging
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import dataclass
 
 logging.basicConfig(level=logging.INFO)
@@ -132,7 +132,7 @@ class GrandmasterSMCEngine:
             'confluence_bullish': confluence_bullish,
             'confluence_bearish': confluence_bearish,
             'signals': self._generate_signals(df),
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat()
         }
     
     def _get_atr(self, df: pd.DataFrame, idx: int) -> float:
@@ -179,7 +179,7 @@ class GrandmasterSMCEngine:
                 strength = self._calculate_ob_strength(df, i, 'BULLISH')
                 
                 ob = OrderBlock(
-                    timestamp=current.name if hasattr(current.name, 'to_pydatetime') else datetime.now(),
+                    timestamp=current.name if hasattr(current.name, 'to_pydatetime') else datetime.now(timezone.utc),
                     price_high=current['high'],
                     price_low=current['low'],
                     price_mid=(current['high'] + current['low']) / 2,
@@ -195,7 +195,7 @@ class GrandmasterSMCEngine:
                 strength = self._calculate_ob_strength(df, i, 'BEARISH')
                 
                 ob = OrderBlock(
-                    timestamp=current.name if hasattr(current.name, 'to_pydatetime') else datetime.now(),
+                    timestamp=current.name if hasattr(current.name, 'to_pydatetime') else datetime.now(timezone.utc),
                     price_high=current['high'],
                     price_low=current['low'],
                     price_mid=(current['high'] + current['low']) / 2,
@@ -333,7 +333,7 @@ class GrandmasterSMCEngine:
                 # High > swing level AND Close < swing level (wick rejection)
                 if current['high'] > swing_high and current['close'] <= swing_high:
                     sweep = LiquiditySweep(
-                        timestamp=current.name if hasattr(current.name, 'to_pydatetime') else datetime.now(),
+                        timestamp=current.name if hasattr(current.name, 'to_pydatetime') else datetime.now(timezone.utc),
                         swept_level=swing_high,
                         sweep_type='SHORT_LIQUIDITY',
                         reversal=True, # Wick rejection is a reversal sign
@@ -347,7 +347,7 @@ class GrandmasterSMCEngine:
                 # Low < swing level AND Close > swing level
                 if current['low'] < swing_low and current['close'] >= swing_low:
                     sweep = LiquiditySweep(
-                        timestamp=current.name if hasattr(current.name, 'to_pydatetime') else datetime.now(),
+                        timestamp=current.name if hasattr(current.name, 'to_pydatetime') else datetime.now(timezone.utc),
                         swept_level=swing_low,
                         sweep_type='LONG_LIQUIDITY',
                         reversal=True,
@@ -538,7 +538,7 @@ class GrandmasterSMCEngine:
                 'recent_sweep': False,
                 'structure_aligned': False
             },
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat()
         }
 
 
@@ -547,7 +547,7 @@ if __name__ == "__main__":
     logger.info("Testing Grandmaster SMC Engine...")
     
     # Create sample OHLCV data
-    dates = pd.date_range(end=datetime.now(), periods=100, freq='5min')
+    dates = pd.date_range(end=datetime.now(timezone.utc), periods=100, freq='5min')
     np.random.seed(42)
     
     base_price = 25000
