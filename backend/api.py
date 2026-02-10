@@ -28,7 +28,7 @@ from models_v3 import Decision, Regime, Action, MarketStructure, TradeSignal, Tr
 # [v10.2] Import enhanced endpoints and health checks
 from health_check_endpoint import health_router
 from api_enhanced_endpoints import outcome_router
-from crypto_provider import CryptoProvider
+# from crypto_provider import CryptoProvider [Decommissioned for NSE]
 import uvicorn
 
 app = FastAPI(title="The Oracle - Titan Plus Institutional")
@@ -54,35 +54,35 @@ class LiveState:
         self.current_regime = Regime.NEUTRAL
         self._active_signals = []  # Protected by lock
         self.last_update = datetime.now(timezone.utc)
-        self.symbols = ["BTCUSDT", "ETHUSDT", "XAUUSDT"]
+        self.symbols = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX"]
         self.current_symbol_idx = 0
         self.vix = APP_CONFIG["VIX_DEFAULT"]
         self.breadth = {"advances": 0, "declines": 0}
         self.market_message = "System Stable"
         self.data_source = "PUBLIC_SCRAPER"
-        self.index_strengths: Dict[str, float] = {"BTCUSDT": 0.0, "ETHUSDT": 0.0, "XAUUSDT": 0.0}
+        self.index_strengths: Dict[str, float] = {s: 0.0 for s in self.symbols}
         
         # Partitioned Symbol Data (v8.1 Multi-Asset)
-        self.prices = {"BTCUSDT": 0.0, "ETHUSDT": 0.0, "XAUUSDT": 0.0}
-        self.max_pain = {"BTCUSDT": 0.0, "ETHUSDT": 0.0, "XAUUSDT": 0.0}
-        self.option_battles = {"BTCUSDT": [], "ETHUSDT": [], "XAUUSDT": []}
+        self.prices = {s: 0.0 for s in self.symbols}
+        self.max_pain = {s: 0.0 for s in self.symbols}
+        self.option_battles = {s: [] for s in self.symbols}
 
-        self.option_chains = {"BTCUSDT": [], "ETHUSDT": [], "XAUUSDT": []}
-        self.supports = {"BTCUSDT": [], "ETHUSDT": [], "XAUUSDT": []}
-        self.resistances = {"BTCUSDT": [], "ETHUSDT": [], "XAUUSDT": []}
-        self.history_cache = {"BTCUSDT": None, "ETHUSDT": None, "XAUUSDT": None}
+        self.option_chains = {s: [] for s in self.symbols}
+        self.supports = {s: [] for s in self.symbols}
+        self.resistances = {s: [] for s in self.symbols}
+        self.history_cache = {s: None for s in self.symbols}
         
         # v8.1: Statistical Discipline
         self.resets_today = 0
         self.last_reset_time = datetime.now(timezone.utc)
-        self.iv_skew = {"BTCUSDT": 1.0, "ETHUSDT": 1.0, "XAUUSDT": 1.0}
-        self.gex_bias = {"BTCUSDT": 0.0, "ETHUSDT": 0.0, "XAUUSDT": 0.0}
+        self.iv_skew = {s: 1.0 for s in self.symbols}
+        self.gex_bias = {s: 0.0 for s in self.symbols}
         self.sector_synergy = 1.0 
-        self.prev_oi = {"BTCUSDT": 0, "ETHUSDT": 0, "XAUUSDT": 0}
+        self.prev_oi = {s: 0 for s in self.symbols}
         self.prev_spot = 0.0
         
         # [Institutional Step 5] IV History tracking for Percentile
-        self.iv_history = {"BTCUSDT": [], "ETHUSDT": [], "XAUUSDT": []}
+        self.iv_history = {s: [] for s in self.symbols}
         
         # [v9.4] Epistemic Transparency: Digital Stream of Consciousness
         self.thought_logs = []
@@ -297,8 +297,8 @@ class CoreEngine:
         time.sleep(1)
         self.data_provider = DataProvider()
         time.sleep(1)
-        self.crypto_provider = CryptoProvider()
-        time.sleep(1)
+        # self.crypto_provider = CryptoProvider() [Decommissioned]
+        # time.sleep(1)
         
         # [v10.1] Initialize outcome tracker for automatic learning
         self.outcome_tracker = OutcomeTracker(
@@ -762,18 +762,11 @@ def run_engine_loop():
     from models_v3 import MarketData
     import pandas as pd
     market_state = MarketState()
-    # Shoonya WebSocket is decommissioned for legacy symbols.
-    logger.info("ENGINE: Institutional WebSocket active (Bypassing Indian Subscriptions).")
-
     # [v9.9.9] Startup Price Seeding
     logger.info("STATE: Seeding initial prices from DataProvider...")
     for sym in live_state.symbols:
         try:
-            # Shift to CryptoProvider for USDT pairs
-            if "USDT" in sym:
-                seed_data = core.crypto_provider.get_market_snapshot(sym)
-            else:
-                seed_data = data_provider.get_market_snapshot(sym)
+            seed_data = data_provider.get_market_snapshot(sym)
                 
             if seed_data and seed_data.spot_price > 0:
                 live_state.prices[sym] = seed_data.spot_price
@@ -892,11 +885,11 @@ def run_engine_loop():
             market_start = datetime.strptime(f"{APP_CONFIG['MARKET_START_HOUR']}:{APP_CONFIG['MARKET_START_MINUTE']:02d}", "%H:%M").time()
             market_end = datetime.strptime(f"{APP_CONFIG['MARKET_END_HOUR']}:{APP_CONFIG['MARKET_END_MINUTE']:02d}", "%H:%M").time()
             
-            # [v13.0] Global Focus: Market is ALWAYS open for BTC/ETH/XAU
+            # [v14.0] Indian Market Restoration
             evolution_trigger_time = datetime.strptime("15:35", "%H:%M").time()
             is_nse_open = (market_start <= current_time <= market_end) and (now_ist.weekday() < 5)
-            # System stays awake for 24/7 global assets
-            has_crypto = True 
+            # System sleeps during off-hours for Indian markets
+            has_crypto = False 
             
             if not is_nse_open:
                 # 1. Automated Overnight Learning (Only if NSE just closed)
@@ -934,14 +927,14 @@ def run_engine_loop():
                         # [v12.6.1] Self-Healing: If evolver is disabled, mark as done to prevent loop
                         evolution_done_date = today_str
                         logger.info(f"INTELLIGENCE: Evolution engine is disabled. Skipping for {today_str}.")
-                
+
                 if not has_crypto:
                     # 3. Aggressive Sleep during off-hours (1 minute polling)
                     live_state.last_update = datetime.now(timezone.utc) # Keep heartbeat alive
                     
-                    # [v9.9.8] Seed persistence data once every hour during off-hours
+                    # [v14.0] Seed persistence data for core symbols
                     if current_time.minute == 0 and current_time.second < 10:
-                        for sym in ["NIFTY", "BANKNIFTY", "SENSEX"]:
+                        for sym in live_state.symbols[:3]: # NIFTY, BANKNIFTY, FINNIFTY
                             try:
                                 m_data = data_provider.get_market_snapshot(sym)
                                 if m_data:
@@ -1555,9 +1548,9 @@ def personalized_service_loop(notifier, sentinel):
                 }
                 notifier.send_personalized_greeting("Harsh", stats=stats)
                 
-                # [v13.0] Global Multi-Asset Blueprint
+                # [v14.0] Indian Market Blueprint
                 if 'core' in globals() and core.is_initialized:
-                    for symbol in ["BTCUSDT", "ETHUSDT", "XAUUSDT"]:
+                    for symbol in live_state.symbols:
                         supports = core.state.supports.get(symbol, [])
                         resistances = core.state.resistances.get(symbol, [])
                         trend = "BULLISH" if core.state.index_strengths.get(symbol, 0) > 0 else "BEARISH"
@@ -1590,8 +1583,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v13.1.8_GLOBAL]
-LOGIC_VERSION = "v13.1.8_GLOBAL"
+# Startup Version Identifier [v14.0.0_NSE]
+LOGIC_VERSION = "v14.0.0_NSE"
 
 @app.on_event("startup")
 async def startup_event():
