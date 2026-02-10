@@ -292,7 +292,7 @@ export default function TitanDashboard() {
             <div className="space-y-1 sm:space-y-3">
               <h1 className="text-xl sm:text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-500 tracking-tighter uppercase">
                 Titan<span className="text-white">Plus</span>
-                <span className="ml-2 text-[8px] sm:text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 sm:py-0.5 rounded border border-emerald-500/20 align-top tracking-widest font-mono">v13.0.9_GLOBAL</span>
+                <span className="ml-2 text-[8px] sm:text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 sm:py-0.5 rounded border border-emerald-500/20 align-top tracking-widest font-mono">v14.0.3_NSE</span>
               </h1>
               <div className="flex items-center gap-2 sm:gap-5">
                 <span className="text-[10px] sm:text-institutional text-slate-500 opacity-60">Titan Institutional</span>
@@ -359,7 +359,7 @@ export default function TitanDashboard() {
           <div className="2xl:col-span-3 space-y-16">
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-10">
-              {['BTCUSDT', 'ETHUSDT', 'XAUUSDT'].map(sym => (
+              {['NIFTY', 'BANKNIFTY', 'FINNIFTY'].map(sym => (
                 <GlassCard key={sym} variant="premium" className="p-6 md:p-10 group hover:ring-2 ring-blue-500/20 transition-all duration-700">
                   <div className="flex justify-between items-center mb-6 md:mb-10">
                     <span className="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-[0.4em] font-mono">{sym} CORE</span>
