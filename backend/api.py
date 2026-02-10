@@ -1369,6 +1369,7 @@ def run_engine_loop():
                                 swapped_from_id = live_signal.decision_id
                                 live_state.market_message = f"SWAPPING: {live_signal.symbol} -> {symbol} (Edge Upgrade)"
                             else:
+                                live_state.add_thought("OPPORTUNITY", f"[{symbol}] Skipping Approval: 0.55 threshold met, but existing {live_signal.symbol} trade (Score: {live_signal.score:.2f}) is still prioritized over new Edge ({pattern_results['score']:.2f}). Needs 1.15x better score to swap.")
                                 continue
                         else:
                             is_swap_entry = False
@@ -1509,6 +1510,9 @@ def run_engine_loop():
                                 # Fallback to legacy logging/notification if notifier fails
                                 core.db.log_intent(new_signal.dict())
                                 core.telegram_notifier.send_signal(new_signal.dict(), dashboard_url=APP_CONFIG.get("DASHBOARD_URL", ""))
+                            else:
+                                rejection = ", ".join(opt_trade.get("rejection_reasons", ["Unknown"])) if opt_trade else "No suitable contract found"
+                                live_state.add_thought("OPTIONS", f"[{symbol}] Strategy Veto: {rejection}. Check liquidity or volume.")
 
                     # [v9.9.9] Modular Management: Priority-Based Exit Evaluation
                     for sig in live_state.active_signals:
