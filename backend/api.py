@@ -826,7 +826,8 @@ def run_engine_loop():
             records = db.cloud_db.get_active_signals()
             for rec in records:
                 sym = rec.get('symbol')
-                if sym:
+                if sym and sym in live_state.symbols:
+                    # [v14.0.2] IGNORE stale symbols from previous versions (e.g. Crypto)
                     # [v9.9.9] Reconstruct TradeSignal object from DB record
                     # We map the dictionary keys to Pydantic model fields
                     try:
@@ -1583,8 +1584,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v14.0.0_NSE]
-LOGIC_VERSION = "v14.0.0_NSE"
+# Startup Version Identifier [v14.0.2_NSE]
+LOGIC_VERSION = "v14.0.2_NSE"
 
 @app.on_event("startup")
 async def startup_event():

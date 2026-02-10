@@ -428,13 +428,15 @@ class SupabaseManager:
     def get_accuracy_report(self) -> Dict:
         try:
             import pandas as pd
-            res = self.supabase.table("signal_ledger").select("value").eq("state", "OUTCOME").execute()
+            res = self.supabase.table("signal_ledger").select("outcome").eq("state", "OUTCOME").execute()
             df = pd.DataFrame(res.data) if res.data else pd.DataFrame()
-            wins = len(df[df['value'] == 'WIN']) if not df.empty else 0
+            wins = len(df[df['outcome'] == 'WIN']) if not df.empty else 0
             total = len(df) if not df.empty else 0
             ratio = wins / total if total > 0 else 0.0
             return {"win_rate": round(ratio, 4), "accuracy": round(ratio, 4), "total_trades": total, "wins": wins, "status": "ONLINE"}
-        except: return {"win_rate": 0.0, "total_trades": 0, "status": "ERROR"}
+        except Exception as e: 
+            logger.error(f"ACCURACY_REPORT_ERROR: {e}")
+            return {"win_rate": 0.0, "total_trades": 0, "status": "ERROR"}
 
     def get_history(self, limit: int = 50) -> List[Dict]:
         try:
