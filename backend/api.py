@@ -54,7 +54,7 @@ class LiveState:
         self.current_regime = Regime.NEUTRAL
         self._active_signals = []  # Protected by lock
         self.last_update = datetime.now(timezone.utc)
-        self.symbols = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX"]
+        self.symbols = ["NIFTY", "BANKNIFTY", "SENSEX"]
         self.current_symbol_idx = 0
         self.vix = APP_CONFIG["VIX_DEFAULT"]
         self.breadth = {"advances": 0, "declines": 0}
@@ -1585,8 +1585,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v14.0.4_NSE]
-LOGIC_VERSION = "v14.0.4_NSE"
+# Startup Version Identifier [v14.1.0_NSE]
+LOGIC_VERSION = "v14.1.0_NSE"
 
 @app.on_event("startup")
 async def startup_event():

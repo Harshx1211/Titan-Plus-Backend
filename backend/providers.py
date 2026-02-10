@@ -119,7 +119,6 @@ class ShoonyaProvider:
         self._login_lock = threading.Lock() if 'threading' in globals() else None
         self.index_tokens = {
             "NIFTY": ("NSE", "26000"), "BANKNIFTY": ("NSE", "26009"), "SENSEX": ("BSE", "1"),
-            "FINNIFTY": ("NSE", "26037"), "MIDCPNIFTY": ("NSE", "26074"),
             "INDIA VIX": ("NSE", "26017")
         }
         self.future_tokens = {}
