@@ -1,5 +1,4 @@
 # Standard lightweight imports
-print("DEBUG: api.py - Top level start", flush=True)
 import os
 import asyncio
 import threading
@@ -22,11 +21,8 @@ from config import config  # Centralized config
 # Configure logging
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 # from models import Regime, DivergenceType, TradeSignal, SignalConfidence # DEPRECATED
-print("DEBUG: api.py - Importing models_v3", flush=True)
 from models_v3 import Decision, Regime, Action, MarketStructure, TradeSignal, TradeSnapshot, DivergenceType, SignalConfidence, AssetClass
-print("DEBUG: api.py - models_v3 imported", flush=True)
 
 # [v10.2] Import enhanced endpoints and health checks
 from health_check_endpoint import health_router
@@ -400,11 +396,9 @@ class CoreEngine:
         logger.info("CORE: System Fully Operational.")
 
 # Global State & Core Initialization
-print("DEBUG: api.py - Initializing CoreEngine", flush=True)
 IST = pytz.timezone('Asia/Kolkata')
 live_state = LiveState()
 core = CoreEngine(live_state)
-print("DEBUG: api.py - CoreEngine initialized", flush=True)
 
 # Helper: Safe Brain Interface
 def call_brain_safely(action: str, **kwargs):
@@ -1695,8 +1689,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v15.3.3_HELIOS]
-LOGIC_VERSION = "v15.3.3_HELIOS"
+# Startup Version Identifier [v15.3.5_HELIOS]
+LOGIC_VERSION = "v15.3.5_HELIOS"
 
 @app.on_event("startup")
 async def startup_event():

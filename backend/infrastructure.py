@@ -1,4 +1,3 @@
-print("DEBUG: infrastructure.py - Top level start", flush=True)
 import os
 import logging
 import pytz
