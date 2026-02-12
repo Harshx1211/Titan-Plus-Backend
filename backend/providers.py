@@ -328,23 +328,32 @@ class ShoonyaProvider:
             self.is_connected = False
 
     def _force_close_websocket(self):
-        """[v15.3.22] Forcefully closes the underlying NorenApi websocket to prevent 'socket already opened' errors."""
+        """[v15.3.24] Deep cleanup: Forcefully resets NorenApi internals to allow restart."""
         try:
-            # Attempt to access the internal websocket object in NorenApi
-            # Name mangling: __websocket -> _NorenApi__websocket
+            logger.info("SHOONYA_WS: Deep cleaning socket state...")
+            
+            # 1. Close the socket itself
             ws = getattr(self.api, '_NorenApi__websocket', None)
             if ws:
-                logger.info("SHOONYA_WS: Force closing existing/stale socket...")
-                ws.close()
-                # Clear the reference to allow NorenApi to create a new one
+                try: ws.close()
+                except: pass
                 setattr(self.api, '_NorenApi__websocket', None)
-            else:
-                # Also check for 'websocket' attribute if public
-                ws_public = getattr(self.api, 'websocket', None)
-                if ws_public:
-                    ws_public.close()
+
+            # 2. Reset connection flag (Crucial for bypassing 'already opened' check)
+            # Name mangling: __websocket_connected -> _NorenApi__websocket_connected
+            setattr(self.api, '_NorenApi__websocket_connected', False)
+
+            # 3. Join and clear the background thread
+            ws_thread = getattr(self.api, '_NorenApi__ws_thread', None)
+            if ws_thread and ws_thread.is_alive():
+                logger.warning("SHOONYA_WS: Joining zombie thread...")
+                ws_thread.join(timeout=2.0)
+                if ws_thread.is_alive():
+                     logger.error("SHOONYA_WS: Thread refused to die. Proceeding anyway.")
+            setattr(self.api, '_NorenApi__ws_thread', None)
+            
         except Exception as e:
-            logger.warning(f"SHOONYA_WS: Error during force close (non-critical): {e}")
+            logger.warning(f"SHOONYA_WS: Error during deep force close: {e}")
 
     def get_market_data(self, symbol: str) -> Dict:
         """[v9.9.9] Optimized snapshot fetcher with future matching."""
