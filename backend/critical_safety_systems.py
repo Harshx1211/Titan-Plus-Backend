@@ -21,8 +21,13 @@ logger = logging.getLogger("critical_safety")
 
 
 # ============================================================================
-# ENUMS
+# ENUMS & EXCEPTIONS
 # ============================================================================
+
+class RiskViolation(Exception):
+    """Exception raised when a trade violates risk parameters"""
+    pass
+
 
 class PositionStatus(str, Enum):
     """Position lifecycle states"""
