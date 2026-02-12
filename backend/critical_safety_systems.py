@@ -51,7 +51,7 @@ class DataHealthChecker:
     
     def __init__(self):
         # [HARDENED] Much tighter threshold for F&O
-        self.max_data_age_seconds = 1.5  # Down from 5.0
+        self.max_data_age_seconds = 5.0  # [STABILITY UPGRADE] Relaxed from 1.5s for cloud jitter
         
         # [NEW] Spread and volume validation
         self.max_spread_pct = 0.5  # Max 0.5% bid-ask spread
@@ -91,7 +91,9 @@ class DataHealthChecker:
         age_seconds = (datetime.now(timezone.utc) - timestamp).total_seconds()
         
         if age_seconds > self.max_data_age_seconds:
-            logger.error(
+            # [v15.3.14] Downgraded to warning if under 10s to keep logs clean but informative
+            log_func = logger.warning if age_seconds < 10.0 else logger.error
+            log_func(
                 f"STALE_DATA: {symbol} data is {age_seconds:.2f}s old "
                 f"(max: {self.max_data_age_seconds}s)"
             )

@@ -32,7 +32,7 @@ class RegimeConfig:
     
     # Asymmetric Confirmation
     regime_confirmation_trending: int = 3
-    regime_confirmation_sideways: int = 1  # Fast entry for ranges
+    regime_confirmation_sideways: int = 5  # [v15.3.14] Increased from 1 to prevent flip-flop flicker
     
     min_bars_required: int = 30
 
