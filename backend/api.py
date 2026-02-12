@@ -1542,6 +1542,11 @@ def run_engine_loop():
                                 days_to_expiry=days_to_expiry
                             )
                             
+                            # [v15.3.17] Safety Gate: Check for strike selection failure
+                            if opt_trade.get("rejection_reasons"):
+                                live_state.add_thought("OPTION_VETO", f"[{symbol}] Strike selection failed: {opt_trade['rejection_reasons']}")
+                                continue
+                            
                             # IV Percentile & Smooth Scaling
                             cur_iv = market_data.iv if hasattr(market_data, 'iv') else 20.0
                             if not cur_iv: # Support synthetic chain lingo
@@ -1844,8 +1849,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v15.3.16-HOTFIX]
-LOGIC_VERSION = "v15.3.16-HOTFIX"
+# Startup Version Identifier [v15.3.17-HOTFIX]
+LOGIC_VERSION = "v15.3.17-HOTFIX"
 
 @app.on_event("startup")
 async def startup_event():
