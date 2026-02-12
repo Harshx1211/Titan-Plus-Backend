@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy backend requirements first
-COPY backend/requirements.txt .
+COPY requirements.txt .
 
 # Install CPU-optimized torch first to save space/time
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu

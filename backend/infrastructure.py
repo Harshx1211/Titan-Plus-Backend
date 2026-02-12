@@ -366,7 +366,8 @@ class SupabaseManager:
             try:
                 res = self.supabase.table(table).select("*").limit(1).execute()
                 if res.data: self.table_columns[table] = set(res.data[0].keys())
-            except: pass
+            except Exception as e:
+                logging.getLogger("infrastructure").warning(f"SUPABASE: Schema check failed for {table}: {e}")
 
     def _worker(self):
         while True:
@@ -455,13 +456,17 @@ class SupabaseManager:
         try:
             res = self.supabase.table("signal_ledger").select("*").order("created_at", desc=True).limit(limit).execute()
             return res.data or []
-        except: return []
+        except Exception as e:
+            logging.getLogger("infrastructure").error(f"SUPABASE: History fetch failed: {e}")
+            return []
 
     def get_snapshots(self, limit: int = 500) -> List[Dict]:
         try:
             res = self.supabase.table("trade_snapshots").select("*").order("timestamp", desc=True).limit(limit).execute()
             return res.data or []
-        except: return []
+        except Exception as e:
+            logging.getLogger("infrastructure").error(f"SUPABASE: Snapshots fetch failed: {e}")
+            return []
 
     def get_active_signals(self, limit: int = 100) -> List[Dict]:
         """Recovers signals that haven't been CLOSED or given an OUTCOME.
@@ -645,6 +650,7 @@ class MarketState:
         self.lock = threading.Lock()
         self.data: Dict[str, Dict] = {}
         self.last_update_ts = 0.0
+        self.last_ws_heartbeat = 0.0
         self._initialized = True
         logging.info("INFRA: Atomic MarketState initialized.")
 
@@ -661,6 +667,7 @@ class MarketState:
             self.data[symbol].update(tick)
             self.data[symbol]['last_tick_time'] = time.time()
             self.last_update_ts = time.time()
+            self.last_ws_heartbeat = time.time()
 
     def snapshot(self) -> Dict[str, Dict]:
         """Provides a safe copy of the current state for the Brain."""

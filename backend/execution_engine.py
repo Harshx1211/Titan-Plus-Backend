@@ -23,6 +23,7 @@ from typing import Optional, Dict, List
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from dataclasses import dataclass
+from execution_slippage_control import SlippageController
 
 logger = logging.getLogger("execution")
 
@@ -155,9 +156,12 @@ class ExecutionEngine:
         self.ORDER_TIMEOUT = 30  # seconds
         self.SLIPPAGE_TOLERANCE = 10  # points
         
-        # Monitoring
-        self.monitor_thread: Optional[threading.Thread] = None
-        self.is_monitoring = False
+        # [v15.3.8] Slippage Controller integration
+        self.slippage_controller = SlippageController(
+            max_slippage_pct=0.5,
+            max_slippage_points=10.0,
+            order_timeout=30
+        )
         
         # Statistics
         self.stats = {
@@ -201,7 +205,22 @@ class ExecutionEngine:
         """
         logger.info(f"Executing signal: {signal.option_symbol}")
         
-        # Pre-execution checks
+        # [v15.3.8] Pre-execution Slippage Check
+        # We need the current market price for the option
+        # For simplicity, we assume premium_entry is our target
+        # We'll validate if it's still available or too far from last known price
+        last_known_premium = signal.premium_entry # Fallback
+        
+        valid, reason = self.slippage_controller.validate_pre_execution(
+            symbol=signal.option_symbol,
+            last_price=last_known_premium,
+            target_price=signal.premium_entry
+        )
+        
+        if not valid:
+            logger.warning(f"Slippage check failed: {reason}")
+            return None
+        
         if not self._pre_execution_checks(signal):
             logger.warning("Pre-execution checks failed")
             return None
@@ -227,6 +246,7 @@ class ExecutionEngine:
         )
         
         # Place entry order
+        start_time = time.time()
         success = self._place_order(order)
         if not success:
             logger.error("Failed to place entry order")
@@ -238,6 +258,15 @@ class ExecutionEngine:
             logger.warning(f"Order {order.order_id} not filled, cancelling")
             self._cancel_order(order.order_id)
             return None
+            
+        # [v15.3.8] Record actual slippage
+        if order.average_price:
+            self.slippage_controller.record_execution(
+                symbol=order.symbol,
+                expected_price=order.price,
+                actual_price=order.average_price,
+                start_time=start_time
+            )
         
         # Calculate slippage
         expected = signal.premium_entry

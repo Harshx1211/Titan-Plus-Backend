@@ -1,7 +1,8 @@
-import pandas as pd
-import numpy as np
 from typing import List, Dict, Optional
 import logging
+import pandas as pd
+import numpy as np
+from intelligent_strike_selector import IntelligentStrikeSelector, MarketRegime
 
 logger = logging.getLogger("option_engine")
 
@@ -13,6 +14,7 @@ class OptionEngine:
     def __init__(self):
         self.last_max_pain: float = 0.0
         self.risk_free_rate = 0.07 
+        self.strike_selector = IntelligentStrikeSelector()
         
     def calculate_gex_proxy(self, chain_df: pd.DataFrame, spot: float) -> Dict:
         """
@@ -122,81 +124,35 @@ class OptionEngine:
         return "NEUTRAL"
 
     def find_executable_option(self, symbol: str, spot: float, signal_type: str, 
-                                precision_levels: Dict = {}, 
-                                is_momentum_dominant: bool = False,
-                                days_to_expiry: int = 5,
-                                max_spread_pct: float = 0.05,
-                                chain_df: pd.DataFrame = None,
-                                is_synthetic: bool = False) -> Dict:
+                                regime: MarketRegime = MarketRegime.SIDEWAYS,
+                                chains: List[Dict] = [],
+                                days_to_expiry: int = 5) -> Dict:
         """
-        [v8.6] Institutional Strike Selection Engine.
-        Prioritizes Epistemic Integrity and Adaptive Strike Pool Scanning.
+        [v15.3.8] Enhanced Strike Selection using IntelligentStrikeSelector.
         """
-        rejection_reasons = []
-        if chain_df is None or chain_df.empty:
-            rejection_reasons.append("MISSING_CHAIN_DATA")
-            return {"rejection_reasons": rejection_reasons}
-
-        strike_step = 50 if symbol == "NIFTY" else 100
-        atm_strike = int(round(spot / strike_step) * strike_step)
-        
-        # 1. Adaptive Strike Pool Scanning (Phase 28)
-        # Start with ATM pool [ATM-1, ATM, ATM+1]
-        # Expand if liquidity is below 'Dominance Threshold'
         option_type = "CE" if signal_type == "BULLISH" else "PE"
-        LIQUIDITY_DOMINANCE_THRESHOLD = 1000 # [v9.8] Dropped to 1k for total frequency 
-        max_spread_pct = 0.50 # [v9.8] increased for testing
         
-        selected_strike = None
-        base_premium = 0
-        selection_logic = "ATM_LIQUIDITY_DOMINANT"
-
-        for radius in [1, 2, 3]: # Scan up to 3 strikes away
-            pool_strikes = [atm_strike + i*strike_step for i in range(-radius, radius + 1)]
-            candidates = []
+        # Use the intelligent selector
+        best_match = self.strike_selector.select_best_strike(
+            option_chain=chains,
+            regime=regime,
+            option_type=option_type,
+            expiry_days=days_to_expiry
+        )
+        
+        if not best_match:
+            return {"rejection_reasons": ["NO_SUITABLE_STRIKE_FOUND"]}
             
-            for strike in pool_strikes:
-                row = chain_df[chain_df['strike'] == strike]
-                if row.empty: continue
-                
-                row = row.iloc[0]
-                prefix = "call" if option_type == "CE" else "put"
-                ltp = row.get(f'{prefix}_ltp', 0)
-                oi = row.get(f'{prefix}_oi', 0)
-                vol = row.get(f'{prefix}_vol', 0)
-                # [Q22 Fix] Safe Access for Bid/Ask (Fallback to LTP)
-                bid = row.get(f'{prefix}_bid', ltp)
-                ask = row.get(f'{prefix}_ask', ltp)
-                
-                # Mid-Price Spread Normalization (v8.5)
-                mid_price = (ask + bid) / 2
-                spread = (ask - bid) / mid_price if mid_price > 0 else 1.0
-                
-                if spread > max_spread_pct:
-                    continue 
-                    
-                liquidity_score = oi * max(1, vol)
-                candidates.append({
-                    "strike": strike,
-                    "ltp": ltp,
-                    "score": liquidity_score,
-                    "spread": spread
-                })
-                
-            if candidates:
-                best_cand = sorted(candidates, key=lambda x: x['score'], reverse=True)[0]
-                if best_cand['score'] >= LIQUIDITY_DOMINANCE_THRESHOLD or radius == 3:
-                    selected_strike = best_cand['strike']
-                    base_premium = best_cand['ltp']
-                    if radius > 1: selection_logic = f"EXPANDED_POOL_R{radius}"
-                    break
-        
-        if not selected_strike or base_premium <= 0:
-            rejection_reasons.append("INSUFFICIENT_LIQUIDITY_OR_SPREAD_VETO")
-            return {"rejection_reasons": rejection_reasons}
-
-        # 2. Strike Competition: Pick the Liquidity-Dominant candidate
-        # Note: Competition now happens inside the adaptive pool loop above.
+        # Format result to match existing expectation
+        return {
+            "strike": best_match['strike'],
+            "premium": best_match.get('ltp', best_match.get('price', 0)),
+            "symbol": best_match.get('symbol', f"{symbol}_{best_match['strike']}_{option_type}"),
+            "option_type": option_type,
+            "delta": best_match.get('delta', 0),
+            "gamma": best_match.get('gamma', 0),
+            "logic": "INTELLIGENT_STRIKE_SELECTOR_v15.3.8"
+        }
         
         # 3. Premium Risk Band Constraint (₹250 Ceiling)
         # Note: In institutional setups, we don't just shift strike because of price,

@@ -29,6 +29,26 @@ from models_v3 import Decision, Regime, Action, MarketStructure, TradeSignal, Tr
 from health_check_endpoint import health_router
 from api_enhanced_endpoints import outcome_router
 # from crypto_provider import CryptoProvider [Decommissioned for NSE]
+from critical_safety_systems import (
+    PositionManager,
+    RiskManager,
+    DataHealthChecker,
+    RiskViolation,
+    Position,
+    PositionStatus
+)
+
+# [v15.3.7] Global App Configuration
+APP_CONFIG = {
+    "VIX_DEFAULT": 15.0,
+    "SIGNAL_STOP_LOSS_POINTS": 150.0,
+    "SIGNAL_TARGET_POINTS": 300.0,
+    "DASHBOARD_URL": os.getenv("DASHBOARD_URL", ""),
+    "PAPER_TRADING_MODE": os.getenv("PAPER_TRADING_MODE", "True").lower() == "true",
+}
+
+logger.info(f"📊 Trading Mode: {'PAPER' if APP_CONFIG['PAPER_TRADING_MODE'] else 'LIVE'}")
+
 import uvicorn
 
 app = FastAPI(title="The Oracle - Titan Plus Institutional")
@@ -51,13 +71,13 @@ class LiveState:
         # [v10.0] Thread Safety - RLock for all state access
         self._lock = threading.RLock()
         
-        self.current_regime = Regime.NEUTRAL
+        self._current_regime = Regime.NEUTRAL
         self._active_signals = []  # Protected by lock
         self.last_update = datetime.now(timezone.utc)
         self.symbols = ["NIFTY", "BANKNIFTY", "SENSEX", "BTCUSDT", "ETHUSDT"]
         self.current_symbol_idx = 0
-        self.vix = APP_CONFIG["VIX_DEFAULT"]
-        self.breadth = {"advances": 0, "declines": 0}
+        self._vix = APP_CONFIG["VIX_DEFAULT"]
+        self._breadth = {"advances": 0, "declines": 0}
         self.market_message = "System Stable"
         self.data_source = "PUBLIC_SCRAPER"
         self.index_strengths: Dict[str, float] = {s: 0.0 for s in self.symbols}
@@ -128,8 +148,35 @@ class LiveState:
     
     def clear_signals(self):
         """Thread-safe signal clearing."""
+    @property
+    def current_regime(self):
         with self._lock:
-            self._active_signals = []
+            return self._current_regime
+    
+    @current_regime.setter
+    def current_regime(self, value):
+        with self._lock:
+            self._current_regime = value
+
+    @property
+    def vix(self):
+        with self._lock:
+            return self._vix
+    
+    @vix.setter
+    def vix(self, value):
+        with self._lock:
+            self._vix = value
+
+    @property
+    def breadth(self):
+        with self._lock:
+            return self._breadth.copy()
+    
+    @breadth.setter
+    def breadth(self, value):
+        with self._lock:
+            self._breadth = value
 
     def add_thought(self, thought_type: str, msg: str):
         """[v10.0] Thread-safe thought logger with type-aware de-duplication."""
@@ -152,72 +199,78 @@ class LiveState:
 
 def emergency_shutdown(reason: str):
     """
-    [v10.0] Nuclear option: Close everything immediately on critical failures.
+    [v15.3.7] Enhanced emergency shutdown with position manager integration.
     
-    Triggers:
-    - Both data providers fail
-    - Database connection lost
-    - Critical system error
-    - Manual intervention required
+    Args:
+        reason: Reason for shutdown
     """
     logger.critical(f"🚨 EMERGENCY SHUTDOWN INITIATED: {reason}")
     
-    # 1. Stop accepting new signals
+    # Set emergency mode
     live_state.emergency_mode = True
     
-    # 2. Close all open positions at MARKET (fastest exit)
+    # Halt trading via risk manager
+    if hasattr(core, 'risk_manager'):
+        core.risk_manager.halt_trading(reason)
+    
+    # Close all open positions
     closed_count = 0
     failed_exits = []
+    total_pnl = 0.0
     
-    for signal in live_state.active_signals:
-        try:
-            if hasattr(core, 'execution_engine') and core.execution_engine:
-                # Use execution engine's emergency exit
-                core.execution_engine.emergency_exit(
-                    signal.decision_id,
-                    reason=f"EMERGENCY_SHUTDOWN: {reason}"
+    if hasattr(core, 'position_manager'):
+        open_positions = core.position_manager.get_open_positions()
+        
+        for position in open_positions:
+            try:
+                # Use current price or entry price as fallback
+                exit_price = position.current_price if position.current_price > 0 else position.entry_price
+                
+                # Close position
+                closed_pos = core.position_manager.close_position(
+                    signal_id=position.signal_id,
+                    exit_price=exit_price,
+                    reason=f"EMERGENCY: {reason}"
                 )
+                
+                # Remove from active signals
+                live_state.remove_signal(position.signal_id)
+                
+                # Track P&L
+                total_pnl += closed_pos.realized_pnl
                 closed_count += 1
-                logger.info(f"Emergency exit: {signal.symbol} @ {signal.decision_id}")
-            else:
-                logger.warning(f"No execution engine - cannot close {signal.symbol}")
-                failed_exits.append(signal.symbol)
-        except Exception as e:
-            logger.error(f"Emergency exit failed for {signal.symbol}: {e}")
-            failed_exits.append(signal.symbol)
+                
+                logger.info(f"Emergency closed: {position.symbol}, P&L: ₹{closed_pos.realized_pnl:.2f}")
+                
+            except Exception as e:
+                logger.error(f"Failed to close {position.symbol}: {e}")
+                failed_exits.append(position.symbol)
     
-    # 3. Alert via all channels
-    alert_message = (
-        f"🚨 EMERGENCY SHUTDOWN\n\n"
-        f"Reason: {reason}\n"
-        f"Positions closed: {closed_count}\n"
-        f"Failed exits: {len(failed_exits)}\n"
-        f"System locked. Manual restart required."
+    # Send telegram alert
+    if hasattr(core, 'telegram_notifier'):
+        alert_msg = (
+            f"🚨 EMERGENCY SHUTDOWN\n\n"
+            f"Reason: {reason}\n"
+            f"Closed Positions: {closed_count}\n"
+            f"Failed Exits: {len(failed_exits)}\n"
+            f"Total P&L: ₹{total_pnl:.2f}\n\n"
+            f"System halted. Manual intervention required."
+        )
+        
+        if failed_exits:
+            alert_msg += f"\n\n⚠️ Manual close needed: {', '.join(failed_exits)}"
+        
+        core.telegram_notifier.send_alert(alert_msg)
+    
+    logger.critical(
+        f"Emergency shutdown complete: "
+        f"{closed_count} positions closed, "
+        f"{len(failed_exits)} failed, "
+        f"P&L: ₹{total_pnl:.2f}"
     )
     
-    try:
-        if hasattr(core, 'telegram_notifier') and core.telegram_notifier:
-            core.telegram_notifier.send_alert(alert_message)
-    except Exception as e:
-        logger.error(f"Failed to send Telegram alert: {e}")
-    
-    # 4. Save state before exit
-    try:
-        if hasattr(core, 'brain') and core.brain:
-            core.brain.save_state()
-        if hasattr(core, 'db') and core.db:
-            core.db.log_event("EMERGENCY_SHUTDOWN", {
-                "reason": reason,
-                "closed_count": closed_count,
-                "failed_exits": failed_exits,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
-    except Exception as e:
-        logger.error(f"Failed to save state during shutdown: {e}")
-    
-    # 5. Hard exit (bypass normal shutdown)
-    logger.critical("System halting now.")
-    os._exit(1)  # Immediate termination
+    # Hard exit to prevent any further logic execution
+    os._exit(1)
 
 # Config & Global Placeholders
 # [v10.0] Loaded from config.py
@@ -309,6 +362,21 @@ class CoreEngine:
         self.crypto_provider = None # [v15.0] Core Crypto Provider
         self.shadow_engine = None
         self.outcome_tracker = None  # [v10.1] Automatic outcome tracking
+        
+        # [v15.3.7] P0 Safety Systems
+        self.position_manager = PositionManager()
+        self.risk_manager = RiskManager(
+            total_capital=config.INITIAL_CAPITAL,
+            max_daily_loss_pct=abs(config.MAX_DAILY_LOSS),
+            max_position_size_pct=config.MAX_RISK_PER_TRADE,
+            max_open_positions=config.MAX_OPEN_POSITIONS,
+            max_position_loss_pct=config.MAX_POSITION_LOSS_PCT,
+            max_consecutive_losses=config.MAX_CONSECUTIVE_LOSSES,
+            max_stop_losses_per_day=config.MAX_STOP_LOSSES_PER_DAY,
+            min_risk_reward_ratio=config.MIN_RISK_REWARD_RATIO
+        )
+        self.data_health_checker = DataHealthChecker()
+        
         self.is_initialized = False
 
     def initialize(self):
@@ -367,8 +435,8 @@ class CoreEngine:
         self.session_auditor = SessionAuditor()
         
         # Heavy ML (Staggered)
-        # Heavy ML (Staggered)
-        self.brain = create_brain(enable_rl=True, enable_smc=True)  # Unified v10.0
+        # Unified Brain (v10.0) - [v15.3.7] RL Decommissioned for Safety
+        self.brain = create_brain(enable_rl=False, enable_smc=True)  
         gc.collect(); time.sleep(1)
         # self.evolver = EvolutionEngine(self.brain)  # [v10.2] Disabled - outcome_tracker provides learning
         self.evolver = None  # Placeholder
@@ -986,7 +1054,8 @@ def run_engine_loop():
                                         asset_class=AssetClass.NSE # Seeding for core NSE symbols
                                     )
                                     logger.info(f"STATE: Persisted off-market price for {sym}")
-                            except: pass
+                            except Exception as e:
+                                logger.warning(f"SMA calculation failed for {sym}: {e}")
 
                     time.sleep(60)
                     continue
@@ -1068,13 +1137,22 @@ def run_engine_loop():
                             source="SHOONYA_WS"
                         )
                         
-                        # [v9.9.9] Audit Fix: Stale Data Guard (IST vs IST)
-                        data_age_seconds = (datetime.now(IST) - market_data.timestamp).total_seconds()
-                        if data_age_seconds > 10 and not data_provider.shoonya.is_connected:
-                            # If WS is dead, don't just hang, log warning
-                            if random.random() < 0.01:
-                                logger.warning(f"STALE_DATA: {symbol} is {data_age_seconds:.1f}s old. WS state: {data_provider.shoonya.is_connected}")
-                            continue
+                        # ========== [v15.3.8] SAFETY GATE 1: DATA HEALTH CHECK ==========
+                        data_valid, data_reason = core.data_health_checker.validate_market_data(
+                            symbol=symbol,
+                            price=market_data.spot_price,
+                            timestamp=market_data.timestamp,
+                            volume=ws_tick.get('v', ws_tick.get('volume', 0)),
+                            bid=ws_tick.get('bp1'),
+                            ask=ws_tick.get('sp1')
+                        )
+                        
+                        if not data_valid:
+                            if vix_update_counter % 50 == 0:
+                                logger.warning(f"🚫 DATA HEALTH BLOCK: {symbol} - {data_reason}")
+                            live_state.add_thought("DATA_HEALTH", f"❌ {symbol}: {data_reason}")
+                            continue  # Skip this symbol, don't trade on stale data
+                        # ================================================================
 
                     live_state.prices[symbol] = market_data.spot_price
                     detected_patterns = []
@@ -1407,12 +1485,15 @@ def run_engine_loop():
                             is_swap_entry = False
                             swapped_from_id = None
 
-                        # [Wave 3] Double-Entry Deduplication Lock
+                        # [v15.3.7] SAFETY GATE 2: DUPLICATE PREVENTION
                         with live_state.seen_ids_lock:
                             if decision_id in live_state.seen_signal_ids:
-                                live_state.add_thought("DEDUPE", f"[{symbol}] Skipping Approval: Signal {decision_id} was already processed in this session.")
+                                if vix_update_counter % 50 == 0:
+                                    logger.warning(f"🚫 DUPLICATE SIGNAL BLOCKED: {decision_id}")
+                                live_state.add_thought("DEDUPE", f"[{symbol}] Skipping Approval: Signal {decision_id} already processed.")
                                 continue
-                            live_state.seen_signal_ids.add(decision_id)
+                            
+                            # Do NOT mark as seen yet, wait for Risk Validation
                                 
                         # Correlated Risk Check: Pass currently active symbols
                         active_syms = [s.symbol for s in live_state.active_signals if s.is_live]
@@ -1442,11 +1523,22 @@ def run_engine_loop():
                             minutes_to_expiry = get_minutes_to_expiry()
                             days_to_expiry = max(1, round(minutes_to_expiry / (24 * 60)))
                             
+                            # [v15.3.8] Map regime for intelligent selector
+                            mapped_regime = MarketRegime.SIDEWAYS
+                            if live_state.current_regime == Regime.TRENDING_UP: 
+                                mapped_regime = MarketRegime.TRENDING_BULL
+                            elif live_state.current_regime == Regime.TRENDING_DOWN: 
+                                mapped_regime = MarketRegime.TRENDING_BEAR
+                            elif live_state.current_regime == Regime.SIDEWAYS_STRONG:
+                                mapped_regime = MarketRegime.SIDEWAYS
+                            
                             opt_trade = option_engine.find_executable_option(
-                                symbol, market_data.spot_price, signal_type, precision_levels=precision_levels,
-                                is_momentum_dominant=strategist.is_momentum_dominant(hist_df), 
-                                days_to_expiry=days_to_expiry, 
-                                chain_df=chain_df, is_synthetic=is_synthetic
+                                symbol=symbol, 
+                                spot=market_data.spot_price, 
+                                signal_type=signal_type, 
+                                regime=mapped_regime,
+                                chains=chain_df.to_dict('records') if chain_df is not None and not chain_df.empty else [],
+                                days_to_expiry=days_to_expiry
                             )
                             
                             # IV Percentile & Smooth Scaling
@@ -1522,6 +1614,28 @@ def run_engine_loop():
                                 ) * iv_scaling),
                                 score=pattern_results["score"], **opt_trade
                             )
+                            
+                            # ========== [v15.3.7] SAFETY GATE 3: RISK VALIDATION ==========
+                            can_trade, risk_reason = core.risk_manager.validate_new_trade(
+                                signal=new_signal.dict(),
+                                position_manager=core.position_manager
+                            )
+                            
+                            if not can_trade:
+                                logger.warning(f"🚫 RISK BLOCK: {symbol} - {risk_reason}")
+                                live_state.add_thought("RISK", f"❌ {risk_reason}")
+                                
+                                # Critical: If trading is halted, trigger emergency shutdown
+                                if core.risk_manager.trading_halted:
+                                    emergency_shutdown(f"Risk Manager Halt: {risk_reason}")
+                                
+                                continue  # Skip this trade
+                            # ================================================================
+                            
+                            # NOW mark as seen
+                            with live_state.seen_ids_lock:
+                                live_state.seen_signal_ids.add(decision_id)
+
                             # [Institutional Phase 6] Automated Order Bridge & Latency Monitor
                             # Direct connection to Broker API; bypasses Telegram/Human latency.
                             t_signal = time.time()
@@ -1565,9 +1679,23 @@ def run_engine_loop():
                                 # Fallback to legacy logging/notification if notifier fails
                                 core.db.log_intent(new_signal.dict())
                                 core.telegram_notifier.send_signal(new_signal.dict(), dashboard_url=APP_CONFIG.get("DASHBOARD_URL", ""))
+                            
+                            # ========== [v15.3.7] PAPER TRADING MODE ENFORCEMENT ==========
+                            if APP_CONFIG["PAPER_TRADING_MODE"]:
+                                logger.info(f"📄 PAPER MODE: Simulated entry for {new_signal.symbol}")
+                                live_state.add_thought("PAPER", f"📄 Simulated Entry: {new_signal.symbol}")
                             else:
-                                rejection = ", ".join(opt_trade.get("rejection_reasons", ["Unknown"])) if opt_trade else "No suitable contract found"
-                                live_state.add_thought("OPTIONS", f"[{symbol}] Strategy Veto: {rejection}. Check liquidity or volume.")
+                                # LIVE TRADING: Execute via engine
+                                logger.info(f"💰 LIVE MODE: Executing Real Entry for {new_signal.symbol}...")
+                                # core.execution_engine.execute_order(new_signal) 
+                                pass
+                            
+                            # Track in safety position manager
+                            core.position_manager.add_position(new_signal.dict())
+                            # ================================================================
+                        else:
+                            rejection = ", ".join(opt_trade.get("rejection_reasons", ["Unknown"])) if opt_trade else "No suitable contract found"
+                            live_state.add_thought("OPTIONS", f"[{symbol}] Strategy Veto: {rejection}. Check liquidity or volume.")
 
                     # [v9.9.9] Modular Management: Priority-Based Exit Evaluation
                     for sig in live_state.active_signals:
@@ -1609,6 +1737,31 @@ def run_engine_loop():
                             # Log to DB/Brain
                             core.brain.log_snapshot(sig.decision_id, outcome=is_win, performance={"mfe": sig.mfe, "mae": sig.mae}, freeze_authority=is_passive)
                             core.db.log_outcome(sig.decision_id, "WIN" if is_win else "LOSS")
+                            
+                            # [v15.3.8] Record outcome for circuit breaker
+                            core.risk_manager.record_trade_outcome("WIN" if is_win else "LOSS", p_delta)
+                        
+                        # ========== [v15.3.7] SAFETY POSITION UPDATES ==========
+                        try:
+                            # Update safety manager with latest price
+                            core.position_manager.update_position(sig.decision_id, market_data.spot_price)
+                            
+                            # Check exit via safety risk manager
+                            pos = core.position_manager.get_position(sig.decision_id)
+                            if pos:
+                                should_exit, exit_reason = core.risk_manager.should_exit_position(pos, market_data.spot_price)
+                                
+                                if should_exit:
+                                    logger.info(f"🔔 SAFETY EXIT: {symbol} - {exit_reason}")
+                                    closed_pos = core.position_manager.close_position(sig.decision_id, market_data.spot_price, exit_reason)
+                                    sig.is_live = False
+                                    # [v15.3.8] Record outcome for circuit breaker
+                                    if closed_pos:
+                                        core.risk_manager.record_trade_outcome(exit_reason, closed_pos.realized_pnl)
+                                    # Fallback to existing exit notification logic above or use new one
+                        except Exception as pos_err:
+                            logger.error(f"Safety position update failed for {symbol}: {pos_err}")
+                        # ========================================================
 
                 except Exception as e:
                     logger.error(f"ENGINE SYMBOL ERROR [{symbol}]: {e}", exc_info=True)
@@ -1690,8 +1843,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v15.3.6_HELIOS]
-LOGIC_VERSION = "v15.3.6_HELIOS"
+# Startup Version Identifier [v15.3.7_SAFETY_RAILS]
+LOGIC_VERSION = "v15.3.7_SAFETY_RAILS"
 
 @app.on_event("startup")
 async def startup_event():

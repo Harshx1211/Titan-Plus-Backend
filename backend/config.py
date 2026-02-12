@@ -10,11 +10,23 @@ class Config:
     # Environment
     ENVIRONMENT = os.getenv("ENVIRONMENT", "DEVELOPMENT")  # "DEVELOPMENT" or "PRODUCTION"
     
+    # [v15.3.9] Validate Production Config
+    if ENVIRONMENT == "PRODUCTION":
+        if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
+            import logging
+            logging.error("CRITICAL: SUPABASE_URL/KEY missing in PRODUCTION environment!")
+    
     # Capital & Risk
     INITIAL_CAPITAL = 100000
     MAX_RISK_PER_TRADE = 0.02  # 2%
     MAX_DAILY_LOSS = -0.05  # -5%
     MAX_OPEN_POSITIONS = 1
+    
+    # [v15.3.8] Industrial Hardening
+    MAX_POSITION_LOSS_PCT = 0.02         # 2% of capital per position
+    MAX_CONSECUTIVE_LOSSES = 3           # Halt after 3 losses
+    MAX_STOP_LOSSES_PER_DAY = 5          # Stop trading after 5 SL hits
+    MIN_RISK_REWARD_RATIO = 1.5          # Minimum R:R for entries
     
     # Brain
     DECISION_THRESHOLD = 0.55  # [v14.2.0] Lowered from 0.60 to capture high-confluence signals in sideways markets

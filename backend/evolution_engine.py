@@ -81,7 +81,9 @@ class EvolutionEngine:
             feat = row.get('features')
             if isinstance(feat, str):
                 try: row['features'] = json.loads(feat.replace("'", '"'))
-                except: row['features'] = {}
+                except Exception as e:
+                    logger.warning(f"EVOLUTION: JSON parse failed for snapshot features: {e}")
+                    row['features'] = {}
             elif not isinstance(feat, dict):
                 row['features'] = {}
             cleaned_history.append(row)

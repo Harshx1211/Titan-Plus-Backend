@@ -303,7 +303,9 @@ class UnifiedBrainEngine:
                             value = torch.tensor([0.5])
                         
                         action = torch.argmax(action_probs, dim=1).item()
-                        log_prob = torch.log(action_probs[0, action]).item()
+                        # [v15.3.9] Hardened: Add epsilon to avoid log(0)
+                        prob = action_probs[0, action].clamp(min=1e-8)
+                        log_prob = torch.log(prob).item()
                         value_scalar = value.item() if hasattr(value, 'item') else 0.5
                         
                         return action, log_prob, value_scalar

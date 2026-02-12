@@ -13,6 +13,7 @@ import requests
 import threading
 import pandas as pd
 from datetime import datetime, timedelta
+from websocket_resilience import WebSocketWatchdog
 from typing import Optional, Dict, List, Tuple
 from dotenv import load_dotenv
 from NorenRestApiPy.NorenApi import NorenApi
@@ -92,7 +93,9 @@ class ShoonyaApiPy(NorenApi):
         payload = 'jData=' + json.dumps(values) + f'&jKey={jkey}'
         res = requests.post(url, data=payload)
         try: return json.loads(res.text)
-        except: return {"stat": "Fail", "emsg": "JSON_ERR"}
+        except Exception as e:
+            logger.error(f"SHOONYA: JSON parse failed: {e}")
+            return {"stat": "Fail", "emsg": "JSON_ERR"}
 
     @rate_limited
     def searchscrip(self, exchange, searchtext):
@@ -125,6 +128,14 @@ class ShoonyaProvider:
         }
         self.future_tokens = {}
         self.circuit = CircuitBreaker("SHOONYA", threshold=3, recovery_timeout=120)
+        
+        # [v15.3.8] WebSocket Watchdog integration
+        self.watchdog = WebSocketWatchdog(
+            reconnect_callback=self.start_websocket,
+            heartbeat_timeout=10.0
+        )
+        
+        logger.info("ShoonyaProvider initialized with v15.3.8 resilience.")
 
     def login(self):
         if not self.totp_secret: return False
@@ -141,7 +152,8 @@ class ShoonyaProvider:
                 self.validate_market_tokens()
                 self.start_websocket() # [v14.2.0] Activate Real-time Feed
                 return True
-        except: 
+        except Exception as e:
+            logger.error(f"SHOONYA: Reconnect failed: {e}")
             self.circuit.record_failure()
         return False
 
@@ -262,6 +274,9 @@ class ShoonyaProvider:
                         if 'poi' in tick: update_data['poi'] = int(tick['poi'])
                         
                         self.market_state.update(update_data)
+                        
+                        # [v15.3.8] Notify watchdog of activity
+                        self.watchdog.notify_alive()
                 except Exception as e:
                     logger.error(f"SHOONYA_WS_CALLBACK: Error processing tick: {e}")
 
@@ -294,8 +309,8 @@ class ShoonyaProvider:
                 socket_error_callback=on_error
             )
             
-            # Start watchdog in background
-            threading.Thread(target=self._watchdog_loop, daemon=True).start()
+            # [v15.3.8] Start the hardened watchdog
+            self.watchdog.start()
             
         except Exception as e:
             logger.error(f"SHOONYA_WS: Failed to start WebSocket: {e}")
@@ -384,18 +399,6 @@ class ShoonyaProvider:
         except Exception as e:
             logger.error(f"SHOONYA_EXEC: Error getting order status for {order_id}: {e}")
             return None
-
-    def _watchdog_loop(self):
-        """[v14.2.0] Monitors the connection state and force-restarts if dead."""
-        while True:
-            try:
-                time.sleep(30) # Check every 30 seconds
-                global_sentinel.record_heartbeat("shoonya_ws_watchdog")
-                if not self.is_connected:
-                    logger.warning("SHOONYA_WS: WebSocket connection lost. Attempting reconnect.")
-                    self.start_websocket() # Reconnect
-            except Exception as e:
-                logger.error(f"SHOONYA_WS: Watchdog error: {e}")
 
 # ============================================================================
 # 3. Data Orchestrator (DataProvider)
