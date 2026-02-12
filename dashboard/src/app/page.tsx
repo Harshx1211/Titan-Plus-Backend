@@ -219,8 +219,8 @@ export default function TitanDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
 
-  // [v9.9.9] Hardcoded Fallback to ensure connectivity if ENV fails
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://harshx1323-trading-bot.hf.space';
+  // [v15.3.9] Updated to point to the hardened Titan Plus Backend
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://harshx1323-titan-plus-backend.hf.space';
 
   useEffect(() => {
     const fetchData = async () => {
