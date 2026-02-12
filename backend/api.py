@@ -21,6 +21,7 @@ from config import config  # Centralized config
 # Configure logging
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 # from models import Regime, DivergenceType, TradeSignal, SignalConfidence # DEPRECATED
 from models_v3 import Decision, Regime, Action, MarketStructure, TradeSignal, TradeSnapshot, DivergenceType, SignalConfidence, AssetClass
 
@@ -1689,8 +1690,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v15.3.5_HELIOS]
-LOGIC_VERSION = "v15.3.5_HELIOS"
+# Startup Version Identifier [v15.3.6_HELIOS]
+LOGIC_VERSION = "v15.3.6_HELIOS"
 
 @app.on_event("startup")
 async def startup_event():
