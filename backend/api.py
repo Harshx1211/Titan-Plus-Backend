@@ -60,7 +60,13 @@ app.include_router(outcome_router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("ALLOWED_ORIGINS", "*").split(","),
+    # [v15.3.21] Explicitly allow Vercel Frontend
+    allow_origins=[
+        "https://titan-plus-backend.vercel.app",
+        "https://titan-plus-backend-git-main-harshx1323.vercel.app",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000"
+    ] + os.getenv("ALLOWED_ORIGINS", "*").split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1862,8 +1868,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v15.3.20-HOTFIX]
-LOGIC_VERSION = "v15.3.20-HOTFIX"
+# Startup Version Identifier [v15.3.21-HOTFIX]
+LOGIC_VERSION = "v15.3.21-HOTFIX"
 
 @app.on_event("startup")
 async def startup_event():
