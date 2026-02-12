@@ -171,6 +171,10 @@ class ExecutionEngine:
             'total_slippage': 0.0,
             'emergency_exits': 0
         }
+        
+        # State
+        self.is_monitoring = False
+        self.monitor_thread: Optional[threading.Thread] = None
     
     def start_monitoring(self):
         """Start position monitoring thread."""
