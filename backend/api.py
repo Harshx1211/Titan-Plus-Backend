@@ -1617,8 +1617,8 @@ def run_engine_loop():
                             
                             # ========== [v15.3.7] SAFETY GATE 3: RISK VALIDATION ==========
                             can_trade, risk_reason = core.risk_manager.validate_new_trade(
-                                signal=new_signal.dict(),
-                                position_manager=core.position_manager
+                                signal_dict=new_signal.dict(),
+                                pos_manager=core.position_manager
                             )
                             
                             if not can_trade:
@@ -1843,8 +1843,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v15.3.11-HOTFIX]
-LOGIC_VERSION = "v15.3.11-HOTFIX"
+# Startup Version Identifier [v15.3.12-HOTFIX]
+LOGIC_VERSION = "v15.3.12-HOTFIX"
 
 @app.on_event("startup")
 async def startup_event():
