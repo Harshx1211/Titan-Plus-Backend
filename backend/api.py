@@ -1107,9 +1107,10 @@ def run_engine_loop():
                 if is_nse and not is_nse_open:
                     continue
                 
-                # [v15.3.18] Increased Heartbeat Frequency (10x Boost)
+                # [v15.3.19] Enhanced Heartbeat (Price Telemetry)
                 if vix_update_counter % 5 == 0:
-                    logger.info(f"ANALYSIS_HEARTBEAT: Processing {symbol}...")
+                    price_val = market_state.get_symbol_price(symbol)
+                    logger.info(f"ANALYSIS_HEARTBEAT: {symbol} @ {price_val:.2f} | Loop: {vix_update_counter}")
                 try:
                     # 1. Fetch Data (Atomic Memory Snapshot)
                     if "USDT" in symbol:
@@ -1782,6 +1783,11 @@ def run_engine_loop():
                 # [v9.9.9] Record Loop Health
                 loop_lat = (time.time() - t_loop_start) * 1000
                 core.health_monitor.record_latency(loop_lat)
+                
+                # [v15.3.19] Periodic Performance Reporting
+                if vix_update_counter % 20 == 0:
+                    h_stats = core.health_monitor.get_stats()
+                    logger.info(f"PERF_STATS: Avg Loop Latency: {h_stats.get('avg_latency', 0):.2f}ms | Active Signals: {len(live_state.active_signals)}")
 
             if len(live_state.active_signals) > 20:
                 live_state.active_signals = live_state.active_signals[-20:]
@@ -1856,8 +1862,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v15.3.18-HOTFIX]
-LOGIC_VERSION = "v15.3.18-HOTFIX"
+# Startup Version Identifier [v15.3.19-HOTFIX]
+LOGIC_VERSION = "v15.3.19-HOTFIX"
 
 @app.on_event("startup")
 async def startup_event():
