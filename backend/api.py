@@ -37,6 +37,7 @@ from critical_safety_systems import (
     Position,
     PositionStatus
 )
+from intelligent_strike_selector import MarketRegime # [v15.3.16] Added missing import
 
 # [v15.3.7] Global App Configuration
 APP_CONFIG = {
@@ -1843,8 +1844,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v15.3.15-HOTFIX]
-LOGIC_VERSION = "v15.3.15-HOTFIX"
+# Startup Version Identifier [v15.3.16-HOTFIX]
+LOGIC_VERSION = "v15.3.16-HOTFIX"
 
 @app.on_event("startup")
 async def startup_event():
