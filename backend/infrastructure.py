@@ -758,7 +758,7 @@ class SystemHealthMonitor:
         with self.lock:
             avg_lat = sum(self.latency_samples) / len(self.latency_samples) if self.latency_samples else 0.0
             return {
-                "avg_latency_ms": round(avg_lat, 2),
+                "avg_latency": round(avg_lat, 2),
                 "last_health_check": datetime.fromtimestamp(self.last_healthy_time).isoformat(),
                 "error_counts": self.errors,
                 "uptime_status": "STABLE" if avg_lat < 500 else "DEGRADED"
