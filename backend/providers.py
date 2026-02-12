@@ -84,7 +84,8 @@ class Order:
 
 class ShoonyaApiPy(NorenApi):
     def __init__(self):
-        NorenApi.__init__(self, host='https://api.shoonya.com/NorenWClientTP/', websocket='wss://api.shoonya.com/NorenWSTP/')        
+        self.websocket_url = 'wss://api.shoonya.com/NorenWSTP/'
+        NorenApi.__init__(self, host='https://api.shoonya.com/NorenWClientTP/', websocket=self.websocket_url)
 
     @rate_limited
     def get_quotes(self, exchange, token):
@@ -116,7 +117,7 @@ class ShoonyaApiPy(NorenApi):
             
             # Use public attribute for custom management
             self._custom_websocket = websocket.WebSocketApp(
-                self._NorenApi__websocket_url, # Access parent's URL
+                self.websocket_url, # [v15.3.26] Use explicit URL
                 on_open=self._custom_on_open,
                 on_message=self._custom_on_message,
                 on_error=self._custom_on_error,
