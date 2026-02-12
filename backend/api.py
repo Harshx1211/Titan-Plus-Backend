@@ -1615,6 +1615,10 @@ def run_engine_loop():
                                 score=pattern_results["score"], **opt_trade
                             )
                             
+                            # NOW mark as seen to prevent rejection loop spam
+                            with live_state.seen_ids_lock:
+                                live_state.seen_signal_ids.add(decision_id)
+
                             # ========== [v15.3.7] SAFETY GATE 3: RISK VALIDATION ==========
                             can_trade, risk_reason = core.risk_manager.validate_new_trade(
                                 signal_dict=new_signal.dict(),
@@ -1631,10 +1635,6 @@ def run_engine_loop():
                                 
                                 continue  # Skip this trade
                             # ================================================================
-                            
-                            # NOW mark as seen
-                            with live_state.seen_ids_lock:
-                                live_state.seen_signal_ids.add(decision_id)
 
                             # [Institutional Phase 6] Automated Order Bridge & Latency Monitor
                             # Direct connection to Broker API; bypasses Telegram/Human latency.
@@ -1843,8 +1843,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v15.3.12-HOTFIX]
-LOGIC_VERSION = "v15.3.12-HOTFIX"
+# Startup Version Identifier [v15.3.13-HOTFIX]
+LOGIC_VERSION = "v15.3.13-HOTFIX"
 
 @app.on_event("startup")
 async def startup_event():

@@ -101,10 +101,15 @@ class DataHealthChecker:
         # CHECK 2: Volume Validation (NEW)
         # ========================================
         if volume < self.min_volume_threshold:
-            logger.warning(
-                f"LOW_VOLUME: {symbol} volume {volume} < {self.min_volume_threshold}"
-            )
-            return False, f"LOW_VOLUME: {volume} < {self.min_volume_threshold}"
+            # [v15.3.13] Whitelist indices from volume checks
+            is_index = any(idx in symbol for idx in ["NIFTY", "BANKNIFTY", "SENSEX", "INDIA_VIX"])
+            if not is_index:
+                logger.warning(
+                    f"LOW_VOLUME: {symbol} volume {volume} < {self.min_volume_threshold}"
+                )
+                return False, f"LOW_VOLUME: {volume} < {self.min_volume_threshold}"
+            else:
+                logger.debug(f"INDEX_VOLUME_BYPASS: {symbol} (Index/VIX)")
         
         # ========================================
         # CHECK 3: Bid-Ask Spread Validation (NEW)
