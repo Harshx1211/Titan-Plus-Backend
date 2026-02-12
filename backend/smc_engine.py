@@ -210,7 +210,7 @@ class GrandmasterSMCEngine:
         self.order_blocks = sorted(self.order_blocks, key=lambda x: x.confidence, reverse=True)[:10]
         
         if self.order_blocks:
-            logger.info(f"SMC_ENGINE: Detected {len(self.order_blocks)} Order Blocks")
+            logger.debug(f"SMC_ENGINE: Detected {len(self.order_blocks)} Order Blocks")
     
     def _calculate_ob_strength(self, df: pd.DataFrame, idx: int, direction: str) -> float:
         """
@@ -311,7 +311,7 @@ class GrandmasterSMCEngine:
         self.fvgs = self.fvgs[-20:]  # Keep last 20
         
         if self.fvgs:
-            logger.info(f"SMC_ENGINE: Detected {len(self.fvgs)} Fair Value Gaps")
+            logger.debug(f"SMC_ENGINE: Detected {len(self.fvgs)} Fair Value Gaps")
     
     def _detect_liquidity_sweeps(self, df: pd.DataFrame):
         """
@@ -356,7 +356,7 @@ class GrandmasterSMCEngine:
                     self.liquidity_sweeps.append(sweep)
         
         if self.liquidity_sweeps:
-            logger.info(f"SMC_ENGINE: Detected {len(self.liquidity_sweeps)} Deterministic Liquidity Sweeps")
+            logger.debug(f"SMC_ENGINE: Detected {len(self.liquidity_sweeps)} Deterministic Liquidity Sweeps")
     
     def _identify_swings(self, df: pd.DataFrame, window: int = 5):
         """Identify swing highs and lows"""
