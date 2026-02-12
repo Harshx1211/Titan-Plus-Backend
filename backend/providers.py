@@ -175,20 +175,35 @@ class ShoonyaApiPy(NorenApi):
             self.__socket_close_callback()
 
     def subscribe(self, instrument_lists):
-        """[v15.3.27] Custom subscribe using internal WebSocket."""
+        """[v15.3.28] Custom subscribe using internal WebSocket (String/List invariant)."""
         try:
-            values = {"t": "t", "k": instrument_lists}
+            # Noren expects 'exchange|token' strings separated by '#'
+            if isinstance(instrument_lists, list):
+                keys = '#'.join(instrument_lists)
+                count = len(instrument_lists)
+            else:
+                keys = instrument_lists
+                count = len(keys.split('#')) if '#' in keys else 1
+                
+            values = {"t": "t", "k": keys}
             self._send_custom(json.dumps(values))
-            logger.info(f"SHOONYA_WS_CUSTOM: Sent subscription for {len(instrument_lists.split('|')) if '|' in instrument_lists else 1} tokens.")
+            logger.info(f"SHOONYA_WS_CUSTOM: Sent subscription for {count} tokens.")
         except Exception as e:
             logger.error(f"SHOONYA_WS_CUSTOM: Subscribe failed: {e}")
 
     def unsubscribe(self, instrument_lists):
-        """[v15.3.27] Custom unsubscribe using internal WebSocket."""
+        """[v15.3.28] Custom unsubscribe using internal WebSocket (String/List invariant)."""
         try:
-            values = {"t": "u", "k": instrument_lists}
+            if isinstance(instrument_lists, list):
+                keys = '#'.join(instrument_lists)
+                count = len(instrument_lists)
+            else:
+                keys = instrument_lists
+                count = len(keys.split('#')) if '#' in keys else 1
+                
+            values = {"t": "u", "k": keys}
             self._send_custom(json.dumps(values))
-            logger.info(f"SHOONYA_WS_CUSTOM: Sent unsubscribe for {len(instrument_lists.split('|')) if '|' in instrument_lists else 1} tokens.")
+            logger.info(f"SHOONYA_WS_CUSTOM: Sent unsubscribe for {count} tokens.")
         except Exception as e:
             logger.error(f"SHOONYA_WS_CUSTOM: Unsubscribe failed: {e}")
 
