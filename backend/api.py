@@ -101,6 +101,7 @@ class LiveState:
         self.sector_synergy = 1.0 
         self.prev_oi = {s: 0 for s in self.symbols}
         self.prev_spot = 0.0
+        self.last_chain_fetch = {s: 0.0 for s in self.symbols}
         
         # [Institutional Step 5] IV History tracking for Percentile
         self.iv_history = {s: [] for s in self.symbols}
@@ -1106,7 +1107,8 @@ def run_engine_loop():
                 if is_nse and not is_nse_open:
                     continue
                 
-                if vix_update_counter % 50 == 0:
+                # [v15.3.18] Increased Heartbeat Frequency (10x Boost)
+                if vix_update_counter % 5 == 0:
                     logger.info(f"ANALYSIS_HEARTBEAT: Processing {symbol}...")
                 try:
                     # 1. Fetch Data (Atomic Memory Snapshot)
@@ -1149,7 +1151,7 @@ def run_engine_loop():
                         )
                         
                         if not data_valid:
-                            if vix_update_counter % 50 == 0:
+                            if vix_update_counter % 5 == 0:
                                 logger.warning(f"🚫 DATA HEALTH BLOCK: {symbol} - {data_reason}")
                             live_state.add_thought("DATA_HEALTH", f"❌ {symbol}: {data_reason}")
                             continue  # Skip this symbol, don't trade on stale data
@@ -1275,19 +1277,24 @@ def run_engine_loop():
                     )
                     live_state.add_thought("ANALYSIS", f"[{symbol}] Pattern Score: {pattern_results['score']:.2f}. Found: {', '.join(pattern_results.get('patterns') or ['NONE'])}")
 
-                    # Option Chain (Optimized with cached spot)
-                    if "USDT" in symbol:
-                        chain_df, is_synthetic = core.crypto_provider.get_option_chain(symbol)
-                    else:
-                        # [v14.2.0] Pass spot_price to avoid redundant HTTP quote inside provider
-                        chain_df, is_synthetic = data_provider.get_option_chain(symbol, spot_price=market_data.spot_price)
-                    if not chain_df.empty:
-                        live_state.max_pain[symbol] = option_engine.calculate_max_pain(chain_df)
-                        live_state.option_battles[symbol] = core.option_engine.detect_strike_battles(chain_df)
-                        live_state.option_chains[symbol] = chain_df.to_dict('records')
-                        gex_data = option_engine.calculate_gex_proxy(chain_df, market_data.spot_price)
-                        live_state.gex_bias[symbol] = gex_data["gex_bias"]
+                    # Option Chain (Throttled for v15.3.18 - 60s cooldown)
+                    if (time.time() - live_state.last_chain_fetch[symbol]) > 60:
+                        if "USDT" in symbol:
+                            chain_df, is_synthetic = core.crypto_provider.get_option_chain(symbol)
+                        else:
+                            # [v14.2.0] Pass spot_price to avoid redundant HTTP quote inside provider
+                            chain_df, is_synthetic = data_provider.get_option_chain(symbol, spot_price=market_data.spot_price)
                         
+                        if not chain_df.empty:
+                            live_state.max_pain[symbol] = option_engine.calculate_max_pain(chain_df)
+                            live_state.option_battles[symbol] = core.option_engine.detect_strike_battles(chain_df)
+                            live_state.option_chains[symbol] = chain_df.to_dict('records')
+                            gex_data = option_engine.calculate_gex_proxy(chain_df, market_data.spot_price)
+                            live_state.gex_bias[symbol] = gex_data["gex_bias"]
+                            live_state.last_chain_fetch[symbol] = time.time()
+                    
+                    chain_df = pd.DataFrame(live_state.option_chains[symbol])
+                    if not chain_df.empty:
                         sym_max_pain = live_state.max_pain[symbol]
                         if abs(market_data.spot_price - sym_max_pain) < APP_CONFIG["MAX_PAIN_THRESHOLD"]:
                             pattern_results["score"] *= 1.2
@@ -1489,7 +1496,7 @@ def run_engine_loop():
                         # [v15.3.7] SAFETY GATE 2: DUPLICATE PREVENTION
                         with live_state.seen_ids_lock:
                             if decision_id in live_state.seen_signal_ids:
-                                if vix_update_counter % 50 == 0:
+                                if vix_update_counter % 5 == 0:
                                     logger.warning(f"🚫 DUPLICATE SIGNAL BLOCKED: {decision_id}")
                                 live_state.add_thought("DEDUPE", f"[{symbol}] Skipping Approval: Signal {decision_id} already processed.")
                                 continue
@@ -1779,8 +1786,8 @@ def run_engine_loop():
             if len(live_state.active_signals) > 20:
                 live_state.active_signals = live_state.active_signals[-20:]
             
-            # [Institutional Phase 6] Tight 200ms reactive cycle
-            time.sleep(0.2)
+            # [Institutional Phase 6] Tight 50ms reactive cycle (v15.3.18)
+            time.sleep(0.05)
         except DataHealthError as de:
             logger.critical(f"HEALTH_HALT: {de}")
             core.telegram_notifier.send_alert(f"🚨 <b>CRITICAL SYSTEM HALT</b>\nAll data sources down. Engine entering SAFE_MODE.\nReason: {de}")
@@ -1849,8 +1856,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v15.3.17-HOTFIX]
-LOGIC_VERSION = "v15.3.17-HOTFIX"
+# Startup Version Identifier [v15.3.18-HOTFIX]
+LOGIC_VERSION = "v15.3.18-HOTFIX"
 
 @app.on_event("startup")
 async def startup_event():
