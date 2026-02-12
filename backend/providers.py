@@ -12,6 +12,7 @@ import pyotp
 import requests
 import threading
 import pandas as pd
+import websocket
 from datetime import datetime, timedelta
 from websocket_resilience import WebSocketWatchdog
 from typing import Optional, Dict, List, Tuple
@@ -104,6 +105,73 @@ class ShoonyaApiPy(NorenApi):
     @rate_limited
     def place_order(self, *args, **kwargs):
         return super().place_order(*args, **kwargs)
+
+    def start_websocket(self, subscribe_callback=None, socket_open_callback=None, socket_close_callback=None, socket_error_callback=None):
+        """[v15.3.25] Custom WebSocket implementation bypassing NorenApi internals for stability."""
+        try:
+            self.__subscribe_callback = subscribe_callback
+            self.__socket_open_callback = socket_open_callback
+            self.__socket_close_callback = socket_close_callback
+            self.__socket_error_callback = socket_error_callback
+            
+            # Use public attribute for custom management
+            self._custom_websocket = websocket.WebSocketApp(
+                self._NorenApi__websocket_url, # Access parent's URL
+                on_open=self._custom_on_open,
+                on_message=self._custom_on_message,
+                on_error=self._custom_on_error,
+                on_close=self._custom_on_close
+            )
+            
+            self._custom_ws_thread = threading.Thread(
+                target=self._custom_websocket.run_forever,
+                kwargs={"ping_interval": 60, "ping_timeout": 10},
+                daemon=True
+            )
+            self._custom_ws_thread.start()
+            logger.info("SHOONYA_WS_CUSTOM: Thread started.")
+            
+        except Exception as e:
+            logger.error(f"SHOONYA_WS_CUSTOM: Start failed: {e}")
+
+    def _custom_on_open(self, ws):
+        """Send login payload on connection open."""
+        logger.info("SHOONYA_WS_CUSTOM: Connected. Sending login payload...")
+        try:
+            # Construct standard Noren login payload
+            payload = {
+                "t": "c",
+                "uid": self._NorenApi__username,
+                "actid": self._NorenApi__username,
+                "susertoken": self._NorenApi__susertoken,
+                "source": "API"
+            }
+            ws.send(json.dumps(payload))
+            if self.__socket_open_callback:
+                self.__socket_open_callback()
+        except Exception as e:
+            logger.error(f"SHOONYA_WS_CUSTOM: Handshake failed: {e}")
+
+    def _custom_on_message(self, ws, message):
+        """Parse incoming JSON and route to callback."""
+        try:
+            data = json.loads(message)
+            if self.__subscribe_callback:
+                # Noren sends 'tp' (tick price) or 'tk' (touchline)
+                # Ensure we pass the raw dict or list as expected by providers.py logic
+                self.__subscribe_callback(data)
+        except Exception as e:
+            logger.error(f"SHOONYA_WS_CUSTOM: Message parse error: {e}")
+
+    def _custom_on_error(self, ws, error):
+        logger.error(f"SHOONYA_WS_CUSTOM: Error: {error}")
+        if self.__socket_error_callback:
+            self.__socket_error_callback(error)
+
+    def _custom_on_close(self, ws, *args):
+        logger.info("SHOONYA_WS_CUSTOM: Connection Closed.")
+        if self.__socket_close_callback:
+            self.__socket_close_callback()
 
 # ============================================================================
 # 2. Shoonya Provider
@@ -328,29 +396,30 @@ class ShoonyaProvider:
             self.is_connected = False
 
     def _force_close_websocket(self):
-        """[v15.3.24] Deep cleanup: Forcefully resets NorenApi internals to allow restart."""
+        """[v15.3.25] Deep cleanup: Forcefully resets Custom WebSocket internals."""
         try:
-            logger.info("SHOONYA_WS: Deep cleaning socket state...")
+            logger.info("SHOONYA_WS: Deep cleaning custom socket state...")
             
-            # 1. Close the socket itself
-            ws = getattr(self.api, '_NorenApi__websocket', None)
+            # 1. Close the custom socket
+            # Access the underlying socket from the wrapper
+            ws = getattr(self.api, '_custom_websocket', None)
             if ws:
                 try: ws.close()
                 except: pass
-                setattr(self.api, '_NorenApi__websocket', None)
+                setattr(self.api, '_custom_websocket', None)
 
-            # 2. Reset connection flag (Crucial for bypassing 'already opened' check)
-            # Name mangling: __websocket_connected -> _NorenApi__websocket_connected
+            # 2. Reset internal NorenApi flag just in case (though we bypass it)
             setattr(self.api, '_NorenApi__websocket_connected', False)
+            setattr(self.api, 'is_connected', False)
 
             # 3. Join and clear the background thread
-            ws_thread = getattr(self.api, '_NorenApi__ws_thread', None)
+            ws_thread = getattr(self.api, '_custom_ws_thread', None)
             if ws_thread and ws_thread.is_alive():
                 logger.warning("SHOONYA_WS: Joining zombie thread...")
                 ws_thread.join(timeout=2.0)
                 if ws_thread.is_alive():
                      logger.error("SHOONYA_WS: Thread refused to die. Proceeding anyway.")
-            setattr(self.api, '_NorenApi__ws_thread', None)
+            setattr(self.api, '_custom_ws_thread', None)
             
         except Exception as e:
             logger.warning(f"SHOONYA_WS: Error during deep force close: {e}")
