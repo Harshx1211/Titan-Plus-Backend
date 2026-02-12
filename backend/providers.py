@@ -174,6 +174,32 @@ class ShoonyaApiPy(NorenApi):
         if self.__socket_close_callback:
             self.__socket_close_callback()
 
+    def subscribe(self, instrument_lists):
+        """[v15.3.27] Custom subscribe using internal WebSocket."""
+        try:
+            values = {"t": "t", "k": instrument_lists}
+            self._send_custom(json.dumps(values))
+            logger.info(f"SHOONYA_WS_CUSTOM: Sent subscription for {len(instrument_lists.split('|')) if '|' in instrument_lists else 1} tokens.")
+        except Exception as e:
+            logger.error(f"SHOONYA_WS_CUSTOM: Subscribe failed: {e}")
+
+    def unsubscribe(self, instrument_lists):
+        """[v15.3.27] Custom unsubscribe using internal WebSocket."""
+        try:
+            values = {"t": "u", "k": instrument_lists}
+            self._send_custom(json.dumps(values))
+            logger.info(f"SHOONYA_WS_CUSTOM: Sent unsubscribe for {len(instrument_lists.split('|')) if '|' in instrument_lists else 1} tokens.")
+        except Exception as e:
+            logger.error(f"SHOONYA_WS_CUSTOM: Unsubscribe failed: {e}")
+
+    def _send_custom(self, data):
+        """Helper to send data via custom WebSocket."""
+        ws = getattr(self, '_custom_websocket', None)
+        if ws and ws.sock and ws.sock.connected:
+            ws.send(data)
+        else:
+            logger.warning("SHOONYA_WS_CUSTOM: Cannot send data, socket not connected.")
+
 # ============================================================================
 # 2. Shoonya Provider
 # ============================================================================
