@@ -303,10 +303,16 @@ class ShoonyaProvider:
                 self.is_connected = False
 
             # Start WS in background thread
+            # [v15.3.22] WebSocket Stability: Force Cleanup & Cool-down
+            self._force_close_websocket()
+            time.sleep(2.0) # Allow OS to reclaim the socket port
+
+            logger.info("SHOONYA_WS: Starting new WebSocket connection...")
             self.api.start_websocket(
                 subscribe_callback=on_tick_update,
                 socket_open_callback=on_opened,
-                socket_error_callback=on_error
+                socket_error_callback=on_error,
+                socket_close_callback=on_error # Map close to error for consistency
             )
             
             # [v15.3.8] Start the hardened watchdog
@@ -314,6 +320,26 @@ class ShoonyaProvider:
             
         except Exception as e:
             logger.error(f"SHOONYA_WS: Failed to start WebSocket: {e}")
+            self.is_connected = False
+
+    def _force_close_websocket(self):
+        """[v15.3.22] Forcefully closes the underlying NorenApi websocket to prevent 'socket already opened' errors."""
+        try:
+            # Attempt to access the internal websocket object in NorenApi
+            # Name mangling: __websocket -> _NorenApi__websocket
+            ws = getattr(self.api, '_NorenApi__websocket', None)
+            if ws:
+                logger.info("SHOONYA_WS: Force closing existing/stale socket...")
+                ws.close()
+                # Clear the reference to allow NorenApi to create a new one
+                setattr(self.api, '_NorenApi__websocket', None)
+            else:
+                # Also check for 'websocket' attribute if public
+                ws_public = getattr(self.api, 'websocket', None)
+                if ws_public:
+                    ws_public.close()
+        except Exception as e:
+            logger.warning(f"SHOONYA_WS: Error during force close (non-critical): {e}")
 
     def get_market_data(self, symbol: str) -> Dict:
         """[v9.9.9] Optimized snapshot fetcher with future matching."""

@@ -1868,8 +1868,8 @@ def personalized_service_loop(notifier, sentinel):
             logger.error(f"SERVICE_LOOP_ERROR: {e}")
             time.sleep(60)
 
-# Startup Version Identifier [v15.3.21-HOTFIX]
-LOGIC_VERSION = "v15.3.21-HOTFIX"
+# Startup Version Identifier [v15.3.22-HOTFIX]
+LOGIC_VERSION = "v15.3.22-HOTFIX"
 
 @app.on_event("startup")
 async def startup_event():
