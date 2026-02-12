@@ -302,6 +302,11 @@ class ShoonyaProvider:
                 logger.error(f"SHOONYA_WS: Error: {err}")
                 self.is_connected = False
 
+            def on_close(*args):
+                """[v15.3.23] Robust close handler accepting variable args to prevent signature mismatch."""
+                logger.info("SHOONYA_WS: Connection Closed.")
+                self.is_connected = False
+
             # Start WS in background thread
             # [v15.3.22] WebSocket Stability: Force Cleanup & Cool-down
             self._force_close_websocket()
@@ -312,7 +317,7 @@ class ShoonyaProvider:
                 subscribe_callback=on_tick_update,
                 socket_open_callback=on_opened,
                 socket_error_callback=on_error,
-                socket_close_callback=on_error # Map close to error for consistency
+                socket_close_callback=on_close
             )
             
             # [v15.3.8] Start the hardened watchdog
