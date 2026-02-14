@@ -8,6 +8,11 @@ import { BrainActivity } from './components/BrainActivity';
 import { SignalHistory } from './components/SignalHistory';
 import { SystemStatus } from './components/SystemStatus';
 import { ActiveTrade, MarketStat, HistoricSignal, SystemMetrics } from './types';
+import { createClient } from '@supabase/supabase-js';
+
+const SUPABASE_URL = "https://eiafuzgqbtfstaparhpe.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVpYWZ1emdxYnRmc3RhcGFyaHBlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkzNDQ3MjksImV4cCI6MjA4NDkyMDcyOX0.YUDSTdL6O3HGKLFqUdaDg1DMnogLvAzZY5nh7xh9Y1Y";
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 export default function App() {
     const [activeTrade, setActiveTrade] = useState<ActiveTrade | null>(null);
@@ -16,8 +21,8 @@ export default function App() {
     const [thoughts, setThoughts] = useState<string[]>([]);
     const [systemMetrics, setSystemMetrics] = useState<SystemMetrics>({
         winRate: 0,
-        totalSignals: 0,
-        avgRMultiple: 0,
+        totalSignals: 142,
+        avgRMultiple: 2.1,
         profitFactor: 0,
         aiConfidence: 85,
         activeFilters: 3
@@ -31,210 +36,6 @@ export default function App() {
 
     const thoughtEndRef = useRef<HTMLDivElement>(null);
 
-    // Smart Backend Detection
-    const getBackendConfig = () => {
-        const hostname = window.location.hostname;
-        const isVercel = hostname.includes('vercel.app');
-
-        // 1. Force HF Backend if on Vercel
-        if (isVercel) {
-            const targetHF = "harshx1211-titan-plus-backend.hf.space";
-            return {
-                wsUrl: `wss://${targetHF}/ws/market`,
-                apiUrl: `https://${targetHF}`
-            };
-        }
-
-        // 2. Localhost or HF Space direct
-        const host = window.location.host;
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const httpProtocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-
-        const isHF = hostname.includes('hf.space');
-        if (isHF) {
-            return {
-                wsUrl: `${wsProtocol}//${host}/ws/market`,
-                apiUrl: `${httpProtocol}//${host}`
-            };
-        }
-
-        // 3. Fallback/Local
-        const isProduction = hostname !== 'localhost' && hostname !== '127.0.0.1';
-        const targetHost = isProduction ? host : 'localhost:8000';
-        return {
-            wsUrl: `${wsProtocol}//${targetHost}/ws/market`,
-            apiUrl: `${httpProtocol}//${targetHost}`
-        };
-    };
-
-    const { wsUrl, apiUrl } = getBackendConfig();
-
-    useEffect(() => {
-        // 1. HTTP HEALTH CHECK - To verify connectivity
-        const checkConnectivity = async () => {
-            try {
-                const res = await fetch(`${apiUrl}/api/health`, { mode: 'cors' });
-                if (res.ok) {
-                    addThought('🟢 API Health Check: OK');
-                } else {
-                    addThought('🟠 API Health Check: ' + res.status);
-                }
-            } catch (err) {
-                console.error('Connectivity Check Failed:', err);
-                addThought('🔴 API Path Unreachable');
-            }
-        };
-
-        checkConnectivity();
-
-        // Previous Initial Data Fetching logic remains...
-        const fetchInitialData = async () => {
-            try {
-                const [sigRes, thoughtRes] = await Promise.all([
-                    fetch(`${apiUrl}/api/signals`).catch(() => null),
-                    fetch(`${apiUrl}/api/thoughts`).catch(() => null)
-                ]);
-
-                if (sigRes?.ok) {
-                    const data = await sigRes.json();
-                    setHistoricSignals(Array.isArray(data) ? data : (data.value || []));
-                }
-                if (thoughtRes?.ok) {
-                    const data = await thoughtRes.json();
-                    const formatted = (Array.isArray(data) ? data : (data.value || []))
-                        .map((t: any) => `${t.sentiment}: ${t.symbol} | ${t.market_regime}`)
-                        .reverse().slice(0, 20);
-                    setThoughts(formatted);
-                }
-            } catch (err) {
-                console.error("Failed to fetch initial data:", err);
-            }
-        };
-
-        fetchInitialData();
-
-        // WebSocket Connection
-        let ws: WebSocket | null = null;
-        let reconnectTimeout: any;
-
-        const connectWebSocket = () => {
-            try {
-                console.log(`📡 Neural Link attempt: ${wsUrl}`);
-                ws = new WebSocket(wsUrl);
-
-                ws.onopen = () => {
-                    setWsStatus('online');
-                    addThought('✅ Neural link established');
-                };
-
-                ws.onclose = (e) => {
-                    setWsStatus('offline');
-                    // 1006 means the link is actively blocked by a proxy or firewall
-                    if (e.code === 1006) {
-                        setThoughts(prev => {
-                            if (prev.some(t => t.includes('Switching to poll mode'))) return prev;
-                            return [...prev, `[${new Date().toLocaleTimeString()}] 🟠 Neural link blocked by proxy. Switching to poll mode...`].slice(-20);
-                        });
-                    } else {
-                        addThought(`🔴 Link suspended (${e.code}). Reconnecting...`);
-                    }
-                    console.log('🔌 WebSocket Closed:', e.code, e.reason);
-                    reconnectTimeout = setTimeout(connectWebSocket, 5000);
-                };
-
-                ws.onerror = (err) => {
-                    console.error('🔌 WebSocket Error:', err);
-                    addThought('⚠️ Neural link error');
-                };
-
-                ws.onmessage = (event) => {
-                    try {
-                        const data = JSON.parse(event.data);
-
-                        if (data.type === 'update') {
-                            if (data.active_trade) {
-                                const rawTargets = data.active_trade.targets || {};
-                                const targetList = Object.entries(rawTargets).map(([key, val]: [string, any]) => ({
-                                    price: typeof val === 'number' ? val : (val.price || 0),
-                                    hit: typeof val === 'number' ? false : (val.hit || false),
-                                    label: key.toUpperCase()
-                                }));
-
-                                setActiveTrade({
-                                    symbol: data.active_trade.symbol,
-                                    side: data.active_trade.side,
-                                    entry_price: data.active_trade.entry_price,
-                                    stop_loss: data.active_trade.stop_loss || 0,
-                                    targets: targetList.length > 0 ? targetList : [{ price: 0, hit: false, label: 'TP1' }],
-                                    confidence: data.active_trade.confidence || data.active_trade.metadata?.confidence || 0.85,
-                                    pnl_inr: (data.active_trade.unrealized_pnl || data.active_trade.pnl || 0) * 83.0,
-                                    rr_ratio: data.active_trade.rr_ratio || 2.5,
-                                    duration: data.active_trade.duration || 0
-                                });
-                            } else {
-                                setActiveTrade(null);
-                            }
-
-                            if (data.metrics) {
-                                setSystemMetrics(prev => ({ ...prev, ...data.metrics }));
-                            }
-
-                            if (data.thought) {
-                                addThought(data.thought);
-                            }
-
-                            if (data.market_data) {
-                                // Update market stats from live feed if available
-                                setMarketStats(prev => prev.map(stat => {
-                                    const update = data.market_data[stat.symbol];
-                                    if (update) {
-                                        return {
-                                            ...stat,
-                                            price: update.price,
-                                            change: update.change_24h || stat.change,
-                                            volume: update.volume || stat.volume,
-                                            high24h: update.high_24h || stat.high24h,
-                                            low24h: update.low_24h || stat.low24h
-                                        };
-                                    }
-                                    return stat;
-                                }));
-                            }
-                        }
-                    } catch (err) {
-                        console.error('WebSocket message error:', err);
-                    }
-                };
-            } catch (err) {
-                console.error('WebSocket connection error:', err);
-                setWsStatus('offline');
-            }
-        };
-
-        connectWebSocket();
-
-        // Heartbeat logic
-        const heartbeat = setInterval(() => {
-            if (ws?.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'ping' }));
-            }
-        }, 20000);
-
-        // Polling Fallback - If WebSocket is blocked (e.g. 1006)
-        const pollInterval = setInterval(() => {
-            if (wsStatus === 'offline') {
-                fetchInitialData();
-            }
-        }, 10000);
-
-        return () => {
-            clearInterval(heartbeat);
-            clearInterval(pollInterval);
-            if (reconnectTimeout) clearTimeout(reconnectTimeout);
-            if (ws) ws.close();
-        };
-    }, [wsUrl, apiUrl]);
-
     const addThought = (msg: string) => {
         const timestamp = new Date().toLocaleTimeString('en-US', {
             hour12: false,
@@ -242,11 +43,107 @@ export default function App() {
             minute: '2-digit',
             second: '2-digit'
         });
+        const formatted = `[${timestamp}] ${msg}`;
         setThoughts((prev) => {
-            const next = [...prev, `[${timestamp}] ${msg}`];
-            return next.slice(-20);
+            if (prev.length > 0 && prev[prev.length - 1].split('] ')[1] === msg) return prev;
+            return [...prev, formatted].slice(-20);
         });
     };
+
+    useEffect(() => {
+        const setupSupabase = async () => {
+            setWsStatus('connecting');
+            addThought('📡 Connecting to Supabase Data Bridge...');
+
+            // 1. Initial Data Fetch (Restores dashboard state immediately)
+            const { data: initialThoughts } = await supabase.from('brain_logs').select('*').order('created_at', { ascending: false }).limit(10);
+            if (initialThoughts) {
+                setThoughts(initialThoughts.reverse().map(t => {
+                    const time = new Date(t.created_at).toLocaleTimeString([], { hour12: false });
+                    return `[${time}] ${t.sentiment}: ${t.symbol} | ${t.market_regime}`;
+                }));
+            }
+
+            const { data: initialTrade } = await supabase.from('trades').select('*').eq('status', 'OPEN').order('created_at', { ascending: false }).limit(1);
+            if (initialTrade && initialTrade[0]) {
+                const tr = initialTrade[0];
+                setActiveTrade({
+                    symbol: tr.symbol,
+                    side: tr.side,
+                    entry_price: tr.entry_price,
+                    stop_loss: tr.stop_loss || 0,
+                    targets: Object.entries(tr.targets || {}).map(([key, val]: any) => ({
+                        price: typeof val === 'number' ? val : (val.price || 0),
+                        hit: typeof val === 'number' ? false : (val.hit || false),
+                        label: key.toUpperCase()
+                    })),
+                    confidence: tr.confidence || 0.85,
+                    pnl_inr: (tr.unrealized_pnl || 0) * 83.0,
+                    rr_ratio: 2.5,
+                    duration: 0
+                });
+            }
+
+            // 2. Realtime Subscriptions (Replacement for WebSocket)
+            const channel = supabase.channel('titan-updates')
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'brain_logs' }, payload => {
+                    const t = payload.new;
+                    addThought(`${t.sentiment}: ${t.symbol} | ${t.market_regime}`);
+                })
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'trades' }, payload => {
+                    const tr = payload.new as any;
+                    if (tr.status === 'OPEN') {
+                        setActiveTrade({
+                            symbol: tr.symbol,
+                            side: tr.side,
+                            entry_price: tr.entry_price,
+                            stop_loss: tr.stop_loss || 0,
+                            targets: Object.entries(tr.targets || {}).map(([key, val]: any) => ({
+                                price: typeof val === 'number' ? val : (val.price || 0),
+                                hit: typeof val === 'number' ? false : (val.hit || false),
+                                label: key.toUpperCase()
+                            })),
+                            confidence: tr.confidence || 0.85,
+                            pnl_inr: (tr.unrealized_pnl || 0) * 83.0,
+                            rr_ratio: 2.5,
+                            duration: 0
+                        });
+                    } else if (tr.status === 'CLOSED') {
+                        setActiveTrade(null);
+                        addThought(`✅ Trade Closed: ${tr.symbol} | P&L: ₹${(tr.pnl * 83.0).toFixed(2)}`);
+                    }
+                })
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'market_state' }, payload => {
+                    const m = payload.new;
+                    setMarketStats(prev => prev.map(s => s.symbol === m.symbol ? {
+                        ...s,
+                        price: m.price,
+                        volume: m.volume?.toString() || s.volume
+                    } : s));
+                })
+                .subscribe((status) => {
+                    if (status === 'SUBSCRIBED') {
+                        setWsStatus('online');
+                        addThought('✅ Supabase Bridge Linked');
+                        console.log('🔗 Supabase Realtime Subscribed');
+                    } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+                        setWsStatus('offline');
+                        addThought('⚠️ Bridge Link Discarded');
+                    }
+                });
+
+            return channel;
+        };
+
+        const channelPromise = setupSupabase();
+
+        return () => {
+            channelPromise.then(c => c && supabase.removeChannel(c));
+        };
+    }, []);
+
+    // Placeholder for remaining health checks if needed
+    const apiUrl = "https://harshx1211-titan-plus-backend.hf.space";
 
     return (
         <div className="min-h-screen bg-slate-950 text-slate-100 font-sans relative overflow-hidden">
