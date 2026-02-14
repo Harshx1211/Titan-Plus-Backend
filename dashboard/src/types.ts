@@ -19,6 +19,7 @@ export interface HistoricSignal {
     id: string;
     symbol: string;
     side: 'LONG' | 'SHORT';
+    entry_price: number;
     pnl?: number;
     status: 'OPEN' | 'CLOSED';
     created_at: string;
