@@ -13,12 +13,16 @@ export const BrainActivity: React.FC<BrainActivityProps> = ({ thoughts, thoughtE
     React.useEffect(() => {
         if (scrollRef.current) {
             const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-            const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+            const isNearBottom = scrollHeight - scrollTop - clientHeight < 150;
             if (isNearBottom) {
-                thoughtEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                // INTERNAL SCROLL ONLY - Stops the "dragging" / page jumping
+                scrollRef.current.scrollTo({
+                    top: scrollHeight,
+                    behavior: 'smooth'
+                });
             }
         }
-    }, [thoughts, thoughtEndRef]);
+    }, [thoughts]);
 
     return (
         <div className="glass-card rounded-xl p-5 h-[400px] flex flex-col">

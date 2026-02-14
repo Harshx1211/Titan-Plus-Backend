@@ -69,38 +69,42 @@ export default function App() {
 
     const { wsUrl, apiUrl } = getBackendConfig();
 
-    // Auto-scroll handled by BrainActivity component internally
-
-
     useEffect(() => {
-        // Initial Data Fetching
+        // 1. HTTP HEALTH CHECK - To verify connectivity when WS (1006) fails
+        const checkConnectivity = async () => {
+            try {
+                const res = await fetch(`${apiUrl}/`, { mode: 'cors' });
+                if (res.ok) {
+                    addThought('🟢 API Reachable (HTTP OK)');
+                } else {
+                    addThought('🟠 API Response Error (HTTP ' + res.status + ')');
+                }
+            } catch (err) {
+                console.error('Connectivity Check Failed:', err);
+                addThought('🔴 API Unreachable (Cross-Domain Block?)');
+            }
+        };
+
+        checkConnectivity();
+
+        // Previous Initial Data Fetching logic remains...
         const fetchInitialData = async () => {
             try {
-                const [sigRes, thoughtRes, metricsRes] = await Promise.all([
+                const [sigRes, thoughtRes] = await Promise.all([
                     fetch(`${apiUrl}/api/signals`).catch(() => null),
-                    fetch(`${apiUrl}/api/thoughts`).catch(() => null),
-                    fetch(`${apiUrl}/api/metrics`).catch(() => null)
+                    fetch(`${apiUrl}/api/thoughts`).catch(() => null)
                 ]);
 
                 if (sigRes?.ok) {
                     const data = await sigRes.json();
-                    const signalsArray = Array.isArray(data) ? data : (data.value || []);
-                    setHistoricSignals(signalsArray.slice(0, 10));
+                    setHistoricSignals(Array.isArray(data) ? data : (data.value || []));
                 }
-
                 if (thoughtRes?.ok) {
                     const data = await thoughtRes.json();
-                    const thoughtsArray = Array.isArray(data) ? data : (data.value || []);
-                    const formatted = thoughtsArray
+                    const formatted = (Array.isArray(data) ? data : (data.value || []))
                         .map((t: any) => `${t.sentiment}: ${t.symbol} | ${t.market_regime}`)
-                        .reverse()
-                        .slice(0, 20);
+                        .reverse().slice(0, 20);
                     setThoughts(formatted);
-                }
-
-                if (metricsRes?.ok) {
-                    const data = await metricsRes.json();
-                    setSystemMetrics(prev => ({ ...prev, ...data }));
                 }
             } catch (err) {
                 console.error("Failed to fetch initial data:", err);
@@ -125,7 +129,9 @@ export default function App() {
 
                 ws.onclose = (e) => {
                     setWsStatus('offline');
-                    addThought(`🔴 Connection lost (${e.code}). Reconnecting...`);
+                    // 1006 is often blocked by proxy or CORS
+                    const reason = e.code === 1006 ? "Abnormal/Blocked" : "Closed";
+                    addThought(`🔴 Connection link ${reason} (${e.code})`);
                     console.log('🔌 WebSocket Closed:', e.code, e.reason);
                     reconnectTimeout = setTimeout(connectWebSocket, 5000);
                 };
