@@ -37,6 +37,18 @@ async def root():
         "supported_coins": ["BTC", "ETH", "SOL", "DOGE"]
     }
 
+@app.get("/api/signals")
+async def get_signals():
+    # Fetch last 10 signals from Supabase
+    res = db.supabase.table("trades").select("*").order("created_at", desc=True).limit(10).execute()
+    return res.data
+
+@app.get("/api/thoughts")
+async def get_thoughts():
+    # Fetch last 15 brain thoughts
+    res = db.supabase.table("brain_logs").select("*").order("created_at", desc=True).limit(15).execute()
+    return res.data
+
 @app.websocket("/ws/market")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()

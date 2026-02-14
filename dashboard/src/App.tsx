@@ -5,13 +5,14 @@ import { NeuralFeed } from './components/NeuralFeed';
 import { ActiveSignal } from './components/ActiveSignal';
 import { MetricCards } from './components/MetricCards';
 import { InstitutionalFeed } from './components/InstitutionalFeed';
-import { ActiveTrade, MarketStat } from './types';
+import { ActiveTrade, MarketStat, HistoricSignal } from './types';
 
 export default function App() {
     const [activeTrade, setActiveTrade] = useState<ActiveTrade | null>(null);
+    const [historicSignals, setHistoricSignals] = useState<HistoricSignal[]>([]);
     const [wsStatus, setWsStatus] = useState<'connecting' | 'online' | 'offline'>('connecting');
     const [thoughts, setThoughts] = useState<string[]>([]);
-    const [marketStats] = useState<MarketStat[]>([
+    const [marketStats, setMarketStats] = useState<MarketStat[]>([
         { symbol: 'BTC/INR', price: 4425000, change: 2.4, volume: '2.1B' },
         { symbol: 'ETH/INR', price: 215000, change: -1.2, volume: '840M' },
         { symbol: 'SOL/INR', price: 9200, change: 5.7, volume: '420M' },
@@ -20,19 +21,61 @@ export default function App() {
 
     const thoughtEndRef = useRef<HTMLDivElement>(null);
 
+    // Smart Backend Detection
+    const getBackendConfig = () => {
+        let wsUrl = import.meta.env.VITE_WS_URL;
+        let apiUrl = import.meta.env.VITE_API_URL;
+
+        if (!wsUrl || !apiUrl) {
+            const isVercel = window.location.hostname.includes('vercel.app');
+            // Fallback for Vercel to connect to the Hugging Face backend
+            const hfHost = 'harshx1323-trading-bot.hf.space';
+
+            const targetHost = isVercel ? hfHost : window.location.host;
+            const wsProtocol = window.location.protocol === 'https:' || isVercel ? 'wss:' : 'ws:';
+            const httpProtocol = window.location.protocol === 'https:' || isVercel ? 'https:' : 'http:';
+
+            wsUrl = wsUrl || `${wsProtocol}//${targetHost}/ws/market`;
+            apiUrl = apiUrl || `${httpProtocol}//${targetHost}`;
+        }
+        return { wsUrl, apiUrl };
+    };
+
+    const { wsUrl, apiUrl } = getBackendConfig();
+
     useEffect(() => {
         thoughtEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [thoughts]);
 
     useEffect(() => {
-        let wsUrl = import.meta.env.VITE_WS_URL;
+        // 1. Initial Data Fetching
+        const fetchInitialData = async () => {
+            try {
+                const [sigRes, thoughtRes] = await Promise.all([
+                    fetch(`${apiUrl}/api/signals`),
+                    fetch(`${apiUrl}/api/thoughts`)
+                ]);
 
-        if (!wsUrl) {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const host = window.location.host || 'localhost:8000';
-            wsUrl = `${protocol}//${host}/ws/market`;
-        }
+                if (sigRes.ok) {
+                    const data = await sigRes.json();
+                    setHistoricSignals(data);
+                }
 
+                if (thoughtRes.ok) {
+                    const data = await thoughtRes.json();
+                    const formatted = data.map((t: any) =>
+                        `[${new Date(t.created_at).toLocaleTimeString()}] ${t.sentiment}: ${t.symbol} - ${t.market_regime}`
+                    ).reverse();
+                    setThoughts(formatted);
+                }
+            } catch (err) {
+                console.error("Failed to fetch initial data:", err);
+            }
+        };
+
+        fetchInitialData();
+
+        // 2. WebSocket Connection
         const ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
@@ -99,7 +142,7 @@ export default function App() {
 
                     {/* RIGHT COLUMN */}
                     <div className="col-span-12 lg:col-span-3 space-y-6">
-                        <InstitutionalFeed />
+                        <InstitutionalFeed signals={historicSignals} />
                     </div>
                 </div>
 

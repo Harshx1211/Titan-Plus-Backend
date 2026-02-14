@@ -14,3 +14,20 @@ export interface MarketStat {
     change: number;
     volume: string;
 }
+
+export interface HistoricSignal {
+    id: string;
+    symbol: string;
+    side: 'LONG' | 'SHORT';
+    pnl?: number;
+    status: 'OPEN' | 'CLOSED';
+    created_at: string;
+}
+
+export interface BrainThought {
+    id: number;
+    symbol: string;
+    sentiment: string;
+    logic_details: any;
+    created_at: string;
+}
