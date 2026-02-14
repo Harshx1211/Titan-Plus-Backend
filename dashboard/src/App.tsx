@@ -93,7 +93,7 @@ export default function App() {
 
         // WebSocket Connection
         let ws: WebSocket | null = null;
-        let reconnectTimeout: NodeJS.Timeout;
+        let reconnectTimeout: any;
 
         const connectWebSocket = () => {
             try {
