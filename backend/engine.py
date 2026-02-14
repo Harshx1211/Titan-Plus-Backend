@@ -11,10 +11,11 @@ class CryptoEngine:
     """
     def __init__(self):
         # Public API only - no keys required for market data
-        self.exchange = ccxt.binance({
+        # Switching to Bybit to avoid Binance regional restrictions (451 error)
+        self.exchange = ccxt.bybit({
             'enableRateLimit': True,
             'options': {
-                'defaultType': 'future',  # Use futures data for better liquidity
+                'defaultType': 'linear',  # Bybit uses 'linear' for USDT futures
             }
         })
         self.monitored_symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]

@@ -42,9 +42,18 @@ export default function App() {
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const httpProtocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
 
-            wsUrl = wsUrl || `${wsProtocol}//${targetHost}/ws/market`;
-            apiUrl = apiUrl || `${httpProtocol}//${targetHost}`;
+            // Special handling for Hugging Face Spaces
+            const hfSpaceId = window.location.hostname.match(/([^.]+)\.hf\.space/);
+            if (hfSpaceId) {
+                wsUrl = `${wsProtocol}//${window.location.host}/ws/market`;
+                apiUrl = `${httpProtocol}//${window.location.host}`;
+            } else {
+                wsUrl = wsUrl || `${wsProtocol}//${targetHost}/ws/market`;
+                apiUrl = apiUrl || `${httpProtocol}//${targetHost}`;
+            }
         }
+
+        console.log('🔌 Neural Link Configuration:', { wsUrl, apiUrl });
         return { wsUrl, apiUrl };
     };
 
