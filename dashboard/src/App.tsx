@@ -50,21 +50,34 @@ export default function App() {
         });
     };
 
+    // Unified function to calculate PnL based on live stats
+    const calculateLivePnL = (trade: ActiveTrade | null, stats: MarketStat[]) => {
+        if (!trade) return 0;
+        const currentStat = stats.find(s => s.symbol === trade.symbol);
+        if (!currentStat || currentStat.price === 0) return 0;
+
+        const priceDiff = currentStat.price - trade.entry_price;
+        const pnlUsd = trade.side === 'LONG' ? priceDiff : -priceDiff;
+        return pnlUsd * 83.0; // Return INR
+    };
+
     useEffect(() => {
         const setupSupabase = async () => {
             setWsStatus('connecting');
             addThought('📡 Connecting to Supabase Data Bridge...');
 
-            // 1. Initial Data Fetch (Restores dashboard state immediately)
-            const { data: initialThoughts } = await supabase.from('brain_logs').select('*').order('created_at', { ascending: false }).limit(10);
-            if (initialThoughts) {
-                setThoughts(initialThoughts.reverse().map(t => {
-                    const time = new Date(t.created_at).toLocaleTimeString([], { hour12: false });
-                    return `[${time}] ${t.sentiment}: ${t.symbol} | ${t.market_regime}`;
-                }));
-            }
+            // 1. Initial Data Fetch
+            // Filter: Only show "Active" trades that are less than 48 hours old to prevent stale test data
+            const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
-            const { data: initialTrade } = await supabase.from('trades').select('*').eq('status', 'OPEN').order('created_at', { ascending: false }).limit(1);
+            const { data: initialTrade } = await supabase
+                .from('trades')
+                .select('*')
+                .eq('status', 'OPEN')
+                .gt('created_at', twoDaysAgo)
+                .order('created_at', { ascending: false })
+                .limit(1);
+
             if (initialTrade && initialTrade[0]) {
                 const tr = initialTrade[0];
                 setActiveTrade({
@@ -78,20 +91,32 @@ export default function App() {
                         label: key.toUpperCase()
                     })),
                     confidence: tr.confidence || 0.85,
-                    pnl_inr: (tr.unrealized_pnl || 0) * 83.0,
+                    pnl_inr: 0, // Will be calculated by stats listener
                     rr_ratio: 2.5,
-                    duration: 0
+                    duration: (Date.now() - new Date(tr.created_at).getTime()) / (60000)
                 });
+            }
+
+            const { data: initialThoughts } = await supabase.from('brain_logs').select('*').order('created_at', { ascending: false }).limit(10);
+            if (initialThoughts) {
+                setThoughts(initialThoughts.reverse().map(t => {
+                    const time = new Date(t.created_at).toLocaleTimeString([], { hour12: false });
+                    return `[${time}] ${t.sentiment}: ${t.symbol} | ${t.market_regime}`;
+                }));
             }
 
             // 2. Realtime Subscriptions (Replacement for WebSocket)
             const channel = supabase.channel('titan-updates')
-                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'brain_logs' }, payload => {
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'brain_logs' }, (payload: any) => {
                     const t = payload.new;
-                    addThought(`${t.sentiment}: ${t.symbol} | ${t.market_regime}`);
+                    if (t && t.sentiment) {
+                        addThought(`${t.sentiment}: ${t.symbol} | ${t.market_regime}`);
+                    }
                 })
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'trades' }, payload => {
-                    const tr = payload.new as any;
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'trades' }, (payload: any) => {
+                    const tr = payload.new;
+                    if (!tr || !tr.status) return;
+
                     if (tr.status === 'OPEN') {
                         setActiveTrade({
                             symbol: tr.symbol,
@@ -104,28 +129,42 @@ export default function App() {
                                 label: key.toUpperCase()
                             })),
                             confidence: tr.confidence || 0.85,
-                            pnl_inr: (tr.unrealized_pnl || 0) * 83.0,
+                            pnl_inr: 0,
                             rr_ratio: 2.5,
                             duration: 0
                         });
                     } else if (tr.status === 'CLOSED') {
-                        setActiveTrade(null);
-                        addThought(`✅ Trade Closed: ${tr.symbol} | P&L: ₹${(tr.pnl * 83.0).toFixed(2)}`);
+                        setActiveTrade(current => (current?.symbol === tr.symbol) ? null : current);
+                        addThought(`✅ Trade Closed: ${tr.symbol} | P&L: ₹${((tr.pnl || 0) * 83.0).toFixed(2)}`);
                     }
                 })
-                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'market_state' }, payload => {
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'market_state' }, (payload: any) => {
                     const m = payload.new;
-                    setMarketStats(prev => prev.map(s => s.symbol === m.symbol ? {
-                        ...s,
-                        price: m.price,
-                        volume: m.volume?.toString() || s.volume
-                    } : s));
+                    if (!m || !m.symbol) return;
+
+                    setMarketStats(prev => {
+                        const newStats = prev.map(s => s.symbol === m.symbol ? {
+                            ...s,
+                            price: m.price || s.price,
+                            volume: m.volume?.toString() || s.volume
+                        } : s);
+
+                        // DYNAMIC PNL CALCULATION
+                        setActiveTrade(current => {
+                            if (!current || current.symbol !== m.symbol) return current;
+                            return {
+                                ...current,
+                                pnl_inr: calculateLivePnL(current, newStats)
+                            };
+                        });
+
+                        return newStats;
+                    });
                 })
                 .subscribe((status) => {
                     if (status === 'SUBSCRIBED') {
                         setWsStatus('online');
                         addThought('✅ Supabase Bridge Linked');
-                        console.log('🔗 Supabase Realtime Subscribed');
                     } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
                         setWsStatus('offline');
                         addThought('⚠️ Bridge Link Discarded');
@@ -142,7 +181,6 @@ export default function App() {
         };
     }, []);
 
-    // Placeholder for remaining health checks if needed
     const apiUrl = "https://harshx1211-titan-plus-backend.hf.space";
 
     return (
