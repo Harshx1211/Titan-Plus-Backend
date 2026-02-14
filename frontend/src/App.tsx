@@ -25,7 +25,14 @@ export default function App() {
     }, [thoughts]);
 
     useEffect(() => {
-        const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/market';
+        let wsUrl = import.meta.env.VITE_WS_URL;
+
+        if (!wsUrl) {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.host || 'localhost:8000';
+            wsUrl = `${protocol}//${host}/ws/market`;
+        }
+
         const ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
