@@ -1,3 +1,10 @@
+# JavaScript / Node
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+
+# Python
 venv/
 .env
 __pycache__/

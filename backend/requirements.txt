@@ -1,0 +1,29 @@
+# Titan Crypto Brain V3 - Backend Requirements
+
+# Core Framework
+fastapi==0.115.0
+uvicorn==0.32.0
+
+# Data & Analysis
+ccxt
+pandas
+pandas_ta
+numpy
+scipy
+
+# Cloud Database
+supabase
+postgrest
+
+# Configuration
+pydantic
+python-dotenv
+
+# Async & WebSockets
+websockets
+asyncio
+
+# Optional: For future ML enhancements
+# scikit-learn
+# xgboost
+# torch

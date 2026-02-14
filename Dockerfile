@@ -1,42 +1,33 @@
-# Build Identifier: v13.0.3-GLOBAL-PROD
-FROM python:3.12-slim
+# --- Stage 1: Build Frontend ---
+FROM node:18-alpine AS build-stage
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN npm install
+COPY frontend/ ./
+RUN npm run build
 
-# Set working directory
+# --- Stage 2: Final Production Image ---
+FROM python:3.11-slim
 WORKDIR /app
 
-# Install system dependencies for ML libraries
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
-    libpq-dev \
-    git \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy backend requirements first
-COPY requirements.txt .
+# Copy backend requirements and install
+COPY backend/requirements.txt ./backend/requirements.txt
+RUN pip install --no-cache-dir -r backend/requirements.txt
+RUN pip install aiofiles
 
-# Install CPU-optimized torch first to save space/time
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+# Copy the rest of the application
+COPY . .
 
-# Install the rest of the dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy built frontend from build-stage
+COPY --from=build-stage /app/frontend/dist ./frontend/dist
 
-# Copy the backend code contents into /app
-COPY backend/ .
-
-# Ensure required state files exist or are initialized without overwriting
-RUN [ ! -f brain_state_ml.json ] && touch brain_state_ml.json || true
-RUN [ ! -f brain_state.json ] && touch brain_state.json || true
-RUN [ ! -f rl_state.pt ] && touch rl_state.pt || true
-
-# Environment variable for Hugging Face Default Port
-ENV PORT=7860
+# Expose Hugging Face default port
 EXPOSE 7860
 
-# [v9.9.6] Stability: Limit threads to prevent container eviction
-ENV OMP_NUM_THREADS=1
-ENV MKL_NUM_THREADS=1
-ENV OPENBLAS_NUM_THREADS=1
-
-# Run the FastAPI app using uvicorn
-# We use --workers 1 to minimize memory footprint
-CMD uvicorn api:app --host 0.0.0.0 --port $PORT --log-level info --workers 1
+# Command to run the unified server
+CMD ["python", "backend/main.py"]
