@@ -36,6 +36,10 @@ async def log_requests(request, call_next):
     return response
 
 
+@app.get("/api/health")
+async def health():
+    return {"status": "ok", "timestamp": datetime.now().isoformat()}
+
 @app.get("/")
 async def root():
     return {
@@ -61,13 +65,12 @@ async def websocket_endpoint(websocket: WebSocket):
     # Log origin for debugging
     origin = websocket.headers.get("origin")
     print(f"🔌 WebSocket link attempt from origin: {origin}")
-    await websocket.accept()
-    print(f"✅ WebSocket connection established")
     try:
+        await websocket.accept()
+        print(f"✅ WebSocket connection established")
         while True:
             # Stream the latest active trade and market state
             active_trade = db.get_active_trade()
-            # This is a basic broadcast, could be made more efficient
             await websocket.send_json({
                 "type": "update", 
                 "active_trade": active_trade,
@@ -78,13 +81,16 @@ async def websocket_endpoint(websocket: WebSocket):
         print(f"WebSocket error: {e}")
     finally:
         print(f"🔌 WebSocket link closed")
-        await websocket.close()
+        try:
+            await websocket.close()
+        except:
+            pass
 
-# Serve the built React frontend (fallback)
+# Serve the built React frontend (fallback) - Moved to prevent route shadowing
 if os.path.exists("dashboard/dist"):
-    app.mount("/", StaticFiles(directory="dashboard/dist", html=True), name="static")
+    app.mount("/dashboard", StaticFiles(directory="dashboard/dist", html=True), name="static")
 
 if __name__ == "__main__":
     # Hugging Face usually provides the port via an environment variable, otherwise 7860
     port = int(os.getenv("PORT", 7860))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=port, proxy_headers=True, forwarded_allow_ips="*")

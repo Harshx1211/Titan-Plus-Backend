@@ -70,18 +70,18 @@ export default function App() {
     const { wsUrl, apiUrl } = getBackendConfig();
 
     useEffect(() => {
-        // 1. HTTP HEALTH CHECK - To verify connectivity when WS (1006) fails
+        // 1. HTTP HEALTH CHECK - To verify connectivity
         const checkConnectivity = async () => {
             try {
-                const res = await fetch(`${apiUrl}/`, { mode: 'cors' });
+                const res = await fetch(`${apiUrl}/api/health`, { mode: 'cors' });
                 if (res.ok) {
-                    addThought('🟢 API Reachable (HTTP OK)');
+                    addThought('🟢 API Health Check: OK');
                 } else {
-                    addThought('🟠 API Response Error (HTTP ' + res.status + ')');
+                    addThought('🟠 API Health Check: ' + res.status);
                 }
             } catch (err) {
                 console.error('Connectivity Check Failed:', err);
-                addThought('🔴 API Unreachable (Cross-Domain Block?)');
+                addThought('🔴 API Path Unreachable');
             }
         };
 
@@ -129,9 +129,8 @@ export default function App() {
 
                 ws.onclose = (e) => {
                     setWsStatus('offline');
-                    // 1006 is often blocked by proxy or CORS
-                    const reason = e.code === 1006 ? "Abnormal/Blocked" : "Closed";
-                    addThought(`🔴 Connection link ${reason} (${e.code})`);
+                    const reason = e.code === 1006 ? "Link Blocked" : "Link Closed";
+                    addThought(`🔴 ${reason} (${e.code})`);
                     console.log('🔌 WebSocket Closed:', e.code, e.reason);
                     reconnectTimeout = setTimeout(connectWebSocket, 5000);
                 };

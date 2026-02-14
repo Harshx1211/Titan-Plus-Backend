@@ -15,11 +15,8 @@ export const BrainActivity: React.FC<BrainActivityProps> = ({ thoughts, thoughtE
             const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
             const isNearBottom = scrollHeight - scrollTop - clientHeight < 150;
             if (isNearBottom) {
-                // INTERNAL SCROLL ONLY - Stops the "dragging" / page jumping
-                scrollRef.current.scrollTo({
-                    top: scrollHeight,
-                    behavior: 'smooth'
-                });
+                // INTERNAL SCROLL ONLY - Stops page level "dragging"
+                scrollRef.current.scrollTop = scrollHeight;
             }
         }
     }, [thoughts]);
