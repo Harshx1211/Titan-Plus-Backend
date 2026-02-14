@@ -49,8 +49,8 @@ export default function App() {
             if (hfSpaceId) {
                 wsUrl = `${wsProtocol}//${window.location.host}/ws/market`;
                 apiUrl = `${httpProtocol}//${window.location.host}`;
-            } else if (isVercel) {
-                // Fallback to the known Hugging Face Space for this project
+            } else if (isVercel || isProduction) {
+                // Hardcoded fallback for production environments
                 const targetHF = "harshx1211-titan-plus-backend.hf.space";
                 wsUrl = `wss://${targetHF}/ws/market`;
                 apiUrl = `https://${targetHF}`;
@@ -60,7 +60,7 @@ export default function App() {
             }
         }
 
-        console.log('🔌 Neural Link Configuration:', { wsUrl, apiUrl });
+        console.log('🔌 Neural Link:', { wsUrl, apiUrl });
         return { wsUrl, apiUrl };
     };
 

@@ -6,9 +6,10 @@ interface SystemStatusProps {
     wsStatus: 'connecting' | 'online' | 'offline';
     aiVersion: string;
     uptime: string;
+    endpoint?: string;
 }
 
-export const SystemStatus: React.FC<SystemStatusProps> = ({ wsStatus, aiVersion, uptime }) => {
+export const SystemStatus: React.FC<SystemStatusProps> = ({ wsStatus, aiVersion, uptime, endpoint }) => {
     const statusConfig = {
         online: { color: 'emerald', text: 'Online', icon: Wifi },
         offline: { color: 'red', text: 'Offline', icon: Wifi },
@@ -84,12 +85,8 @@ export const SystemStatus: React.FC<SystemStatusProps> = ({ wsStatus, aiVersion,
             {/* System Info */}
             <div className="mt-4 pt-4 border-t border-slate-700/50 space-y-2 text-[10px]">
                 <div className="flex items-center justify-between text-slate-500 font-bold uppercase tracking-widest">
-                    <span>Analysis Interval</span>
-                    <span className="text-slate-400">60s</span>
-                </div>
-                <div className="flex items-center justify-between text-slate-500 font-bold uppercase tracking-widest">
-                    <span>Monitored Assets</span>
-                    <span className="text-slate-400">3</span>
+                    <span>Neural Link</span>
+                    <span className="text-blue-400 truncate max-w-[150px]">{endpoint?.replace('https://', '')}</span>
                 </div>
             </div>
         </div>
