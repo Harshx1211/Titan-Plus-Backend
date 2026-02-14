@@ -29,5 +29,8 @@ COPY --from=build-stage /app/frontend/dist ./frontend/dist
 # Expose Hugging Face default port
 EXPOSE 7860
 
+# Force environment to recognize modules
+ENV PYTHONPATH=/app
+
 # Command to run the unified server
-CMD ["python", "backend/main.py"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "7860"]
