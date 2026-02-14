@@ -33,35 +33,43 @@ export default function App() {
 
     // Smart Backend Detection
     const getBackendConfig = () => {
-        let wsUrl = import.meta.env.VITE_WS_URL;
-        let apiUrl = import.meta.env.VITE_API_URL;
+        const hostname = window.location.hostname;
+        const isVercel = hostname.includes('vercel.app');
+        const hfSpaceId = hostname.match(/([^.]+)\.hf\.space/);
+        const isProduction = hostname !== 'localhost' && hostname !== '127.0.0.1';
 
-        if (!wsUrl || !apiUrl) {
-            const isProduction = window.location.hostname !== 'localhost';
-            const targetHost = isProduction ? window.location.host : 'localhost:8000';
-            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const httpProtocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-
-            // Special handling for Hugging Face Spaces & Vercel Cross-Domain
-            const isVercel = window.location.hostname.includes('vercel.app');
-            const hfSpaceId = window.location.hostname.match(/([^.]+)\.hf\.space/);
-
-            if (hfSpaceId) {
-                wsUrl = `${wsProtocol}//${window.location.host}/ws/market`;
-                apiUrl = `${httpProtocol}//${window.location.host}`;
-            } else if (isVercel || isProduction) {
-                // Hardcoded fallback for production environments
-                const targetHF = "harshx1211-titan-plus-backend.hf.space";
-                wsUrl = `wss://${targetHF}/ws/market`;
-                apiUrl = `https://${targetHF}`;
-            } else {
-                wsUrl = wsUrl || `${wsProtocol}//${targetHost}/ws/market`;
-                apiUrl = apiUrl || `${httpProtocol}//${targetHost}`;
-            }
+        // 1. Force HF Backend if on Vercel
+        if (isVercel) {
+            const targetHF = "harshx1211-titan-plus-backend.hf.space";
+            return {
+                wsUrl: `wss://${targetHF}/ws/market`,
+                apiUrl: `https://${targetHF}`
+            };
         }
 
-        console.log('🔌 Neural Link:', { wsUrl, apiUrl });
-        return { wsUrl, apiUrl };
+        // 2. Use Env Vars if available
+        let wsUrl = import.meta.env.VITE_WS_URL;
+        let apiUrl = import.meta.env.VITE_API_URL;
+        if (wsUrl && apiUrl) return { wsUrl, apiUrl };
+
+        // 3. Auto-detection for HF Spaces
+        const host = window.location.host;
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const httpProtocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+
+        if (hfSpaceId) {
+            return {
+                wsUrl: `${wsProtocol}//${host}/ws/market`,
+                apiUrl: `${httpProtocol}//${host}`
+            };
+        }
+
+        // 4. Default Fallback
+        const targetHost = isProduction ? host : 'localhost:8000';
+        return {
+            wsUrl: wsUrl || `${wsProtocol}//${targetHost}/ws/market`,
+            apiUrl: apiUrl || `${httpProtocol}//${targetHost}`
+        };
     };
 
     const { wsUrl, apiUrl } = getBackendConfig();
@@ -113,6 +121,7 @@ export default function App() {
 
         const connectWebSocket = () => {
             try {
+                console.log(`📡 Neural Link attempt: ${wsUrl}`);
                 ws = new WebSocket(wsUrl);
 
                 ws.onopen = () => {

@@ -51,7 +51,11 @@ async def get_thoughts():
 
 @app.websocket("/ws/market")
 async def websocket_endpoint(websocket: WebSocket):
+    # Log origin for debugging
+    origin = websocket.headers.get("origin")
+    print(f"🔌 WebSocket link attempt from origin: {origin}")
     await websocket.accept()
+    print(f"✅ WebSocket connection established")
     try:
         while True:
             # Stream the latest active trade and market state
