@@ -6,8 +6,8 @@ uvicorn==0.32.0
 
 # Data & Analysis
 ccxt
-pandas
-pandas_ta
+pandas==2.1.4
+pandas-ta
 numpy
 scipy
 
