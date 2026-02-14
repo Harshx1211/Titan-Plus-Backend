@@ -35,8 +35,6 @@ export default function App() {
     const getBackendConfig = () => {
         const hostname = window.location.hostname;
         const isVercel = hostname.includes('vercel.app');
-        const hfSpaceId = hostname.match(/([^.]+)\.hf\.space/);
-        const isProduction = hostname !== 'localhost' && hostname !== '127.0.0.1';
 
         // 1. Force HF Backend if on Vercel
         if (isVercel) {
@@ -47,28 +45,25 @@ export default function App() {
             };
         }
 
-        // 2. Use Env Vars if available
-        let wsUrl = import.meta.env.VITE_WS_URL;
-        let apiUrl = import.meta.env.VITE_API_URL;
-        if (wsUrl && apiUrl) return { wsUrl, apiUrl };
-
-        // 3. Auto-detection for HF Spaces
+        // 2. Localhost or HF Space direct
         const host = window.location.host;
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const httpProtocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
 
-        if (hfSpaceId) {
+        const isHF = hostname.includes('hf.space');
+        if (isHF) {
             return {
                 wsUrl: `${wsProtocol}//${host}/ws/market`,
                 apiUrl: `${httpProtocol}//${host}`
             };
         }
 
-        // 4. Default Fallback
+        // 3. Fallback/Local
+        const isProduction = hostname !== 'localhost' && hostname !== '127.0.0.1';
         const targetHost = isProduction ? host : 'localhost:8000';
         return {
-            wsUrl: wsUrl || `${wsProtocol}//${targetHost}/ws/market`,
-            apiUrl: apiUrl || `${httpProtocol}//${targetHost}`
+            wsUrl: `${wsProtocol}//${targetHost}/ws/market`,
+            apiUrl: `${httpProtocol}//${targetHost}`
         };
     };
 
@@ -121,7 +116,7 @@ export default function App() {
 
         const connectWebSocket = () => {
             try {
-                console.log(`📡 Neural Link attempt: ${wsUrl}`);
+                addThought(`📡 Linking to: ${wsUrl}...`);
                 ws = new WebSocket(wsUrl);
 
                 ws.onopen = () => {
