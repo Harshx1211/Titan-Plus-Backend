@@ -3,9 +3,11 @@ export interface ActiveTrade {
     side: 'LONG' | 'SHORT';
     entry_price: number;
     stop_loss: number;
-    targets: { price: number; hit: boolean }[];
+    targets: { price: number; hit: boolean; label: string }[];
     confidence: number;
     pnl_inr?: number;
+    rr_ratio?: number;
+    duration?: number;
 }
 
 export interface MarketStat {
@@ -13,6 +15,8 @@ export interface MarketStat {
     price: number;
     change: number;
     volume: string;
+    high24h: number;
+    low24h: number;
 }
 
 export interface HistoricSignal {
@@ -20,9 +24,12 @@ export interface HistoricSignal {
     symbol: string;
     side: 'LONG' | 'SHORT';
     entry_price: number;
+    exit_price?: number;
     pnl?: number;
     status: 'OPEN' | 'CLOSED';
     created_at: string;
+    entry_reason?: string;
+    r_multiple?: number;
 }
 
 export interface BrainThought {
@@ -30,5 +37,28 @@ export interface BrainThought {
     symbol: string;
     sentiment: string;
     logic_details: any;
+    market_regime: string;
     created_at: string;
+}
+
+export interface SystemMetrics {
+    winRate: number;
+    totalSignals: number;
+    avgRMultiple: number;
+    profitFactor: number;
+    aiConfidence: number;
+    activeFilters: number;
+    recentWinRate?: number;
+    totalPnl?: number;
+}
+
+export interface SystemMetrics {
+    winRate: number;
+    totalSignals: number;
+    avgRMultiple: number;
+    profitFactor: number;
+    aiConfidence: number;
+    activeFilters: number;
+    recentWinRate?: number;
+    totalPnl?: number;
 }
