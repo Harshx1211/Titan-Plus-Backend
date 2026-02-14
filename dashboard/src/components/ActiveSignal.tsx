@@ -61,24 +61,30 @@ export const ActiveSignal: React.FC<ActiveSignalProps> = ({ activeTrade }) => {
                     </div>
 
                     <div className="grid grid-cols-3 gap-6 mb-10">
-                        <div className="bg-white/5 rounded-2xl p-5 border border-white/5">
-                            <p className="text-[10px] text-slate-500 uppercase font-bold mb-2">Entry Recommended</p>
-                            <p className="text-2xl font-mono font-bold text-white">₹{(Number(activeTrade.entry_price || 0) * 83).toLocaleString()}</p>
+                        <div className="bg-white/5 rounded-2xl p-6 border border-white/5 hover:border-emerald-500/20 transition-all">
+                            <p className="text-[11px] text-slate-500 uppercase font-black mb-2 tracking-widest">Entry Recomm.</p>
+                            <p className="text-2xl font-mono font-black text-white">
+                                {Number(activeTrade.entry_price || 0) > 0 ? `₹${(Number(activeTrade.entry_price) * 83).toLocaleString()}` : 'CALCULATING...'}
+                            </p>
                         </div>
-                        <div className="bg-white/5 rounded-2xl p-5 border border-white/5">
-                            <p className="text-[10px] text-slate-500 uppercase font-bold mb-2">Primary Target</p>
-                            <p className="text-2xl font-mono font-bold text-emerald-400">₹{(Number(activeTrade.targets[0]?.price || 0) * 83).toLocaleString()}</p>
+                        <div className="bg-white/5 rounded-2xl p-6 border border-white/5 hover:border-sky-500/20 transition-all">
+                            <p className="text-[11px] text-slate-500 uppercase font-black mb-2 tracking-widest">Primary Target</p>
+                            <p className="text-2xl font-mono font-black text-sky-400">
+                                {Number(activeTrade.targets[0]?.price || 0) > 0 ? `₹${(Number(activeTrade.targets[0].price) * 83).toLocaleString()}` : 'SEEKING EXIT...'}
+                            </p>
                         </div>
-                        <div className="bg-white/5 rounded-2xl p-5 border border-white/5">
-                            <p className="text-[10px] text-slate-500 uppercase font-bold mb-2">Stop Loss (Cap)</p>
-                            <p className="text-2xl font-mono font-bold text-rose-400">₹{(Number(activeTrade.stop_loss || 0) * 83).toLocaleString()}</p>
+                        <div className="bg-white/5 rounded-2xl p-6 border border-white/5 hover:border-rose-500/20 transition-all">
+                            <p className="text-[11px] text-slate-500 uppercase font-black mb-2 tracking-widest">Stop Loss (Cap)</p>
+                            <p className="text-2xl font-mono font-black text-rose-400">
+                                {Number(activeTrade.stop_loss || 0) > 0 ? `₹${(Number(activeTrade.stop_loss) * 83).toLocaleString()}` : 'ESTIMATING...'}
+                            </p>
                         </div>
                     </div>
 
                     <div className="flex gap-4">
                         <button
                             onClick={() => setIsAnalysisOpen(true)}
-                            className="flex-1 py-5 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-black rounded-2xl transition-all shadow-xl shadow-sky-500/20 flex items-center justify-center gap-3 uppercase tracking-widest text-sm"
+                            className="flex-1 py-6 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 active:scale-[0.98] text-white font-black rounded-2xl transition-all shadow-2xl shadow-sky-500/20 flex items-center justify-center gap-3 uppercase tracking-[0.2em] text-xs"
                         >
                             <Layers size={18} /> View Convergence Analysis
                         </button>
