@@ -92,24 +92,40 @@ export default function App() {
             const data = JSON.parse(event.data);
             if (data.type === 'update') {
                 if (data.active_trade) {
+                    // Map backend data to frontend format
+                    const rawTargets = data.active_trade.targets || {};
+                    const targetList = Object.entries(rawTargets).map(([key, val]: [string, any]) => ({
+                        price: typeof val === 'number' ? val : (val.price || 0),
+                        hit: typeof val === 'number' ? false : (val.hit || false)
+                    }));
+
                     setActiveTrade({
                         symbol: data.active_trade.symbol,
                         side: data.active_trade.side,
                         entry_price: data.active_trade.entry_price,
-                        stop_loss: data.active_trade.stop_loss,
-                        targets: Object.values(data.active_trade.targets || {}),
-                        confidence: data.active_trade.metadata?.confidence || 0.85,
-                        pnl_inr: (data.active_trade.unrealized_pnl || 0) * 83.0
+                        stop_loss: data.active_trade.stop_loss || 0,
+                        targets: targetList.length > 0 ? targetList : [{ price: 0, hit: false }],
+                        confidence: data.active_trade.confidence || data.active_trade.metadata?.confidence || 0.85,
+                        pnl_inr: (data.active_trade.unrealized_pnl || data.active_trade.pnl || 0) * 83.0
                     });
-                    addThought(`New Institutional Signal Detected: ${data.active_trade.symbol} ${data.active_trade.side}`);
                 } else {
                     setActiveTrade(null);
                 }
             }
         };
 
-        return () => ws.close();
-    }, []);
+        // 3. Heartbeat to keep connection alive
+        const heartbeat = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'ping' }));
+            }
+        }, 20000);
+
+        return () => {
+            clearInterval(heartbeat);
+            ws.close();
+        };
+    }, [wsUrl, apiUrl]);
 
     const addThought = (msg: string) => {
         setThoughts((prev: string[]) => [...prev.slice(-15), `[${new Date().toLocaleTimeString()}] ${msg}`]);

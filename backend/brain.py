@@ -173,7 +173,14 @@ class TitanBrain:
             symbol=symbol,
             side=setup_type,
             entry_price=entry_price,
-            entry_reason=f"SMC {setup_type} | Confluence: {smc_analysis['confluence_score']:.0f}% | AI: {ai_metadata['confidence']:.1%}"
+            stop_loss=risk_params.stop_loss,
+            targets={
+                'tp1': risk_params.take_profit_1,
+                'tp2': risk_params.take_profit_2,
+                'tp3': risk_params.take_profit_3
+            },
+            confidence=ai_metadata.get('confidence', 0),
+            entry_reason=f"SMC {setup_type} | Confluence: {smc_analysis['confluence_score']:.0f}% | AI: {ai_metadata.get('confidence', 0):.1%}"
         )
         
         # Open position in risk engine (for simulation tracking)

@@ -22,17 +22,29 @@ class DatabaseManager:
 
     # --- Position & Trade History ---
     
-    def log_trade(self, symbol: str, side: str, entry_price: float, entry_reason: str) -> str:
-        """Logs a new open trade."""
+    def log_trade(self, symbol: str, side: str, entry_price: float, entry_reason: str, 
+                  stop_loss: float = 0, targets: Dict = None, confidence: float = 0) -> str:
+        """Logs a new open trade with risk parameters."""
         data = {
             "symbol": symbol,
             "side": side,
             "entry_price": entry_price,
+            "stop_loss": stop_loss,
+            "targets": targets or {},
+            "confidence": confidence,
             "entry_reason": entry_reason,
             "status": "OPEN",
             "created_at": datetime.now(timezone.utc).isoformat()
         }
-        res = self.supabase.table("trades").insert(data).execute()
+        # We use a try-except here in case the user hasn't added the new columns yet
+        try:
+            res = self.supabase.table("trades").insert(data).execute()
+        except Exception as e:
+            print(f"⚠️ Database Error (Missing Columns?): {e}")
+            # Fallback to legacy schema if insertion fails
+            legacy_data = {k: v for k, v in data.items() if k in ["symbol", "side", "entry_price", "entry_reason", "status", "created_at"]}
+            res = self.supabase.table("trades").insert(legacy_data).execute()
+            
         return res.data[0]['id'] if res.data else ""
 
     def close_trade(self, trade_id: str, exit_price: float, exit_reason: str, pnl: float):
@@ -48,7 +60,7 @@ class DatabaseManager:
 
     def get_active_trade(self) -> Optional[Dict]:
         """Returns the currently open trade, if any."""
-        res = self.supabase.table("trades").select("*").eq("status", "OPEN").limit(1).execute()
+        res = self.supabase.table("trades").select("*").eq("status", "OPEN").order("created_at", desc=True).limit(1).execute()
         return res.data[0] if res.data else None
 
     # --- Brain Logs (Thinking Process) ---
