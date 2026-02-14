@@ -254,6 +254,7 @@ export default function App() {
                             wsStatus={wsStatus}
                             aiVersion="3.1.0-Evolution-Fixed"
                             uptime="24h 13m"
+                            endpoint={apiUrl}
                         />
                         <BrainActivity thoughts={thoughts} thoughtEndRef={thoughtEndRef} />
                     </motion.div>
