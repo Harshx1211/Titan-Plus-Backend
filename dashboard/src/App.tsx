@@ -58,12 +58,14 @@ export default function App() {
 
                 if (sigRes.ok) {
                     const data = await sigRes.json();
-                    setHistoricSignals(data);
+                    const signalsArray = Array.isArray(data) ? data : (data.value || []);
+                    setHistoricSignals(signalsArray);
                 }
 
                 if (thoughtRes.ok) {
                     const data = await thoughtRes.json();
-                    const formatted = data.map((t: any) =>
+                    const thoughtsArray = Array.isArray(data) ? data : (data.value || []);
+                    const formatted = thoughtsArray.map((t: any) =>
                         `[${new Date(t.created_at).toLocaleTimeString()}] ${t.sentiment}: ${t.symbol} - ${t.market_regime}`
                     ).reverse();
                     setThoughts(formatted);
