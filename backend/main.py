@@ -77,6 +77,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         print(f"WebSocket error: {e}")
     finally:
+        print(f"🔌 WebSocket link closed")
         await websocket.close()
 
 # Serve the built React frontend (fallback)

@@ -8,6 +8,18 @@ interface BrainActivityProps {
 }
 
 export const BrainActivity: React.FC<BrainActivityProps> = ({ thoughts, thoughtEndRef }) => {
+    const scrollRef = React.useRef<HTMLDivElement>(null);
+
+    React.useEffect(() => {
+        if (scrollRef.current) {
+            const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+            const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+            if (isNearBottom) {
+                thoughtEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+    }, [thoughts, thoughtEndRef]);
+
     return (
         <div className="glass-card rounded-xl p-5 h-[400px] flex flex-col">
             <div className="flex items-center gap-2 mb-4">
@@ -16,7 +28,10 @@ export const BrainActivity: React.FC<BrainActivityProps> = ({ thoughts, thoughtE
                 <div className="ml-auto w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-2 font-mono text-xs scrollbar-hide">
+            <div
+                ref={scrollRef}
+                className="flex-1 overflow-y-auto space-y-2 font-mono text-xs scrollbar-hide scroll-smooth"
+            >
                 <AnimatePresence initial={false}>
                     {thoughts.length === 0 ? (
                         <div className="flex items-center justify-center h-full text-slate-600">

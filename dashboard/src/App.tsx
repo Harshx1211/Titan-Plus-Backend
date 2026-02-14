@@ -69,9 +69,8 @@ export default function App() {
 
     const { wsUrl, apiUrl } = getBackendConfig();
 
-    useEffect(() => {
-        thoughtEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [thoughts]);
+    // Auto-scroll handled by BrainActivity component internally
+
 
     useEffect(() => {
         // Initial Data Fetching
@@ -116,22 +115,24 @@ export default function App() {
 
         const connectWebSocket = () => {
             try {
-                addThought(`📡 Linking to: ${wsUrl}...`);
+                console.log(`📡 Neural Link attempt: ${wsUrl}`);
                 ws = new WebSocket(wsUrl);
 
                 ws.onopen = () => {
                     setWsStatus('online');
-                    addThought('🟢 Neural link established');
+                    addThought('✅ Neural link established');
                 };
 
-                ws.onclose = () => {
+                ws.onclose = (e) => {
                     setWsStatus('offline');
-                    addThought('🔴 Connection lost. Reconnecting...');
+                    addThought(`🔴 Connection lost (${e.code}). Reconnecting...`);
+                    console.log('🔌 WebSocket Closed:', e.code, e.reason);
                     reconnectTimeout = setTimeout(connectWebSocket, 5000);
                 };
 
-                ws.onerror = () => {
-                    setWsStatus('offline');
+                ws.onerror = (err) => {
+                    console.error('🔌 WebSocket Error:', err);
+                    addThought('⚠️ Neural link error');
                 };
 
                 ws.onmessage = (event) => {
