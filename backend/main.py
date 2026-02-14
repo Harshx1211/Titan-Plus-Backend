@@ -38,15 +38,15 @@ async def log_requests(request, call_next):
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "timestamp": datetime.now().isoformat()}
+    return {"status": "ok", "version": "3.1.0-Apex"}
+
+@app.get("/api/handshake")
+async def handshake():
+    return {"status": "connected", "server": "Titan-V3"}
 
 @app.get("/")
 async def root():
-    return {
-        "status": "Titan Crypto Brain V3.1 Online", 
-        "mode": "24/7 Analysis",
-        "supported_coins": ["BTC", "ETH", "SOL", "DOGE"]
-    }
+    return {"status": "online", "message": "Titan Brain V3.1 API"}
 
 @app.get("/api/signals")
 async def get_signals():
@@ -69,7 +69,6 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.accept()
         print(f"✅ WebSocket connection established")
         while True:
-            # Stream the latest active trade and market state
             active_trade = db.get_active_trade()
             await websocket.send_json({
                 "type": "update", 
@@ -89,8 +88,9 @@ async def websocket_endpoint(websocket: WebSocket):
 # Serve the built React frontend (fallback) - Moved to prevent route shadowing
 if os.path.exists("dashboard/dist"):
     app.mount("/dashboard", StaticFiles(directory="dashboard/dist", html=True), name="static")
+elif os.path.exists("dist"):
+    app.mount("/dashboard", StaticFiles(directory="dist", html=True), name="static")
 
 if __name__ == "__main__":
-    # Hugging Face usually provides the port via an environment variable, otherwise 7860
     port = int(os.getenv("PORT", 7860))
     uvicorn.run(app, host="0.0.0.0", port=port, proxy_headers=True, forwarded_allow_ips="*")

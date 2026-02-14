@@ -129,8 +129,12 @@ export default function App() {
 
                 ws.onclose = (e) => {
                     setWsStatus('offline');
-                    const reason = e.code === 1006 ? "Link Blocked" : "Link Closed";
-                    addThought(`🔴 ${reason} (${e.code})`);
+                    // 1006 means the link is actively blocked by a proxy or firewall
+                    if (e.code === 1006) {
+                        addThought('🟠 Neural link blocked by proxy. Switching to poll mode...');
+                    } else {
+                        addThought(`🔴 Link suspended (${e.code}). Reconnecting...`);
+                    }
                     console.log('🔌 WebSocket Closed:', e.code, e.reason);
                     reconnectTimeout = setTimeout(connectWebSocket, 5000);
                 };
@@ -206,17 +210,25 @@ export default function App() {
 
         connectWebSocket();
 
-        // Heartbeat
+        // Heartbeat logic
         const heartbeat = setInterval(() => {
             if (ws?.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'ping' }));
             }
         }, 20000);
 
+        // Polling Fallback - If WebSocket is blocked (e.g. 1006)
+        const pollInterval = setInterval(() => {
+            if (wsStatus === 'offline') {
+                fetchInitialData();
+            }
+        }, 10000);
+
         return () => {
             clearInterval(heartbeat);
-            clearTimeout(reconnectTimeout);
-            ws?.close();
+            clearInterval(pollInterval);
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            if (ws) ws.close();
         };
     }, [wsUrl, apiUrl]);
 
