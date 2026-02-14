@@ -131,7 +131,10 @@ export default function App() {
                     setWsStatus('offline');
                     // 1006 means the link is actively blocked by a proxy or firewall
                     if (e.code === 1006) {
-                        addThought('🟠 Neural link blocked by proxy. Switching to poll mode...');
+                        setThoughts(prev => {
+                            if (prev.some(t => t.includes('Switching to poll mode'))) return prev;
+                            return [...prev, `[${new Date().toLocaleTimeString()}] 🟠 Neural link blocked by proxy. Switching to poll mode...`].slice(-20);
+                        });
                     } else {
                         addThought(`🔴 Link suspended (${e.code}). Reconnecting...`);
                     }
