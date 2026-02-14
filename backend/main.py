@@ -28,9 +28,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve the built React frontend
-if os.path.exists("frontend/dist"):
-    app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="static")
 
 @app.get("/")
 async def root():
@@ -58,6 +55,10 @@ async def websocket_endpoint(websocket: WebSocket):
         print(f"WebSocket error: {e}")
     finally:
         await websocket.close()
+
+# Serve the built React frontend (fallback)
+if os.path.exists("frontend/dist"):
+    app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="static")
 
 if __name__ == "__main__":
     # Hugging Face usually provides the port via an environment variable, otherwise 7860
