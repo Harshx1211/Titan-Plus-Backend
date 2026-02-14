@@ -6,9 +6,9 @@ uvicorn==0.32.0
 
 # Data & Analysis
 ccxt
-pandas==2.1.4
+pandas>=2.2.2
 pandas-ta
-numpy
+numpy>=2.2.6
 scipy
 
 # Cloud Database
