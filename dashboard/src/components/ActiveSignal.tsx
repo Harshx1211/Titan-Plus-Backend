@@ -101,5 +101,3 @@ export const ActiveSignal: React.FC<ActiveSignalProps> = ({ activeTrade }) => {
         </>
     );
 };
-    );
-};
