@@ -57,8 +57,8 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close()
 
 # Serve the built React frontend (fallback)
-if os.path.exists("frontend/dist"):
-    app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="static")
+if os.path.exists("dashboard/dist"):
+    app.mount("/", StaticFiles(directory="dashboard/dist", html=True), name="static")
 
 if __name__ == "__main__":
     # Hugging Face usually provides the port via an environment variable, otherwise 7860

@@ -1,9 +1,9 @@
 # --- Stage 1: Build Frontend ---
 FROM node:18-alpine AS build-stage
-WORKDIR /app/frontend
-COPY frontend/package*.json ./
+WORKDIR /app/dashboard
+COPY dashboard/package*.json ./
 RUN npm install
-COPY frontend/ ./
+COPY dashboard/ ./
 RUN npm run build
 
 # --- Stage 2: Final Production Image ---
@@ -24,7 +24,7 @@ RUN pip install aiofiles
 COPY . .
 
 # Copy built frontend from build-stage
-COPY --from=build-stage /app/frontend/dist ./frontend/dist
+COPY --from=build-stage /app/dashboard/dist ./dashboard/dist
 
 # Expose Hugging Face default port
 EXPOSE 7860
