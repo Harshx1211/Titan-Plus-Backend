@@ -130,7 +130,10 @@ export default function App() {
     }, [wsUrl, apiUrl]);
 
     const addThought = (msg: string) => {
-        setThoughts((prev: string[]) => [...prev.slice(-15), `[${new Date().toLocaleTimeString()}] ${msg}`]);
+        setThoughts((prev: string[]) => {
+            const next = [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`];
+            return next.slice(-20);
+        });
     };
 
     return (
