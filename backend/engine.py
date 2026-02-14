@@ -11,12 +11,10 @@ class CryptoEngine:
     """
     def __init__(self):
         # Public API only - no keys required for market data
-        # Switching to Bybit to avoid Binance regional restrictions (451 error)
-        self.exchange = ccxt.bybit({
+        # Switching to Gate.io to avoid Binance/Bybit regional restrictions (451/403 error)
+        # Gate.io is generally more permissive for US-based cloud servers (Hugging Face)
+        self.exchange = ccxt.gateio({
             'enableRateLimit': True,
-            'options': {
-                'defaultType': 'linear',  # Bybit uses 'linear' for USDT futures
-            }
         })
         self.monitored_symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
         

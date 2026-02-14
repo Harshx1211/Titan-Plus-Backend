@@ -42,11 +42,18 @@ export default function App() {
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const httpProtocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
 
-            // Special handling for Hugging Face Spaces
+            // Special handling for Hugging Face Spaces & Vercel Cross-Domain
+            const isVercel = window.location.hostname.includes('vercel.app');
             const hfSpaceId = window.location.hostname.match(/([^.]+)\.hf\.space/);
+
             if (hfSpaceId) {
                 wsUrl = `${wsProtocol}//${window.location.host}/ws/market`;
                 apiUrl = `${httpProtocol}//${window.location.host}`;
+            } else if (isVercel) {
+                // Fallback to the known Hugging Face Space for this project
+                const targetHF = "harshx1211-titan-plus-backend.hf.space";
+                wsUrl = `wss://${targetHF}/ws/market`;
+                apiUrl = `https://${targetHF}`;
             } else {
                 wsUrl = wsUrl || `${wsProtocol}//${targetHost}/ws/market`;
                 apiUrl = apiUrl || `${httpProtocol}//${targetHost}`;
